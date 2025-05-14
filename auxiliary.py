@@ -1,4 +1,6 @@
-import numpy as np  # For efficient numerical operations on arrays
+import jax  # Import the main JAX library
+jax.config.update("jax_enable_x64", True)  # Enable 64-bit (float64) precision mode in JAX
+import jax.numpy as jnp  # Import JAX's NumPy-compatible API with the common alias 'jnp'
 from numpy.polynomial.legendre import leggauss  # Efficient Gauss-Legendre nodes/weights
 from scipy.special import legendre  # This returns an unshifted Legendre polynomial of given degree as a polynomial object.
 from scipy.sparse import identity, diags, csr_matrix  # For sparse matrix construction
@@ -8,7 +10,7 @@ def coeff_A(m: int) -> float:
     """Compute A_m = 1 / sqrt(2m + 1)."""
     if not isinstance(m, int) or m < 0:
         raise ValueError("m must be a non-negative integer.")
-    return 1 / np.sqrt(2 * m + 1)
+    return 1 / jnp.sqrt(2 * m + 1)
 
 def coeff_B(m: int) -> float:
     """Compute B_m = A_(m-1) * A_m^2 * A_(m+1)."""
@@ -24,13 +26,42 @@ def coeff_C(m: int) -> float:
     A_m1, A_m2 = coeff_A(m - 1), coeff_A(m + 1)
     return 2 * (A_m1 ** 2) * (A_m2 ** 2)
 
-def shifted_legendre(m, ell, x):
+def shifted_legendre(n: int, ell: float, x: jnp.ndarray) -> jnp.ndarray:
     """
-    Compute the shifted Legendre polynomial P_m(x) in [0, ell].
+    Evaluate the n-th shifted Legendre polynomial on the interval [0, ell].
+
+    The shifted Legendre polynomial is defined on the domain [0, ell], 
+    but standard Legendre polynomials are defined on the domain [-1, 1]. 
+    This function performs the necessary transformation to map the input x 
+    from [0, ell] to [-1, 1] and evaluates the polynomial using its coefficients.
+
+    Args:
+        n (int): Degree of the polynomial (non-negative integer).
+        ell (float): The length of the interval [0, ell].
+        x (jnp.ndarray): Points in the domain [0, ell] where the polynomial should be evaluated.
+
+    Returns:
+        jnp.ndarray: Values of the shifted Legendre polynomial evaluated at the points x.
     """
-    x = np.clip(np.asarray(x), 0, ell)  # Ensure x is within valid range
-    x_mapped = 2 * x / ell - 1  # Transform x from [0, ell] to [-1, 1]
-    return legendre(m)(x_mapped)
+    
+    # Step 1: Map the input x from the domain [0, ell] to the domain [-1, 1]
+    x_mapped = 2 * x / ell - 1
+    
+    # Step 2: Get the coefficients of the standard Legendre polynomial P_n (highest degree first)
+    coeffs = jnp.array(legendre(n).coef)  # Extract the coefficients of the Legendre polynomial P_n
+    
+    # Step 3: Evaluate the polynomial using jax.numpy.polyval, which performs the evaluation using the coefficients
+    # The `coeffs` array represents the polynomial in the form:
+    #   coeffs[0] * x^n + coeffs[1] * x^(n-1) + ... + coeffs[n-1] * x + coeffs[n]
+    return jnp.polyval(coeffs, x_mapped)  # Return the evaluated polynomial at the mapped points x
+
+# def shifted_legendre(m, ell, x):
+#     """
+#     Compute the shifted Legendre polynomial P_m(x) in [0, ell].
+#     """
+#     x = jnp.clip(jnp.asarray(x), 0, ell)  # Ensure x is within valid range
+#     x_mapped = 2 * x / ell - 1  # Transform x from [0, ell] to [-1, 1]
+#     return legendre(m)(x_mapped)
 
 def normalized_shifted_legendre(m, ell, x):
     """
@@ -55,9 +86,9 @@ def normalized_shifted_legendre(m, ell, x):
     P_m_x = shifted_legendre(m, ell, x)
     
     # Compute the normalized polynomial
-    return P_m_x / (A_m * np.sqrt(ell))
+    return P_m_x / (A_m * jnp.sqrt(ell))
 
-def phi_m(m: int, ell: float, x: np.ndarray) -> np.ndarray:
+def phi_m(m: int, ell: float, x: jnp.ndarray) -> jnp.ndarray:
     """
     Compute the m-th Galerkin basis function φ_m(x) defined as:
         φ_m(x) = (sqrt(ell) / 2) * A_m * [P_{m+1}(x) - P_{m-1}(x)]
@@ -65,10 +96,10 @@ def phi_m(m: int, ell: float, x: np.ndarray) -> np.ndarray:
     Parameters:
     - m (int): Basis function index (m >= 1).
     - ell (float): Length of the interval [0, ell].
-    - x (np.ndarray): Input points where φ_m is evaluated.
+    - x (jnp.ndarray): Input points where φ_m is evaluated.
 
     Returns:
-    - np.ndarray: Evaluated φ_m(x) at each x.
+    - jnp.ndarray: Evaluated φ_m(x) at each x.
     """
     
     # Ensure m is a valid index (Galerkin basis functions are defined for m >= 1)
@@ -83,24 +114,24 @@ def phi_m(m: int, ell: float, x: np.ndarray) -> np.ndarray:
     P_minus = shifted_legendre(m - 1, ell, x)
     
     # Evaluate φ_m(x) using the defined formula
-    phi_vals = (np.sqrt(ell) / 2) * A_m * (P_plus - P_minus)
+    phi_vals = (jnp.sqrt(ell) / 2) * A_m * (P_plus - P_minus)
     
     return phi_vals
 
-def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarray:
+def sys_soln(f: jnp.ndarray, N: int, a: float, b: float, ell: float) -> jnp.ndarray:
     """
     Solves a tridiagonal system of equations using a specialized forward elimination 
     and backward substitution method tailored to a spectral problem.
 
     Parameters:
-        f (np.ndarray): Right-hand side vector of shape (N,).
+        f (jnp.ndarray): Right-hand side vector of shape (N,).
         N (int): Number of equations (must be >= 2).
         a (float): Coefficient in the system matrix.
         b (float): Coefficient in the system matrix.
         ell (float): Scaling parameter related to domain length or physical context.
 
     Returns:
-        np.ndarray: Solution vector `w` of shape (N,).
+        jnp.ndarray: Solution vector `w` of shape (N,).
     
     Raises:
         ValueError: If N is less than 2.
@@ -110,9 +141,9 @@ def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarra
         raise ValueError("N must be at least 2 for the system to be solvable.")
 
     # Allocate working arrays
-    d = np.empty(N)  # Diagonal of the modified matrix
-    z = np.empty(N)  # Modified right-hand side
-    w = np.empty(N)  # Solution vector
+    d = jnp.empty(N)  # Diagonal of the modified matrix
+    z = jnp.empty(N)  # Modified right-hand side
+    w = jnp.empty(N)  # Solution vector
 
     # Precompute first two diagonal entries
     d[0] = coeff_C(1) + (4 * b) / (a * ell ** 2)
@@ -196,7 +227,7 @@ def adaptive_gauss_legendre(f, ell, tol=1e-6, max_n=1000):
         x_mapped = scale * xi + 0.5 * (a + b)  # Map to [a, b]
 
         # Compute the weighted integral approximation
-        integral = scale * np.sum(wi * f(x_mapped))
+        integral = scale * jnp.sum(wi * f(x_mapped))
 
         # Convergence check: absolute difference with previous estimate
         if prev_result is not None and abs(integral - prev_result) < tol:
@@ -379,7 +410,7 @@ def compute_time_dependent_integrals(f, n, N, ell, t):
     Returns:
         integrals : ndarray of shape (n-1, N), the integral values for each (k, m)
     """
-    integrals = np.zeros((n - 1, N))  # Preallocate for performance
+    integrals = jnp.zeros((n - 1, N))  # Preallocate for performance
     for k in range(n - 1):
         for m in range(N):
             # Compute the integral for each φ_m at time t[k+1]
@@ -406,12 +437,12 @@ def compute_initial_integrals(u, v, N, ell):
             - diff2_v     : same for v
     """
     # Initialize projection arrays
-    u_proj = [np.zeros(N), np.zeros(N)]     # Projections of u0 and u1
-    v_proj = [np.zeros(N), np.zeros(N)]     # Projections of v0 and v1
-    diff1_u1 = np.zeros(N)                  # First derivative of u1 projected
-    diff1_v1 = np.zeros(N)                  # First derivative of v1 projected
-    diff2_u = np.zeros((2, N))              # Second derivative terms for u0 and u1
-    diff2_v = np.zeros((2, N))              # Second derivative terms for v0 and v1
+    u_proj = [jnp.zeros(N), jnp.zeros(N)]     # Projections of u0 and u1
+    v_proj = [jnp.zeros(N), jnp.zeros(N)]     # Projections of v0 and v1
+    diff1_u1 = jnp.zeros(N)                  # First derivative of u1 projected
+    diff1_v1 = jnp.zeros(N)                  # First derivative of v1 projected
+    diff2_u = jnp.zeros((2, N))              # Second derivative terms for u0 and u1
+    diff2_v = jnp.zeros((2, N))              # Second derivative terms for v0 and v1
 
     for m in range(N):
         m_idx = m + 1  # φ_m index starts at 1 in auxiliary functions
@@ -461,10 +492,10 @@ def associated_identity_operator(N: int) -> csr_matrix:
         csr_matrix: Sparse matrix representing the identity operator.
     """
     # Main diagonal: C(m+1)
-    main_diag = np.array([coeff_C(m + 1) for m in range(N)])
+    main_diag = jnp.array([coeff_C(m + 1) for m in range(N)])
 
     # Off-diagonals: -B(m+2), symmetric about ±2 diagonals
-    off_diag = np.array([-coeff_B(m + 2) for m in range(N - 2)])
+    off_diag = jnp.array([-coeff_B(m + 2) for m in range(N - 2)])
 
     # Create sparse matrix with diagonals at positions 0, ±2
     H = diags(
@@ -487,7 +518,7 @@ def associated_first_order_operator(N: int) -> csr_matrix:
         csr_matrix: Sparse matrix representing the first-order operator.
     """
     # Upper diagonal: A(m+1)*A(m+2), size (N-1)
-    upper_diag = np.array([
+    upper_diag = jnp.array([
         coeff_A(m + 1) * coeff_A(m + 2) for m in range(N - 1)
     ])
 
@@ -526,17 +557,17 @@ def associated_operators(N: int, operator: str) -> csr_matrix:
         raise ValueError(f"Unknown operator type '{operator}'. Use 'identity' or 'first-order'.")
 
 # --- Galerkin Operator Application ---
-def galerkin_stencils(N: int, v: np.ndarray, operator: str = "identity") -> np.ndarray:
+def galerkin_stencils(N: int, v: jnp.ndarray, operator: str = "identity") -> jnp.ndarray:
     """
     Apply a Galerkin operator to a vector using sparse matrix multiplication.
 
     Parameters:
         N (int): Vector size (must match operator matrix size).
-        v (np.ndarray): Input vector (shape: (N,)).
+        v (jnp.ndarray): Input vector (shape: (N,)).
         operator (str): Operator type to apply.
 
     Returns:
-        np.ndarray: Output vector A * v.
+        jnp.ndarray: Output vector A * v.
     
     Raises:
         ValueError: If vector shape doesn't match N or invalid operator.
@@ -575,7 +606,7 @@ def condition_number_associated_matrix(N: int, ell: float, a: float, b: float) -
     # Convert to dense for condition number computation
     return cond(A.toarray(), p=2)
 
-def galerkin_approx(N: int, ell: float, coeff: np.ndarray, x: np.ndarray) -> np.ndarray:
+def galerkin_approx(N: int, ell: float, coeff: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray:
     """
     Compute the Galerkin approximation:
         u(x) ≈ sum_{m=1}^{N} coeff[m-1] * phi_m(m, ell, x)
@@ -583,37 +614,37 @@ def galerkin_approx(N: int, ell: float, coeff: np.ndarray, x: np.ndarray) -> np.
     Parameters:
     - N (int): Number of basis functions to include.
     - ell (float): Problem-specific parameter used by each basis function phi_m.
-    - coeff (np.ndarray): Coefficient array of shape (N,), typically from solving a linear system.
-    - x (float or np.ndarray): Input location(s) where the approximation is evaluated.
+    - coeff (jnp.ndarray): Coefficient array of shape (N,), typically from solving a linear system.
+    - x (float or jnp.ndarray): Input location(s) where the approximation is evaluated.
 
     Returns:
-    - float or np.ndarray: The evaluated approximation. Returns a scalar if input x is scalar,
+    - float or jnp.ndarray: The evaluated approximation. Returns a scalar if input x is scalar,
       otherwise a NumPy array of shape matching the input.
     """
 
     # Convert coeff to a NumPy array of type float, if it's not already.
-    coeff = np.asarray(coeff, dtype=float)
+    coeff = jnp.asarray(coeff, dtype=float)
 
     # Validate the shape of the coefficient vector.
     if coeff.shape != (N,):
         raise ValueError(f"Expected coeff shape ({N},), but got {coeff.shape}")
 
     # Check if input x is a scalar so we can preserve output type.
-    is_scalar = np.isscalar(x)
+    is_scalar = jnp.isscalar(x)
 
     # Ensure x is treated as a 1D NumPy array for uniform processing.
-    x = np.atleast_1d(x)
+    x = jnp.atleast_1d(x)
 
     # Compute the values of the basis functions:
     # phi_vals will be a (N, len(x)) array, where each row corresponds to phi_m for a specific m.
-    phi_vals = np.array([
+    phi_vals = jnp.array([
         phi_m(m, ell, x)  # Assumes phi_m is vectorized with respect to x
         for m in range(1, N + 1)
     ])
 
     # Compute the dot product across the basis function axis:
     # result is a (len(x),) array holding the sum of coeff[m] * phi_m(x) for all m.
-    result = np.dot(coeff, phi_vals)
+    result = jnp.dot(coeff, phi_vals)
 
     # If the original input x was scalar, return a scalar instead of a 1-element array.
     return result[0] if is_scalar else result
