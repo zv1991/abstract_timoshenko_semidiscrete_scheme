@@ -1,6 +1,6 @@
 import numpy as np  # For efficient numerical operations on arrays
 from numpy.polynomial.legendre import leggauss  # Efficient Gauss-Legendre nodes/weights
-from auxLegendrePolynomials import phi_m
+from utils.auxLegendrePolynomials import phi_m
 
 
 def adaptive_gauss_legendre(f, ell, tol=1e-6, max_n=1000):
@@ -51,94 +51,51 @@ def adaptive_gauss_legendre(f, ell, tol=1e-6, max_n=1000):
         f"Integration did not converge within {max_n} points. Last estimate: {prev_result:.6f}"
     )
 
-def integrate_with_phi_m(
-    f: callable,
-    m: int,
-    ell: float,
-    *args,
-    tol: float = 1e-6,
-    max_n: int = 1000
-):
+def integrate_with_phi_m(f, m, ell, *args, tol=1e-6, max_n=1000):
     """
-    Computes the integral: ∫₀^ℓ f(x, *args) * φₘ(x) dx
-    using adaptive Gauss–Legendre quadrature.
+    Computes the integral ∫₀^ell f(x, *args) * phi_m(m, ell, x) dx
+    using adaptive Gauss-Legendre quadrature.
 
     Parameters:
-    ----------
-    f : callable
-        Function to integrate. Signature must be f(x, *args), where x is scalar or array-like.
-    m : int
-        Mode index for the basis function φₘ.
-    ell : float
-        Upper bound of the integration interval [0, ℓ].
-    *args : tuple
-        Additional arguments to pass to f(x, *args).
-    tol : float, optional
-        Absolute convergence tolerance for quadrature (default: 1e-6).
-    max_n : int, optional
-        Maximum allowed number of Gauss–Legendre nodes (default: 1000).
+        f      : Callable, function to integrate. Must accept x as first argument (array or scalar), then *args.
+        m      : Integer, mode/order used in phi_m.
+        ell    : Upper limit of integration. Lower limit is fixed at 0.
+        *args  : Additional parameters to pass to function f.
+        tol    : Absolute convergence tolerance (default: 1e-6).
+        max_n  : Maximum number of Gauss-Legendre points allowed (default: 1000).
 
     Returns:
-    -------
-    integral_result : float
-        Estimated value of the integral.
-    n_points_used : int
-        Number of quadrature points used.
+        integral_result : Numerical result of the integration.
+        n_points_used   : Number of Gauss-Legendre points used.
     """
+    
     if ell <= 0:
         raise ValueError("The integration domain upper bound 'ell' must be positive.")
-
-    # Define the composite integrand: f(x, ...) * φₘ(x)
+    
+    # Define the composite integrand including the phi_m basis function
     def integrand(x):
-        return f(x, *args) * phi_m(m, ell, x)  # Assumes phi_m is defined and vectorized
+        return f(x, *args) * phi_m(m, ell, x)  # Assumes phi_m is defined elsewhere and vectorized
 
-    # Perform adaptive Gauss-Legendre integration over [0, ell]
+    # Call the adaptive integration routine over [0, ell]
     return adaptive_gauss_legendre(integrand, ell, tol=tol, max_n=max_n)
 
-
-def compute_time_dependent_integrals(
-    f: callable,
-    n: int,
-    N: int,
-    ell: float,
-    t: np.ndarray
-) -> np.ndarray:
+def compute_time_dependent_integrals(f, n, N, ell, t):
     """
-    Compute a grid of integrals:
-    I[k, m] = ∫₀^ℓ f(x, t[k+1]) * φₘ(x) dx
-    for all time steps k = 0 to n-2 and basis modes m = 1 to N.
-
+    Compute integrals of the form ∫ f(x, t_k+1) * φ_m(x) dx over all time steps and modes.
+    
     Parameters:
-    ----------
-    f : callable
-        Function of the form f(x, t) to be integrated.
-    n : int
-        Number of time steps in the time discretization.
-    N : int
-        Number of basis functions φₘ(x).
-    ell : float
-        Domain upper limit for integration (i.e., length scale).
-    t : array-like
-        Time discretization points, must have length n.
+        f   : callable, function of (x, t)
+        n   : int, number of time steps
+        N   : int, number of basis functions
+        ell : float, length of the domain or transformation scale
+        t   : array-like, time discretization points
 
     Returns:
-    -------
-    integrals : np.ndarray
-        Array of shape (n-1, N) with computed integral values.
+        integrals : ndarray of shape (n-1, N), the integral values for each (k, m)
     """
-    if len(t) != n:
-        raise ValueError("Length of time array 't' must match 'n'.")
-
-    if ell <= 0:
-        raise ValueError("Parameter 'ell' must be positive.")
-
-    integrals = np.zeros((n - 1, N))  # Preallocate output array
-
-    # Loop through each time step and basis function
+    integrals = np.zeros((n - 1, N))  # Preallocate for performance
     for k in range(n - 1):
-        t_k1 = t[k + 1]  # Current evaluation time t_{k+1}
         for m in range(N):
-            # Integrate f(x, t_{k+1}) * φₘ(x) over [0, ell]
-            integrals[k, m], _ = integrate_with_phi_m(f, m + 1, ell, t_k1)
-
+            # Compute the integral for each φ_m at time t[k+1]
+            integrals[k, m], _ = integrate_with_phi_m(f, m + 1, ell, t[k + 1])
     return integrals

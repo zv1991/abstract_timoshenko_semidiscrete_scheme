@@ -1,6 +1,12 @@
-import numpy as np
-from config import ell, N, n, t, tau, alpha, beta, gamma, delta, a1, a2
-import auxiliary as aux
+import numpy as np  # For efficient numerical operations on arrays
+from utils.config import ell, N, n, t, tau, alpha, beta, gamma, delta, a1, a2
+from utils.auxComputIntegrals import compute_time_dependent_integrals
+from utils.auxComputDerivIntegrals import adaptive_gauss_legendre_integrate_fprime_sq
+from utils.auxComputInitVecs import compute_initial_integrals
+from utils.auxLegendreGalerkinSpectralMethod import galerkin_stencils
+from utils.auxCondNumbGalerkinSystem import condition_number_associated_matrix
+from utils.auxGalerkinLinearEquationsSolver import sys_soln
+
 
 def solve_system(data, f1, f2):
     # Initial condition functions for projection
@@ -14,9 +20,9 @@ def solve_system(data, f1, f2):
     cond_v = np.zeros(n - 1)
     
     # Compute projections of source terms f1 and f2
-    f1_integr = aux.compute_time_dependent_integrals(f1, n, N, ell, t)
-    f2_integr = aux.compute_time_dependent_integrals(f2, n, N, ell, t)
-    init_data = aux.compute_initial_integrals(u_initial, v_initial, N, ell)
+    f1_integr = compute_time_dependent_integrals(f1, n, N, ell, t)
+    f2_integr = compute_time_dependent_integrals(f2, n, N, ell, t)
+    init_data = compute_initial_integrals(u_initial, v_initial, N, ell)
     
     # Compute projections of initial data and their spatial derivatives
     u0_integr, u1_integr = init_data['u_proj']
@@ -28,7 +34,7 @@ def solve_system(data, f1, f2):
     a0 = 4 / (2 + delta * tau**2)
     
     # Initial nonlinear term from energy-like integral
-    integral, _ = aux.adaptive_gauss_legendre_integrate_fprime_sq(u_initial[1], ell)
+    integral, _ = adaptive_gauss_legendre_integrate_fprime_sq(u_initial[1], ell)
     q_prev = alpha + beta * integral
     
     """ Main time-stepping loop (explicit Galerkin integration) """
@@ -59,8 +65,8 @@ def solve_system(data, f1, f2):
             # Compute RHS for u-equation using Galerkin approximation
             b1 = (4 / ell**2) * (
                 tau**2 * f1_integr[k]
-                + 0.5 * ell**2 * aux.galerkin_stencils(N, tild_u[k - 1])
-                - 0.5 * a1 * tau**2 * ell * aux.galerkin_stencils(N, tild_v[k - 1], operator="first-order")
+                + 0.5 * ell**2 * galerkin_stencils(N, tild_u[k - 1])
+                - 0.5 * a1 * tau**2 * ell * galerkin_stencils(N, tild_v[k - 1], operator="first-order")
                 - u1_integr
                 + 0.5 * tau**2 * q_prev * diff2u[k]
             )
@@ -68,8 +74,8 @@ def solve_system(data, f1, f2):
             # Compute RHS for v-equation similarly
             b2 = (2 * a0 / ell**2) * (
                 tau**2 * f2_integr[k]
-                + 0.5 * ell**2 * aux.galerkin_stencils(N, tild_v[k - 1])
-                + 0.5 * a2 * tau**2 * ell * aux.galerkin_stencils(N, tild_u[k - 1], operator="first-order")
+                + 0.5 * ell**2 * galerkin_stencils(N, tild_v[k - 1])
+                + 0.5 * a2 * tau**2 * ell * galerkin_stencils(N, tild_u[k - 1], operator="first-order")
                 - (1 + 0.5 * tau**2 * delta) * v1_integr
                 + 0.5 * tau**2 * gamma * diff2v[k]
             )
@@ -79,24 +85,24 @@ def solve_system(data, f1, f2):
             # Compute RHS for u-equation using Galerkin approximation
             b1 = (
                 (4 * tau**2 / ell**2) * f1_integr[k]
-                + 2 * aux.galerkin_stencils(N, tild_u[k - 1])
-                - (2 * a1 * tau**2 / ell) * aux.galerkin_stencils(N, tild_v[k - 1], operator="first-order")
+                + 2 * galerkin_stencils(N, tild_u[k - 1])
+                - (2 * a1 * tau**2 / ell) * galerkin_stencils(N, tild_v[k - 1], operator="first-order")
             )
             
             # Compute RHS for v-equation similarly
             b2 = (
                 (2 * a0 * tau**2 / ell**2) * f2_integr[k]
-                + a0 * aux.galerkin_stencils(N, tild_v[k - 1])
-                + (a0 * a2 * tau**2 / ell) * aux.galerkin_stencils(N, tild_u[k - 1], operator="first-order")
+                + a0 * galerkin_stencils(N, tild_v[k - 1])
+                + (a0 * a2 * tau**2 / ell) * galerkin_stencils(N, tild_u[k - 1], operator="first-order")
             )
         
         # Condition number diagnostics
-        cond_u[k] = aux.condition_number_associated_matrix(N, ell, 1, 0.5 * tau**2 * q_prev)
-        cond_v[k] = aux.condition_number_associated_matrix(N, ell, 1 + 0.5 * tau**2 * delta, 0.5 * tau**2 * gamma)
+        cond_u[k] = condition_number_associated_matrix(N, ell, 1, 0.5 * tau**2 * q_prev)
+        cond_v[k] = condition_number_associated_matrix(N, ell, 1 + 0.5 * tau**2 * delta, 0.5 * tau**2 * gamma)
         
         # Solve linear systems
-        tild_u[k] = aux.sys_soln(b1, N, 1, 0.5 * tau**2 * q_prev, ell)
-        tild_v[k] = aux.sys_soln(b2, N, 1 + 0.5 * tau**2 * delta, 0.5 * tau**2 * gamma, ell)
+        tild_u[k] = sys_soln(b1, N, 1, 0.5 * tau**2 * q_prev, ell)
+        tild_v[k] = sys_soln(b2, N, 1 + 0.5 * tau**2 * delta, 0.5 * tau**2 * gamma, ell)
         
         # Apply correction for time steps ≥ 2
         if k >= 2:

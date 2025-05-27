@@ -1,5 +1,5 @@
 import numpy as np  # For efficient numerical operations on arrays
-from auxGaussLegendreCoeff import coeff_B, coeff_C
+from utils.auxGaussLegendreCoeff import coeff_B, coeff_C
 
 """ Solver function for the derived subsystem of the Galerkin linear system """
 

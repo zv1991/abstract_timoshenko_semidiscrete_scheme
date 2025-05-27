@@ -1,4 +1,4 @@
-import numpy as np
+import numpy as np  # For efficient numerical operations on arrays
 
 """ Temporal and spatial domain definitions """
 T = 1.0      # Time interval length

@@ -1,6 +1,6 @@
 import numpy as np  # For efficient numerical operations on arrays
 from scipy.special import legendre  # This returns an unshifted Legendre polynomial of given degree as a polynomial object.
-from auxGaussLegendreCoeff import coeff_A
+from utils.auxGaussLegendreCoeff import coeff_A
 
 """ This file contains functions related to Legendre polynomials,
     including their differences as used in basis functions """

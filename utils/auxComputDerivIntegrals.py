@@ -1,13 +1,13 @@
 import numpy as np  # For efficient numerical operations on arrays
-from auxLegendrePolynomials import normalized_shifted_legendre
-from auxComputIntegrals import adaptive_gauss_legendre
-import numdifftools as nd
+from utils.auxLegendrePolynomials import normalized_shifted_legendre
+from utils.auxComputIntegrals import adaptive_gauss_legendre
+import numdifftools as nd  # Make sure this is imported if using nd.Derivative
 
 """ Fourth-order accurate finite difference scheme for first derivative """
 
 def first_order_derivative_nd(f, x, ell, tol=1e-12, h_init=1e-3, iter_max=50):
     """
-    Estimate the first derivative of function f at point x using a 
+    Estimate the first derivative of the function f at point x using a  
     4th-order finite difference method with adaptive step sizing.
 
     Parameters
@@ -28,7 +28,7 @@ def first_order_derivative_nd(f, x, ell, tol=1e-12, h_init=1e-3, iter_max=50):
     Returns
     -------
     deriv : float
-        Estimated first derivative of f at x.
+        The estimated first derivative of f at x.
     h : float
         Final step size used.
 
@@ -36,19 +36,16 @@ def first_order_derivative_nd(f, x, ell, tol=1e-12, h_init=1e-3, iter_max=50):
     ------
     ValueError
         If 'ell' is not provided.
-    RuntimeError
-        If derivative fails to converge within the specified number of iterations.
     """
-    
-    # Ensure the domain upper boundary is provided
+
     if ell is None:
         raise ValueError("Parameter 'ell' must be specified.")
 
-    h = h_init           # Initialize step size
-    prev_deriv = None    # Store previous derivative estimate
+    h = h_init              # Initialize step size
+    prev_deriv = None       # Store previous derivative for convergence comparison
 
-    for _ in range(iter_max):
-        # Select finite difference method based on proximity to domain boundaries
+    for iteration in range(iter_max):
+        # Choose finite difference method based on proximity to domain boundaries
         if x - 2 * h < 0:
             method = 'forward'
         elif x + 2 * h > ell:
@@ -57,25 +54,41 @@ def first_order_derivative_nd(f, x, ell, tol=1e-12, h_init=1e-3, iter_max=50):
             method = 'central'
 
         try:
-            # Create a derivative function using numdifftools
+            # Create derivative function using 4th-order finite difference
             df = nd.Derivative(f, n=1, step=h, order=4, method=method)
-            deriv = df(x)  # Evaluate the derivative at x
+            deriv = df(x)
         except Exception:
-            deriv = np.nan  # Handle potential evaluation errors gracefully
+            deriv = np.nan  # Handle evaluation failure gracefully
 
-        # Check convergence: only if previous derivative is available and current is valid
+        # If we have a previous estimate and current is valid, check for convergence
         if prev_deriv is not None and not np.isnan(deriv):
             if abs(deriv - prev_deriv) < tol:
-                return deriv, h  # Converged successfully
+                # print(f"Converged in {iteration + 1} iterations.")
+                # print(f"Result: {deriv}, Step size: {h}")
+                return deriv, h
 
-        prev_deriv = deriv  # Store current derivative estimate for next comparison
-        h /= 2              # Reduce step size to improve accuracy
+        # Update previous derivative and refine step size
+        prev_deriv = deriv
+        h /= 2  # Reduce step size to improve accuracy
 
-    # If loop completes without convergence, raise an error with last known values
-    raise RuntimeError(
-        f"Derivative did not converge within {iter_max} iterations. "
-        f"Last estimate: {deriv}, last step size: {h}"
-    )
+    # Fallback if convergence was not achieved within iter_max
+    try:
+        if x - 2 * h_init < 0:
+            method = 'forward'
+        elif x + 2 * h_init > ell:
+            method = 'backward'
+        else:
+            method = 'central'
+
+        df = nd.Derivative(f, n=1, step=h_init, order=4, method=method)
+        deriv = df(x)
+    except Exception:
+        deriv = np.nan  # Return NaN if derivative calculation fails
+
+    print(f"Did not converge within {iter_max} iterations.")
+    print(f"Last estimate: {prev_deriv}, Step size fallback: {h_init}")
+    return deriv, h_init
+
 
 def adaptive_gauss_legendre_integrate_fprime_leg(f, m, ell, tol=1e-6, max_n=1000, h=1e-3):
     """
