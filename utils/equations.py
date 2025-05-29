@@ -1,15 +1,14 @@
 import utils.config as cfg
-from utils.auxGaussLegendreCoeff import coeff_A
-from utils.auxLegendrePolynomials import normalized_shifted_legendre, phi_m
+import utils.auxiliary as aux
 
 """ Benchmark exact solutions (used for testing and initial conditions) """
 def u(x, t):
     #  Test function u(x, t) = t * phi_1(x)
-    return t * phi_m(1, cfg.ell, x)
+    return t * aux.phi_m(1, cfg.ell, x)
 
 def v(x, t):
     #  Test function v(x, t) = t * phi_1(x)
-    return t * phi_m(1, cfg.ell, x)
+    return t * aux.phi_m(1, cfg.ell, x)
 
 """ Initial conditions for u and v and their derivatives """
 
@@ -18,19 +17,19 @@ def diff2t_v(x, t): return 0
 
 def diff2x_u(x, t):
     #  Second spatial derivative of u
-    return (2 * normalized_shifted_legendre(0, cfg.ell, x)) / (cfg.ell * coeff_A(0) * coeff_A(1)) * t
+    return (2 * aux.normalized_shifted_legendre(0, cfg.ell, x)) / (cfg.ell * aux.coeff_A(0) * aux.coeff_A(1)) * t
 
 def diff2x_v(x, t):
     #  Second spatial derivative of v
-    return (2 * normalized_shifted_legendre(0, cfg.ell, x)) / (cfg.ell * coeff_A(0) * coeff_A(1)) * t
+    return (2 * aux.normalized_shifted_legendre(0, cfg.ell, x)) / (cfg.ell * aux.coeff_A(0) * aux.coeff_A(1)) * t
 
 def diff1x_u(x, t):
     #  First spatial derivative of u
-    return normalized_shifted_legendre(1, cfg.ell, x) * t
+    return aux.normalized_shifted_legendre(1, cfg.ell, x) * t
 
 def diff1x_v(x, t):
     #  First spatial derivative of v
-    return normalized_shifted_legendre(1, cfg.ell, x) * t
+    return aux.normalized_shifted_legendre(1, cfg.ell, x) * t
 
 def integr_term(t): return t**2
 

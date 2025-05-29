@@ -1,115 +1,112 @@
 import numpy as np  # For efficient numerical operations on arrays
-from utils.config import ell, N, n, t, tau, alpha, beta, gamma, delta, a1, a2
-from utils.auxComputIntegrals import compute_time_dependent_integrals
-from utils.auxComputDerivIntegrals import adaptive_gauss_legendre_integrate_fprime_sq
-from utils.auxComputInitVecs import compute_initial_integrals
-from utils.auxLegendreGalerkinSpectralMethod import galerkin_stencils
-from utils.auxCondNumbGalerkinSystem import condition_number_associated_matrix
-from utils.auxGalerkinLinearEquationsSolver import sys_soln
-
+import utils.config as cfg
+import utils.auxiliary as aux
 
 def solve_system(data, f1, f2):
-    # Initial condition functions for projection
+    """
+    Solves the coupled PDE system for modal coefficients using an explicit Galerkin method.
+    
+    Parameters:
+        data (dict): Contains 'u_initial' and 'v_initial' as callable functions.
+        f1, f2 (callables): Source term functions f1(x, t), f2(x, t).
+    
+    Returns:
+        tild_u, tild_v: Arrays of modal coefficients at each time step.
+        cond_u, cond_v: Arrays of condition numbers for u and v systems.
+    """
+    
+    # Extract initial condition functions
     u_initial = data['u_initial']
     v_initial = data['v_initial']
+
+    # Allocate storage for modal coefficients and condition numbers
+    tild_u = np.zeros((cfg.n - 1, cfg.N))
+    tild_v = np.zeros((cfg.n - 1, cfg.N))
+    cond_u = np.zeros(cfg.n - 1)
+    cond_v = np.zeros(cfg.n - 1)
+
+    # Project source terms and initial data onto modal basis
+    f1_integr = aux.compute_time_dependent_integrals(f1, cfg.n, cfg.N, cfg.ell, cfg.t)
+    f2_integr = aux.compute_time_dependent_integrals(f2, cfg.n, cfg.N, cfg.ell, cfg.t)
+    init_data = aux.compute_initial_integrals(u_initial, v_initial, cfg.N, cfg.ell)
     
-    # Allocate memory for modal coefficients
-    tild_u = np.zeros((n - 1, N))
-    tild_v = np.zeros((n - 1, N))
-    cond_u = np.zeros(n - 1)
-    cond_v = np.zeros(n - 1)
-    
-    # Compute projections of source terms f1 and f2
-    f1_integr = compute_time_dependent_integrals(f1, n, N, ell, t)
-    f2_integr = compute_time_dependent_integrals(f2, n, N, ell, t)
-    init_data = compute_initial_integrals(u_initial, v_initial, N, ell)
-    
-    # Compute projections of initial data and their spatial derivatives
+    # Compute projections of initial data and spatial derivatives
     u0_integr, u1_integr = init_data['u_proj']
     v0_integr, v1_integr = init_data['v_proj']
-    diff1u1, diff1v1 = init_data['diff1_u1'], init_data['diff1_v1']
-    diff2u, diff2v = init_data['diff2_u'], init_data['diff2_v']
-    
-    # Constant used in the v-equation formulation
-    a0 = 4 / (2 + delta * tau**2)
-    
-    # Initial nonlinear term from energy-like integral
-    integral, _ = adaptive_gauss_legendre_integrate_fprime_sq(u_initial[1], ell)
-    q_prev = alpha + beta * integral
-    
-    """ Main time-stepping loop (explicit Galerkin integration) """
-    for k in range(n - 1):
+    diff1u1 = init_data['diff1_u1']
+    diff1v1 = init_data['diff1_v1']
+    diff2u = init_data['diff2_u']
+    diff2v = init_data['diff2_v']
+
+    # Coefficient for v-equation system
+    a0 = 4 / (2 + cfg.delta * cfg.tau**2)
+
+    # Initialize nonlinear coefficient q
+    integral, _ = aux.adaptive_gauss_legendre_integrate_fprime_sq(u_initial[1], cfg.ell)
+    q_prev = cfg.alpha + cfg.beta * integral
+
+    # --- Time-stepping loop ---
+    for k in range(cfg.n - 1):
         if k == 0:
-            # Time step 2 (special treatment)
-            
-            # Compute right-hand side (RHS) of the u-equation
-            b1 = (4 / ell**2) * (
-                tau**2 * f1_integr[k]
+            # --- Special Case: Time step 2 ---
+            b1 = (4 / cfg.ell**2) * (
+                cfg.tau**2 * f1_integr[k]
                 + 2 * u1_integr
-                - a1 * tau**2 * diff1v1
+                - cfg.a1 * cfg.tau**2 * diff1v1
                 - u0_integr
-                + 0.5 * tau**2 * q_prev * diff2u[k]
+                + 0.5 * cfg.tau**2 * q_prev * diff2u[k]
             )
-            
-            # Compute RHS of the v-equation
-            b2 = (2 * a0 / ell**2) * (
-                tau**2 * f2_integr[k]
+            b2 = (2 * a0 / cfg.ell**2) * (
+                cfg.tau**2 * f2_integr[k]
                 + 2 * v1_integr
-                + a2 * tau**2 * diff1u1
-                - (1 + 0.5 * tau**2 * delta) * v0_integr
-                + 0.5 * tau**2 * gamma * diff2v[k]
+                + cfg.a2 * cfg.tau**2 * diff1u1
+                - (1 + 0.5 * cfg.tau**2 * cfg.delta) * v0_integr
+                + 0.5 * cfg.tau**2 * cfg.gamma * diff2v[k]
             )
+
         elif k == 1:
-            # Time step 3 (uses tild_u[k-1])
-            
-            # Compute RHS for u-equation using Galerkin approximation
-            b1 = (4 / ell**2) * (
-                tau**2 * f1_integr[k]
-                + 0.5 * ell**2 * galerkin_stencils(N, tild_u[k - 1])
-                - 0.5 * a1 * tau**2 * ell * galerkin_stencils(N, tild_v[k - 1], operator="first-order")
+            # --- Special Case: Time step 3 (uses tild_u[0], tild_v[0]) ---
+            b1 = (4 / cfg.ell**2) * (
+                cfg.tau**2 * f1_integr[k]
+                + 0.5 * cfg.ell**2 * aux.galerkin_stencils(cfg.N, tild_u[k - 1])
+                - 0.5 * cfg.a1 * cfg.tau**2 * cfg.ell * aux.galerkin_stencils(cfg.N, tild_v[k - 1], operator="first-order")
                 - u1_integr
-                + 0.5 * tau**2 * q_prev * diff2u[k]
+                + 0.5 * cfg.tau**2 * q_prev * diff2u[k]
             )
-            
-            # Compute RHS for v-equation similarly
-            b2 = (2 * a0 / ell**2) * (
-                tau**2 * f2_integr[k]
-                + 0.5 * ell**2 * galerkin_stencils(N, tild_v[k - 1])
-                + 0.5 * a2 * tau**2 * ell * galerkin_stencils(N, tild_u[k - 1], operator="first-order")
-                - (1 + 0.5 * tau**2 * delta) * v1_integr
-                + 0.5 * tau**2 * gamma * diff2v[k]
+            b2 = (2 * a0 / cfg.ell**2) * (
+                cfg.tau**2 * f2_integr[k]
+                + 0.5 * cfg.ell**2 * aux.galerkin_stencils(cfg.N, tild_v[k - 1])
+                + 0.5 * cfg.a2 * cfg.tau**2 * cfg.ell * aux.galerkin_stencils(cfg.N, tild_u[k - 1], operator="first-order")
+                - (1 + 0.5 * cfg.tau**2 * cfg.delta) * v1_integr
+                + 0.5 * cfg.tau**2 * cfg.gamma * diff2v[k]
             )
         else:
-            # General time step (k ≥ 4)
-            
-            # Compute RHS for u-equation using Galerkin approximation
+            # --- General Case: Time step k ≥ 2 ---
             b1 = (
-                (4 * tau**2 / ell**2) * f1_integr[k]
-                + 2 * galerkin_stencils(N, tild_u[k - 1])
-                - (2 * a1 * tau**2 / ell) * galerkin_stencils(N, tild_v[k - 1], operator="first-order")
+                (4 * cfg.tau**2 / cfg.ell**2) * f1_integr[k]
+                + 2 * aux.galerkin_stencils(cfg.N, tild_u[k - 1])
+                - (2 * cfg.a1 * cfg.tau**2 / cfg.ell) * aux.galerkin_stencils(cfg.N, tild_v[k - 1], operator="first-order")
             )
-            
-            # Compute RHS for v-equation similarly
             b2 = (
-                (2 * a0 * tau**2 / ell**2) * f2_integr[k]
-                + a0 * galerkin_stencils(N, tild_v[k - 1])
-                + (a0 * a2 * tau**2 / ell) * galerkin_stencils(N, tild_u[k - 1], operator="first-order")
+                (2 * a0 * cfg.tau**2 / cfg.ell**2) * f2_integr[k]
+                + a0 * aux.galerkin_stencils(cfg.N, tild_v[k - 1])
+                + (a0 * cfg.a2 * cfg.tau**2 / cfg.ell) * aux.galerkin_stencils(cfg.N, tild_u[k - 1], operator="first-order")
             )
-        
-        # Condition number diagnostics
-        cond_u[k] = condition_number_associated_matrix(N, ell, 1, 0.5 * tau**2 * q_prev)
-        cond_v[k] = condition_number_associated_matrix(N, ell, 1 + 0.5 * tau**2 * delta, 0.5 * tau**2 * gamma)
-        
-        # Solve linear systems
-        tild_u[k] = sys_soln(b1, N, 1, 0.5 * tau**2 * q_prev, ell)
-        tild_v[k] = sys_soln(b2, N, 1 + 0.5 * tau**2 * delta, 0.5 * tau**2 * gamma, ell)
-        
+
+        # --- Diagnostics: Compute condition numbers for system matrices ---
+        cond_u[k] = aux.condition_number_associated_matrix(cfg.N, cfg.ell, 1, 0.5 * cfg.tau**2 * q_prev)
+        cond_v[k] = aux.condition_number_associated_matrix(cfg.N, cfg.ell, 1 + 0.5 * cfg.tau**2 * cfg.delta, 0.5 * cfg.tau**2 * cfg.gamma)
+
+        # Solve linear systems for modal coefficients
+        tild_u[k] = aux.sys_soln(b1, cfg.N, 1, 0.5 * cfg.tau**2 * q_prev, cfg.ell)
+        tild_v[k] = aux.sys_soln(b2, cfg.N, 1 + 0.5 * cfg.tau**2 * cfg.delta, 0.5 * cfg.tau**2 * cfg.gamma, cfg.ell)
+
         # Apply correction for time steps ≥ 2
         if k >= 2:
             tild_u[k] -= tild_u[k - 2]
             tild_v[k] -= tild_v[k - 2]
-        
-        # Update nonlinear term q
-        q_prev = alpha + beta * np.dot(tild_u[k], tild_u[k])
+
+        # --- Update nonlinear term q for next iteration ---
+        q_prev = cfg.alpha + cfg.beta * np.dot(tild_u[k], tild_u[k])
 
     return tild_u, tild_v, cond_u, cond_v
