@@ -26,8 +26,8 @@ def solve_system(data, f1, f2):
     cond_v = np.zeros(cfg.n - 1)
 
     # Project source terms and initial data onto modal basis
-    f1_integr = aux.compute_time_dependent_integrals(f1, cfg.n, cfg.N, cfg.ell, cfg.t)
-    f2_integr = aux.compute_time_dependent_integrals(f2, cfg.n, cfg.N, cfg.ell, cfg.t)
+    f1_integr = aux.compute_time_dependent_integrals(f1, cfg.N, cfg.ell, cfg.t)
+    f2_integr = aux.compute_time_dependent_integrals(f2, cfg.N, cfg.ell, cfg.t)
     init_data = aux.compute_initial_integrals(u_initial, v_initial, cfg.N, cfg.ell)
     
     # Compute projections of initial data and spatial derivatives

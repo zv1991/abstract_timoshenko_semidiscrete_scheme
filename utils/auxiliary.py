@@ -1,9 +1,15 @@
-import numpy as np  # Provides fast and vectorized numerical operations, including array manipulation and linear algebra
-from scipy.special import legendre  # Returns an unshifted Legendre polynomial of specified degree as a polynomial object
-from numpy.polynomial.legendre import leggauss  # Generates Gauss–Legendre quadrature nodes and weights for numerical integration
-import numdifftools as nd  # Library for numerical differentiation; used here for computing derivatives via finite differences (e.g., nd.Derivative)
-from scipy.sparse import identity, diags, csr_matrix  # Utilities for constructing and manipulating sparse matrices, crucial for large-scale linear systems
-from numpy.linalg import cond  # Computes the condition number of a matrix using the 2-norm, indicating sensitivity to numerical errors
+# Provides fast and vectorized numerical operations, including array manipulation and linear algebra
+import numpy as np
+# Returns an unshifted Legendre polynomial of specified degree as a polynomial object
+from scipy.special import legendre
+# Generates Gauss–Legendre quadrature nodes and weights for numerical integration
+from numpy.polynomial.legendre import leggauss
+# Library for numerical differentiation; used here for computing derivatives via finite differences (e.g., nd.Derivative)
+import numdifftools as nd
+# Utilities for constructing and manipulating sparse matrices, crucial for large-scale linear systems
+from scipy.sparse import identity, diags, csr_matrix
+# Computes the condition number of a matrix using the 2-norm, indicating sensitivity to numerical errors
+from numpy.linalg import cond
 
 # --------------------------------------------------------------------------- #
 """ Coefficients arising from inner products of Legendre polynomials 
@@ -288,25 +294,42 @@ def integrate_with_phi_m(f, m, ell, *args, tol=1e-6, max_n=1000):
     # Call the adaptive integration routine over [0, ell]
     return adaptive_gauss_legendre(integrand, ell, tol=tol, max_n=max_n)
 
-def compute_time_dependent_integrals(f, n, N, ell, t):
+def compute_time_dependent_integrals(f, N, ell, t):
     """
-    Compute integrals of the form ∫ f(x, t_k+1) * φ_m(x) dx over all time steps and modes.
-    
+    Computes integrals of the form:
+        ∫ f(x, t_{k+1}) * φ_m(x) dx
+    for each time step k and each basis function index m.
+
     Parameters:
-        f   : callable, function of (x, t)
-        n   : int, number of time steps
-        N   : int, number of basis functions
-        ell : float, length of the domain or transformation scale
-        t   : array-like, time discretization points
+        f   : callable
+              A function of (x, t), representing a time-dependent spatial function.
+        N   : int
+              Number of basis functions φₘ(x) used in the decomposition.
+        ell : float
+              Length of the spatial domain (or a scaling parameter for the basis functions).
+        t   : array-like
+              1D array of time discretization points, length n.
 
     Returns:
-        integrals : ndarray of shape (n-1, N), the integral values for each (k, m)
+        integrals : np.ndarray, shape (n-1, N)
+                    Array where integrals[k, m] corresponds to 
+                    ∫ f(x, t[k+1]) * φ_{m+1}(x) dx
     """
-    integrals = np.zeros((n - 1, N))  # Preallocate for performance
+    # Determine the number of time steps from the time array
+    n = len(t)
+
+    # Preallocate the result array for efficiency (shape: time steps × basis functions)
+    integrals = np.zeros((n - 1, N))
+
+    # Loop over time steps (excluding the final one because we use t[k+1])
     for k in range(n - 1):
+        # Loop over basis function indices (m = 0 to N-1, corresponding to φ₁ to φ_N)
         for m in range(N):
-            # Compute the integral for each φ_m at time t[k+1]
+            # Compute the integral at time t[k+1] using the (m+1)-th basis function
+            # The function integrate_with_phi_m is expected to return (value, error),
+            # so we only store the value (integral estimate)
             integrals[k, m], _ = integrate_with_phi_m(f, m + 1, ell, t[k + 1])
+
     return integrals
 
 # --------------------------------------------------------------------------- #
@@ -589,38 +612,6 @@ def compute_initial_integrals(u, v, N, ell):
     }
 
 # --------------------------------------------------------------------------- #
-""" Computation of the condition number associated with the Galerkin 
-    system matrix """
-# --------------------------------------------------------------------------- #
-
-def condition_number_associated_matrix(N: int, ell: float, a: float, b: float) -> float:
-    """
-    Compute the condition number κ₂(A) of a modified Galerkin matrix:
-        A = H + (4b / (a * ell²)) * I
-
-    Parameters:
-        N (int): Matrix size.
-        ell (float): Scaling parameter.
-        a (float): Physical coefficient.
-        b (float): Additive coefficient.
-
-    Returns:
-        float: 2-norm condition number of the matrix.
-    """
-    # Galerkin identity operator H
-    H = associated_operators(N, operator="identity")
-
-    # Identity matrix scaled by constant
-    scalar = (4 * b) / (a * ell ** 2)
-    I_scaled = scalar * identity(N, format="csr")
-
-    # Final matrix A
-    A = H + I_scaled
-
-    # Convert to dense for condition number computation
-    return cond(A.toarray(), p=2)
-
-# --------------------------------------------------------------------------- #
 """ Construction of operator matrices (stencils)
     derived via the Legendre–Galerkin spectral method """
 # --------------------------------------------------------------------------- #
@@ -722,3 +713,35 @@ def galerkin_stencils(N: int, v: np.ndarray, operator: str = "identity") -> np.n
 
     A = associated_operators(N, operator)
     return A.dot(v)
+
+# --------------------------------------------------------------------------- #
+""" Computation of the condition number associated with the Galerkin 
+    system matrix """
+# --------------------------------------------------------------------------- #
+
+def condition_number_associated_matrix(N: int, ell: float, a: float, b: float) -> float:
+    """
+    Compute the condition number κ₂(A) of a modified Galerkin matrix:
+        A = H + (4b / (a * ell²)) * I
+
+    Parameters:
+        N (int): Matrix size.
+        ell (float): Scaling parameter.
+        a (float): Physical coefficient.
+        b (float): Additive coefficient.
+
+    Returns:
+        float: 2-norm condition number of the matrix.
+    """
+    # Galerkin identity operator H
+    H = associated_operators(N, operator="identity")
+
+    # Identity matrix scaled by constant
+    scalar = (4 * b) / (a * ell ** 2)
+    I_scaled = scalar * identity(N, format="csr")
+
+    # Final matrix A
+    A = H + I_scaled
+
+    # Convert to dense for condition number computation
+    return cond(A.toarray(), p=2)
