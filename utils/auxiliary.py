@@ -235,8 +235,75 @@ def gauss_legendre_integral(f, a, b, nodes, weights):
     mid = 0.5 * (a + b)                         # Midpoint of interval
     half_len = 0.5 * (b - a)                    # Half-length of interval
     x_mapped = mid + half_len * nodes           # Map nodes from [-1, 1] to [a, b]
-    f_vals = f(x_mapped)                        # Evaluate function at transformed nodes
-    return half_len * np.sum(weights * f_vals)  # Weighted sum for integration
+
+    try:
+        f_vals = np.asarray(f(x_mapped))
+        if f_vals.shape != x_mapped.shape:
+            raise ValueError
+    except Exception:
+        f_vals = np.array([f(xi) for xi in x_mapped])
+
+    return half_len * np.dot(weights, f_vals)   # Weighted sum
+
+def halving_gauss_legendre_quadrature(f, ell, tol=1e-6, max_depth=20, n_gauss=10):
+    """
+    Approximates the integral ∫₀^ℓ f(x) dx using dyadic interval refinement
+    and Gauss-Legendre quadrature.
+
+    Parameters
+    ----------
+    f : callable
+        Function to integrate. Can be scalar-returning or vectorized.
+    ell : float
+        Upper bound of the integration interval [0, ell]. Must be ≥ 0.
+    tol : float, optional
+        Convergence tolerance for absolute error (default: 1e-6).
+    max_depth : int, optional
+        Maximum number of dyadic refinements (default: 20).
+    n_gauss : int, optional
+        Number of Gauss-Legendre points per subinterval (default: 10).
+
+    Returns
+    -------
+    integral : float
+        Final estimate of the integral.
+    error : float
+        Absolute difference between last two refinement estimates.
+    depth : int
+        Refinement level at which convergence was reached.
+    """
+    if ell < 0:
+        raise ValueError("Parameter 'ell' must be non-negative.")
+    if ell == 0:
+        return 0.0, 0.0, 0  # Trivial case
+
+    # Precompute Gauss-Legendre nodes and weights
+    nodes, weights = leggauss(n_gauss)
+
+    # Initial estimate over entire interval
+    prev_integral = gauss_legendre_integral(f, 0.0, ell, nodes, weights)
+
+    for k in range(1, max_depth + 1):
+        n_subintervals = 2 ** k
+        dx = ell / n_subintervals
+        current_integral = 0.0
+
+        for i in range(n_subintervals):
+            a = i * dx
+            b = (i + 1) * dx
+            current_integral += gauss_legendre_integral(f, a, b, nodes, weights)
+
+        error = abs(current_integral - prev_integral)
+
+        if error < tol:
+            return current_integral, error, k
+
+        prev_integral = current_integral
+
+    raise RuntimeError(
+        f"Failed to converge within max_depth = {max_depth}. "
+        f"Last error: {error:.3e}"
+    )
 
 # --------------------------------------------------------------------------- #
 """ Unified Adaptive Quadrature Interface """
@@ -538,123 +605,144 @@ def first_order_derivative_nd(f, x, ell, tol=1e-12, h_init=1e-3, iter_max=50):
 """ Evaluation of a specific integral involving derivative functions """
 # --------------------------------------------------------------------------- #
 
-
-def adaptive_gauss_legendre_integrate_fprime_leg(f, m, ell, tol=1e-6, max_n=1000, h=1e-3):
+def adaptive_gauss_legendre_integrate_fprime_leg(f, m, ell, h=1e-3, **quad_kwargs):
     """
     Approximates the integral ∫₀^ℓ f'(x) * P̃ₘ(x) dx using:
-    - Adaptive Gauss–Legendre quadrature
-    - 4th-order finite differences for f'
+    - Adaptive or configurable quadrature method
+    - 4th-order finite difference for f'
     - Normalized shifted Legendre polynomial P̃ₘ(x)
-    
+
     Parameters
     ----------
-    f : callable
-        Function f(x)
-    m : int
-        Degree of the normalized shifted Legendre polynomial
-    ell : float
-        Upper integration limit
-    tol : float, optional
-        Convergence tolerance
-    max_n : int, optional
-        Maximum number of quadrature points
-    h : float, optional
-        Initial finite difference step size
-    
+    f            : callable
+                   The original function f(x)
+    m            : int
+                   Degree of the normalized shifted Legendre polynomial
+    ell          : float
+                   Upper integration limit (must be > 0)
+    h            : float, optional
+                   Initial finite difference step size (default: 1e-3)
+    **quad_kwargs: dict, optional
+                   Keyword arguments passed to `unified_adaptive_quadrature`, e.g.:
+                       - tol: float
+                       - method: {"gleg", "agleg", "scipy"}
+                       - max_n: int
+                       - max_depth: int
+                       - n_points: int
+
     Returns
     -------
-    integral : float
-        Approximated integral value
-    n : int
-        Number of quadrature points used
+    integral     : float
+                   Approximated integral value
+    metric       : float or int
+                   Convergence info (e.g., estimated error or number of nodes)
     """
 
+    # ───────────────────────────────
+    # Validate input domain
+    # ───────────────────────────────
     if ell <= 0:
         raise ValueError("Parameter 'ell' must be greater than zero.")
 
-    # Prevent instability near boundaries by reducing h if too large
+    # ───────────────────────────────
+    # Adjust finite difference step h
+    # Ensure h is suitably small relative to the domain
+    # ───────────────────────────────
     while h >= ell / 4:
         h /= 2
 
+    # ───────────────────────────────
+    # Define integrand f'(x) * P̃ₘ(x)
+    # ───────────────────────────────
     def integrand(x):
-        """
-        Callable for Gauss-Legendre integrator: computes f'(x) * P̃ₘ(x)
-        """
-        # Ensure x is an array to vectorize
-        x = np.atleast_1d(x)
+        x = np.atleast_1d(x)             # Vectorize if scalar
         result = np.zeros_like(x)
-        
+
         for i, xi in enumerate(x):
-            # Compute derivative using 4th-order method
+            # Compute derivative f'(xi) using a stable 4th-order finite difference
             f_prime, _ = first_order_derivative_nd(f, xi, ell=ell, h_init=h)
-            # Compute shifted normalized Legendre polynomial
+
+            # Evaluate normalized shifted Legendre polynomial P̃ₘ(xi)
             Pm_val = normalized_shifted_legendre(m, ell, xi)
+
             result[i] = f_prime * Pm_val
-        
-        return result if len(result) > 1 else result[0]
 
-    # Use adaptive quadrature engine
-    integral, n = adaptive_gauss_legendre(integrand, ell, tol=tol, max_n=max_n)
+        return result if result.size > 1 else result[0]
 
-    return integral, n
+    # ───────────────────────────────
+    # Integrate using chosen quadrature strategy
+    # ───────────────────────────────
+    integral, metric = unified_adaptive_quadrature(
+        integrand,
+        ell,
+        **quad_kwargs  # Allows passing tol, method, etc.
+    )
+
+    return integral, metric
 
 # --------------------------------------------------------------------------- #
 """ Evaluation of a specific integral involving
     the square of derivative functions """
 # --------------------------------------------------------------------------- #
 
-def adaptive_gauss_legendre_integrate_fprime_sq(f, ell, tol=1e-6, max_n=1000, h=1e-3):
+def adaptive_gauss_legendre_integrate_fprime_sq(f, ell, h=1e-3, **quad_kwargs):
     """
     Approximates the integral ∫₀^ℓ [f'(x)]² dx using:
     - 4th-order finite differences for f'(x)
-    - Adaptive Gauss–Legendre quadrature (reused from external implementation)
+    - Configurable adaptive quadrature via unified_adaptive_quadrature
 
     Parameters
     ----------
-    f : callable
-        Function f(x) to differentiate and square.
-    ell : float
-        Upper limit of integration (must be > 0).
-    tol : float, optional
-        Convergence tolerance (default: 1e-6).
-    max_n : int, optional
-        Maximum number of quadrature points (default: 1000).
-    h : float, optional
-        Initial finite difference step size (default: 1e-3).
+    f           : callable
+                  Function f(x) to differentiate and square.
+    ell         : float
+                  Upper limit of integration (must be > 0).
+    h           : float, optional
+                  Initial finite difference step size (default: 1e-3).
+    **quad_kwargs: dict, optional
+                  Keyword arguments passed to `unified_adaptive_quadrature`, e.g.:
+                    - tol: float
+                    - method: {"gleg", "agleg", "scipy"}
+                    - max_n: int
+                    - max_depth: int
+                    - n_points: int
 
     Returns
     -------
-    integral : float
-        Approximated value of the integral.
-    n : int
-        Number of quadrature nodes used.
+    integral    : float
+                  Approximated value of the integral.
+    metric      : float or int
+                  Convergence metric (error estimate or points used).
     """
 
     if ell <= 0:
         raise ValueError("Parameter 'ell' must be greater than zero.")
 
-    # Ensure step size is small enough relative to domain
+    # Adjust finite difference step h relative to domain size
     while h >= ell / 4:
         h /= 2
 
     def integrand(x):
         """
-        Callable to compute [f'(x)]² at each point x.
-        Uses 4th-order finite difference approximation.
+        Compute squared derivative [f'(x)]^2 using 4th-order finite difference.
         """
         x = np.atleast_1d(x)
-        result = np.zeros_like(x)
+        result = np.empty_like(x)
 
         for i, xi in enumerate(x):
             f_prime, _ = first_order_derivative_nd(f, xi, ell=ell, h_init=h)
-            result[i] = f_prime**2
+            result[i] = f_prime ** 2
 
-        return result if len(result) > 1 else result[0]
+        return result if result.size > 1 else result[0]
 
-    # Use the reusable adaptive Gauss–Legendre quadrature engine
-    integral, n = adaptive_gauss_legendre(integrand, ell, tol=tol, max_n=max_n)
+    # Perform integration with unified adaptive quadrature
+    integral, metric = unified_adaptive_quadrature(
+        integrand,
+        ell,
+        **quad_kwargs
+    )
 
-    return integral, n
+    return integral, metric
 
 # --------------------------------------------------------------------------- #
 """ Legendre–Galerkin projections and initialization of modal coefficients 
