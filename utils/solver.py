@@ -42,7 +42,7 @@ def solve_system(data, f1, f2):
     a0 = 4 / (2 + cfg.delta * cfg.tau**2)
 
     # Initialize nonlinear coefficient q
-    integral, _ = aux.adaptive_gauss_legendre_integrate_fprime_sq(u_initial[1], cfg.ell)
+    integral, _ = aux.gauss_legendre_integrate_fprime_sq(u_initial[1], cfg.ell)
     q_prev = cfg.alpha + cfg.beta * integral
 
     # --- Time-stepping loop ---

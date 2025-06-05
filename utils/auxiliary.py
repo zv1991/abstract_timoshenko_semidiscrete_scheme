@@ -215,86 +215,126 @@ def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarra
 
     return w
 
-# --------------------------------------------------------------------------- #
-""" Helper Function: Gauss-Legendre Quadrature Over Arbitrary Interval """
-# --------------------------------------------------------------------------- #
+# =========================================================================== #
+#                            Quadrature Method Suite                          #
+# =========================================================================== #
 
+# --------------------------------------------------------------------------- #
+# Utility: Gauss-Legendre Integration over Arbitrary Interval [a, b]          #
+# --------------------------------------------------------------------------- #
 def gauss_legendre_integral(f, a, b, nodes, weights):
     """
     Compute the Gauss-Legendre quadrature of f over [a, b].
 
     Parameters:
-        f       : Callable. Function to integrate.
-        a, b    : Floats. Integration interval endpoints.
-        nodes   : 1D array of Gauss-Legendre nodes (on [-1, 1]).
-        weights : 1D array of Gauss-Legendre weights (on [-1, 1]).
+        f       : callable
+                  Function to integrate.
+        a, b    : float
+                  Integration interval endpoints.
+        nodes   : ndarray
+                  Gauss-Legendre nodes on [-1, 1].
+        weights : ndarray
+                  Corresponding weights on [-1, 1].
 
     Returns:
-        Float: Approximated integral over [a, b].
+        float : Approximated integral of f over [a, b].
     """
     mid = 0.5 * (a + b)                         # Midpoint of interval
-    half_len = 0.5 * (b - a)                    # Half-length of interval
-    x_mapped = mid + half_len * nodes           # Map nodes from [-1, 1] to [a, b]
+    half_len = 0.5 * (b - a)                    # Half length for scaling
+    x_mapped = mid + half_len * nodes           # Map nodes to [a, b]
 
     try:
+        # Attempt fast vectorized evaluation
         f_vals = np.asarray(f(x_mapped))
         if f_vals.shape != x_mapped.shape:
-            raise ValueError
+            raise ValueError("Function output shape mismatch.")
     except Exception:
+        # Fallback to non-vectorized evaluation
         f_vals = np.array([f(xi) for xi in x_mapped])
 
-    return half_len * np.dot(weights, f_vals)   # Weighted sum
+    return half_len * np.dot(weights, f_vals)   # Compute weighted sum
 
+# --------------------------------------------------------------------------- #
+# Method 1: Iterative Gauss-Legendre Quadrature ("glq")                       #
+# --------------------------------------------------------------------------- #
+def iter_gauss_legendre_quad(f, ell, tol=1e-6, max_n=1000):
+    """
+    Estimate ∫₀^ℓ f(x) dx using increasing Gauss-Legendre points until convergence.
+
+    Parameters:
+        f       : callable
+        ell     : float, upper integration limit
+        tol     : float, absolute error tolerance
+        max_n   : int, maximum number of quadrature points
+
+    Returns:
+        integral : float
+        error    : float, difference between last two estimates
+        n        : int, number of points used
+    """
+    if ell < 0:
+        raise ValueError("Upper limit 'ell' must be non-negative.")
+    if ell == 0:
+        return 0.0, 0.0, 0
+
+    a, b = 0.0, ell
+    n = 2
+    prev_result = None
+
+    while n <= max_n:
+        nodes, weights = leggauss(n)
+        integral = gauss_legendre_integral(f, a, b, nodes, weights)
+
+        if prev_result is not None:
+            error = abs(integral - prev_result)
+            if error < tol:
+                return integral, error, n
+
+        prev_result = integral
+        n += 1
+
+    raise ValueError(
+        f"Did not converge within max_n = {max_n}. Last estimate: {prev_result:.6f}"
+    )
+
+# --------------------------------------------------------------------------- #
+# Method 2: Halving Gauss-Legendre Quadrature ("hglq")                        #
+# --------------------------------------------------------------------------- #
 def halving_gauss_legendre_quadrature(f, ell, tol=1e-6, max_depth=20, n_gauss=10):
     """
-    Approximates the integral ∫₀^ℓ f(x) dx using dyadic interval refinement
-    and Gauss-Legendre quadrature.
+    Adaptive Gauss-Legendre integration using dyadic interval halving.
 
-    Parameters
-    ----------
-    f : callable
-        Function to integrate. Can be scalar-returning or vectorized.
-    ell : float
-        Upper bound of the integration interval [0, ell]. Must be ≥ 0.
-    tol : float, optional
-        Convergence tolerance for absolute error (default: 1e-6).
-    max_depth : int, optional
-        Maximum number of dyadic refinements (default: 20).
-    n_gauss : int, optional
-        Number of Gauss-Legendre points per subinterval (default: 10).
+    Parameters:
+        f         : callable
+        ell       : float, upper integration limit
+        tol       : float, absolute error tolerance
+        max_depth : int, maximum number of refinement levels
+        n_gauss   : int, number of quadrature points per subinterval
 
-    Returns
-    -------
-    integral : float
-        Final estimate of the integral.
-    error : float
-        Absolute difference between last two refinement estimates.
-    depth : int
-        Refinement level at which convergence was reached.
+    Returns:
+        integral : float
+        error    : float
+        depth    : int, number of refinements used
     """
     if ell < 0:
         raise ValueError("Parameter 'ell' must be non-negative.")
     if ell == 0:
-        return 0.0, 0.0, 0  # Trivial case
+        return 0.0, 0.0, 0
 
-    # Precompute Gauss-Legendre nodes and weights
     nodes, weights = leggauss(n_gauss)
-
-    # Initial estimate over entire interval
     prev_integral = gauss_legendre_integral(f, 0.0, ell, nodes, weights)
 
     for k in range(1, max_depth + 1):
-        n_subintervals = 2 ** k
-        dx = ell / n_subintervals
+        n_intervals = 2 ** k
+        dx = ell / n_intervals
         current_integral = 0.0
 
-        for i in range(n_subintervals):
-            a = i * dx
-            b = (i + 1) * dx
+        # Apply quadrature to each subinterval
+        for i in range(n_intervals):
+            a, b = i * dx, (i + 1) * dx
             current_integral += gauss_legendre_integral(f, a, b, nodes, weights)
 
         error = abs(current_integral - prev_integral)
-
         if error < tol:
             return current_integral, error, k
 
@@ -306,208 +346,191 @@ def halving_gauss_legendre_quadrature(f, ell, tol=1e-6, max_depth=20, n_gauss=10
     )
 
 # --------------------------------------------------------------------------- #
-""" Unified Adaptive Quadrature Interface """
+# Method 3: SciPy Built-in Quadrature ("scipy")                               #
 # --------------------------------------------------------------------------- #
-
-def unified_adaptive_quadrature(
-    f, ell, tol=1e-6, method="agleg", max_n=1000, max_depth=20, n_points=10
-):
+def scipy_quad_wrapper(f, ell, tol=1e-6):
     """
-    General-purpose quadrature interface supporting multiple numerical integration strategies.
+    Estimate ∫₀^ℓ f(x) dx using SciPy's adaptive quadrature.
 
     Parameters:
-        f         : Callable. Function to integrate over [0, ell].
-        ell       : Float. Upper limit of integration.
-        tol       : Float. Absolute error tolerance (default: 1e-6).
-        method    : String. One of {"gleg", "agleg", "scipy"}:
-                    - "gleg"  : General Gauss-Legendre with increasing n.
-                    - "agleg" : Adaptive recursive Gauss-Legendre.
-                    - "scipy" : Uses scipy.integrate.quad.
-        max_n     : Integer. Max quadrature points for "gleg".
-        max_depth : Integer. Max recursion depth for "agleg".
-        n_points  : Integer. Number of Gauss points for "agleg".
+        f    : callable
+        ell  : float
+        tol  : float, absolute error tolerance
 
     Returns:
-        Tuple:
-            - Estimated integral value (float)
-            - Convergence metric:
-                - "gleg"  : Number of points used.
-                - "agleg" or "scipy" : Final estimated error.
+        integral : float
+        error    : float
+        None     : placeholder for compatibility
     """
+    if ell < 0:
+        raise ValueError("Upper limit 'ell' must be non-negative.")
+    if ell == 0:
+        return 0.0, 0.0, None
+
+    result, error = scipy_quad(f, 0.0, ell, epsabs=tol)
+    return result, error, None
+
+# --------------------------------------------------------------------------- #
+# Dispatcher: Unified Adaptive Quadrature Interface                           #
+# --------------------------------------------------------------------------- #
+def unified_adaptive_quadrature(
+    f, ell, tol=1e-6, method="hglq", max_n=1000, max_depth=20, n_points=10
+):
+    """
+    Unified interface for multiple quadrature (numerical integration) schemes.
+
+    Parameters:
+        f         : callable
+                    The function to integrate.
+        ell       : float
+                    The upper limit of the integration interval. Lower limit is assumed to be 0.
+        tol       : float, optional (default=1e-6)
+                    Absolute error tolerance for the integration.
+        method    : str, optional (default='hglq')
+                    Integration method to use: 'glq' (iterative Gauss-Legendre),
+                                               'hglq' (halving Gauss-Legendre),
+                                               'scipy' (SciPy’s quad function).
+        max_n     : int, optional (default=1000)
+                    Maximum number of points for the 'glq' method.
+        max_depth : int, optional (default=20)
+                    Maximum recursion depth for the 'hglq' method.
+        n_points  : int, optional (default=10)
+                    Number of Gauss points per subinterval for the 'hglq' method.
+
+    Returns:
+        tuple:
+            - integral : float
+                         Estimated value of the integral.
+            - metric   : float or int
+                         Method-dependent metric:
+                             - 'glq' returns number of points used.
+                             - 'hglq' returns estimated error.
+                             - 'scipy' returns estimated error.
+    """
+    # Dispatch integration based on selected method
+    if method == "glq":
+        # Use iterative Gauss-Legendre quadrature
+        return iter_gauss_legendre_quad(f, ell, tol, max_n)
     
-    # ─────────────────────────────────────────────────────────────────────────
-    # Method 1: General Gauss-Legendre Quadrature ("gleg")
-    # ─────────────────────────────────────────────────────────────────────────
-    if method == "gleg":
-        if ell < 0:
-            raise ValueError("Upper limit 'ell' must be non-negative.")
-        if ell == 0:
-            return 0.0, 0  # Trivial integral
-
-        a, b = 0.0, ell
-        n = 2
-        prev_result = None
-
-        while n <= max_n:
-            nodes, weights = leggauss(n)
-            integral = gauss_legendre_integral(f, a, b, nodes, weights)
-
-            if prev_result is not None and abs(integral - prev_result) < tol:
-                return integral, n  # Converged
-
-            prev_result = integral
-            n += 1  # Increase degree
-
-        raise ValueError(f"Did not converge within max_n = {max_n}. Last estimate: {prev_result:.6f}")
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Method 2: Adaptive Gauss-Legendre Quadrature ("agleg")
-    # ─────────────────────────────────────────────────────────────────────────
-    elif method == "agleg":
-        if ell < 0:
-            raise ValueError("Upper limit 'ell' must be non-negative.")
-        if ell == 0:
-            return 0.0, 0.0
-
-        nodes, weights = leggauss(n_points)  # Precompute fixed node set
-
-        def recursive_quad(a, b, local_tol, depth):
-            """ Recursively apply adaptive quadrature over [a, b]. """
-            if depth > max_depth:
-                raise RecursionError(f"Exceeded max recursion depth: {max_depth}")
-
-            mid = 0.5 * (a + b)
-            #  Approximate over entire interval
-            integral_full = gauss_legendre_integral(f, a, b, nodes, weights)
-            # Approximate over two halves
-            left = gauss_legendre_integral(f, a, mid, nodes, weights)
-            right = gauss_legendre_integral(f, mid, b, nodes, weights)
-            integral_subdiv = left + right
-
-            error = abs(integral_full - integral_subdiv)  # Estimate error
-
-            if error < local_tol:
-                return integral_subdiv, error
-            else:
-                l_val, l_err = recursive_quad(a, mid, local_tol / 2, depth + 1)
-                r_val, r_err = recursive_quad(mid, b, local_tol / 2, depth + 1)
-                return l_val + r_val, l_err + r_err
-
-        return recursive_quad(0.0, ell, tol, 0)
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Method 3: SciPy's Built-in Quadrature ("scipy")
-    # ─────────────────────────────────────────────────────────────────────────
+    elif method == "hglq":
+        # Use adaptive halving with Gauss-Legendre subinterval quadrature
+        return halving_gauss_legendre_quadrature(
+            f, ell, tol=tol, max_depth=max_depth, n_gauss=n_points
+        )
+    
     elif method == "scipy":
-        if ell < 0:
-            raise ValueError("Upper limit 'ell' must be non-negative.")
-        if ell == 0:
-            return 0.0, 0.0
-
-        result, error = scipy_quad(f, 0.0, ell, epsabs=tol)
-        return result, error
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Invalid Method
-    # ─────────────────────────────────────────────────────────────────────────
+        # Use SciPy's built-in quad function
+        return scipy_quad_wrapper(f, ell, tol)
+    
     else:
-        raise ValueError(f"Invalid method '{method}'. Must be 'gleg', 'agleg', or 'scipy'.")
+        # Raise an error for unsupported methods
+        raise ValueError(
+            f"Invalid method '{method}'. Must be 'glq', 'hglq', or 'scipy'."
+        )
 
 def integrate_with_phi_m(f, ell, m, *args, **quad_kwargs):
     """
     Computes the integral ∫₀^ell f(x, *args) * φₘ(x) dx,
-    where φₘ is the m-th basis function (e.g., sine/cosine, orthogonal poly, etc.),
+    where φₘ is the m-th basis function (e.g., sine/cosine, orthogonal polynomial),
     using a unified adaptive quadrature method.
 
     Parameters:
         f            : callable
-                       Function to integrate. Must accept 'x' as the first argument, then *args.
+                       Function to integrate. Must accept 'x' as the first argument, followed by *args.
         ell          : float
-                       Upper limit of integration (lower is fixed at 0). Must be positive.
+                       Upper limit of integration. Must be positive. The lower limit is assumed to be 0.
         m            : int
                        Index/order of the basis function φₘ.
         *args        : tuple
-                       Extra arguments to pass to 'f', e.g., time values like t[k+1].
+                       Additional arguments to pass to 'f' (e.g., parameters like time `t[k+1]`).
         **quad_kwargs: dict
-                       Optional integration controls passed to `unified_adaptive_quadrature`, such as:
+                       Optional keyword arguments passed to `unified_adaptive_quadrature`, such as:
                            - tol: float         (absolute error tolerance)
-                           - method: str        ("gleg", "agleg", or "scipy")
-                           - max_n: int         (for "gleg")
-                           - max_depth: int     (for "agleg")
-                           - n_points: int      (for "agleg")
+                           - method: str        ("glq", "hglq", or "scipy")
+                           - max_n: int         (for "glq")
+                           - max_depth: int     (for "hglq")
+                           - n_points: int      (for "hglq")
 
     Returns:
         tuple:
             - integral_value : float
                                Estimated value of the integral.
             - convergence_info: float or int
-                               Diagnostic info (e.g., number of points, recursion depth, etc.)
+                               Method-dependent diagnostic information
+                               (e.g., error estimate or point count).
     """
 
-    # --- Safety check on the domain ---
+    # --- Safety check on integration domain ---
     if ell <= 0:
         raise ValueError("The integration upper bound 'ell' must be strictly positive.")
 
-    # --- Construct the integrand function ---
-    # Combines f(x, *args) with the basis function φₘ(m, ell, x)
-    # Assumes `phi_m` is globally defined and vectorized
+    # --- Construct the integrand ---
+    # Multiply user-defined function f(x, *args) with basis function φₘ(x)
+    # Assumes phi_m is defined globally and vectorized to work on arrays.
     def integrand(x):
         return f(x, *args) * phi_m(m, ell, x)
 
-    # --- Delegate to the unified quadrature engine ---
-    # All integration control parameters (like tolerance or method) are passed via **quad_kwargs
+    # --- Compute the integral using the selected quadrature method ---
+    # Pass integration control settings via **quad_kwargs
     result = unified_adaptive_quadrature(
-        integrand,   # Function of x
-        ell,         # Integration from 0 to ell
+        integrand,  # The integrand function: f(x) * φₘ(x)
+        ell,        # Integration upper bound
         **quad_kwargs
     )
 
-    return result  # Typically (value, diagnostic)
+    # --- Return only the value and diagnostic info ---
+    # Typically returns (value, error)
+    return result[:2]
 
 def compute_time_dependent_integrals(f, N, ell, t, **quad_kwargs):
     """
     Computes integrals of the form:
-        ∫ f(x, t_{k+1}) * φₘ(x) dx
-    for each time step k and each basis function index m.
+        ∫₀^ell f(x, t_{k+1}) * φₘ(x) dx
+    for each time step `k` and basis function index `m`.
 
     Parameters:
-        f           : callable
-                      A function of (x, t), representing a time-dependent spatial function.
-        N           : int
-                      Number of basis functions φₘ(x) used in the decomposition.
-        ell         : float
-                      Length of the spatial domain or spatial scaling factor.
-        t           : array-like
-                      1D array of time discretization points (length n).
+        f             : callable
+                        A function of (x, t), representing a time-dependent spatial function.
+        N             : int
+                        Number of basis functions φₘ(x) used in the decomposition.
+        ell           : float
+                        Upper limit of the spatial integration domain.
+        t             : array-like
+                        1D array of time discretization points of length `n`. Must have at least two elements.
         **quad_kwargs : dict
-                      Optional keyword arguments forwarded to `integrate_with_phi_m`, e.g.:
-                          - tol: float (absolute tolerance)
-                          - method: {"gleg", "agleg", "scipy"}
-                          - max_n, max_depth, n_points: control accuracy/performance
+                        Optional keyword arguments forwarded to `integrate_with_phi_m`, e.g.:
+                            - tol       : float (absolute tolerance)
+                            - method    : str {"glq", "hglq", "scipy"}
+                            - max_n     : int  (for "glq")
+                            - max_depth : int  (for "hglq")
+                            - n_points  : int  (for "hglq")
 
     Returns:
         integrals : np.ndarray, shape (n-1, N)
-                    Array where integrals[k, m] ≈ ∫ f(x, t[k+1]) * φ_{m+1}(x) dx
+                    Array where:
+                        integrals[k, m] ≈ ∫₀^ell f(x, t[k+1]) * φₘ₊₁(x) dx
     """
 
-    # Ensure time vector is long enough to compute at least one step
+    # --- Validate time vector ---
     n = len(t)
     if n < 2:
         raise ValueError("Time array 't' must contain at least two time points.")
 
-    # Preallocate a 2D array to store the computed integrals
+    # --- Preallocate result array ---
+    # Rows: time intervals (from k = 0 to n - 2)
+    # Cols: basis functions m = 1 to N
     integrals = np.zeros((n - 1, N))
 
-    # Loop over each time step (excluding the last, since we use t[k+1])
+    # --- Main computation loop ---
     for k in range(n - 1):
-        t_next = t[k + 1]  # Time at the next step
+        t_next = t[k + 1]  # Advance to the next time step
 
-        # Loop over basis function indices (φ₁ to φ_N, hence m+1)
         for m in range(N):
-            # Call the integration routine for φ_{m+1}(x) and f(x, t_next)
+            # Compute integral ∫ f(x, t_next) * φₘ₊₁(x) dx
+            # Note: basis function index passed to phi_m is m+1
             value, _ = integrate_with_phi_m(f, ell, m + 1, t_next, **quad_kwargs)
 
-            # Store only the integral value (ignore error/metadata)
+            # Store only the computed integral (ignore diagnostics)
             integrals[k, m] = value
 
     return integrals
@@ -517,165 +540,200 @@ def compute_time_dependent_integrals(f, N, ell, t, **quad_kwargs):
     for computing the first spatial derivative """
 # --------------------------------------------------------------------------- #
 
-def first_order_derivative_nd(f, x, ell, tol=1e-12, h_init=1e-3, iter_max=50):
+# --- Helper Function for Input Validation and Step Adjustment ---
+def _validate_and_prepare_input(x, ell, h_init):
     """
-    Estimate the first derivative of the function f at point x using a  
-    4th-order finite difference method with adaptive step sizing.
+    Validates and preprocesses the input values for derivative functions.
+    
+    Parameters:
+        x (float or array-like): Input point(s).
+        ell (float): Upper bound of the domain.
+        h_init (float): Initial step size.
 
-    Parameters
-    ----------
-    f : callable
-        The function for which the derivative is computed.
-    x : float
-        Point at which to evaluate the derivative.
-    ell : float
-        Upper boundary of the domain [0, ell].
-    tol : float, optional
-        Tolerance for convergence between successive estimates. Default is 1e-12.
-    h_init : float, optional
-        Initial finite difference step size. Default is 1e-3.
-    iter_max : int, optional
-        Maximum number of refinement iterations. Default is 50.
-
-    Returns
-    -------
-    deriv : float
-        The estimated first derivative of f at x.
-    h : float
-        Final step size used.
-
-    Raises
-    ------
-    ValueError
-        If 'ell' is not provided.
+    Returns:
+        tuple: (Processed x as np.ndarray, is_scalar flag, adjusted h_init)
     """
-
     if ell is None:
         raise ValueError("Parameter 'ell' must be specified.")
 
-    h = h_init              # Initialize step size
-    prev_deriv = None       # Store previous derivative for convergence comparison
+    # Ensure x is at least 1D and determine if the original input was scalar
+    is_scalar = np.isscalar(x)
+    x = np.atleast_1d(x)
 
-    for iteration in range(iter_max):
-        # Choose finite difference method based on proximity to domain boundaries
-        if x - 2 * h < 0:
+    # Reduce h_init until it is small enough relative to the domain
+    while h_init > ell / 4:
+        h_init /= 2
+
+    return x, is_scalar, h_init
+
+# --- First Derivative Estimation Using numdifftools (4th-order accuracy) ---
+def first_order_derivative_nd(f, x, ell, h_init=1e-3):
+    """
+    Estimate the first derivative using numdifftools with adaptive 4th-order method.
+
+    Parameters:
+        f (callable): Function to differentiate.
+        x (float or array-like): Evaluation point(s).
+        ell (float): Upper bound of the domain.
+        h_init (float): Initial step size.
+
+    Returns:
+        tuple: (Estimated derivative(s), final step size used)
+    """
+    x, is_scalar, h_init = _validate_and_prepare_input(x, ell, h_init)
+    derivs = []
+
+    for xi in x:
+        # Determine direction of finite difference based on boundary proximity
+        if xi - 2 * h_init < 0:
             method = 'forward'
-        elif x + 2 * h > ell:
+        elif xi + 2 * h_init > ell:
             method = 'backward'
         else:
             method = 'central'
 
         try:
-            # Create derivative function using 4th-order finite difference
-            df = nd.Derivative(f, n=1, step=h, order=4, method=method)
-            deriv = df(x)
+            df = nd.Derivative(f, n=1, step=h_init, order=4, method=method)
+            deriv = df(xi)
         except Exception:
-            deriv = np.nan  # Handle evaluation failure gracefully
+            deriv = np.nan  # Fallback for exceptions
+        derivs.append(deriv)
 
-        # If we have a previous estimate and current is valid, check for convergence
-        if prev_deriv is not None and not np.isnan(deriv):
-            if abs(deriv - prev_deriv) < tol:
-                # print(f"Converged in {iteration + 1} iterations.")
-                # print(f"Result: {deriv}, Step size: {h}")
-                return deriv, h
+    result = np.array(derivs)
+    return (result[0] if is_scalar else result), h_init
 
-        # Update previous derivative and refine step size
-        prev_deriv = deriv
-        h /= 2  # Reduce step size to improve accuracy
-
-    # Fallback if convergence was not achieved within iter_max
-    try:
-        if x - 2 * h_init < 0:
-            method = 'forward'
-        elif x + 2 * h_init > ell:
-            method = 'backward'
-        else:
-            method = 'central'
-
-        df = nd.Derivative(f, n=1, step=h_init, order=4, method=method)
-        deriv = df(x)
-    except Exception:
-        deriv = np.nan  # Return NaN if derivative calculation fails
-
-    print(f"Did not converge within {iter_max} iterations.")
-    print(f"Last estimate: {prev_deriv}, Step size fallback: {h_init}")
-    return deriv, h_init
-
-# --------------------------------------------------------------------------- #
-""" Evaluation of a specific integral involving derivative functions """
-# --------------------------------------------------------------------------- #
-
-def adaptive_gauss_legendre_integrate_fprime_leg(f, m, ell, h=1e-3, **quad_kwargs):
+# --- First Derivative Estimation Using Manual 4th-Order Finite Differences ---
+def first_order_derivative(f, x, ell, h_init=1e-3):
     """
-    Approximates the integral ∫₀^ℓ f'(x) * P̃ₘ(x) dx using:
-    - Adaptive or configurable quadrature method
-    - 4th-order finite difference for f'
-    - Normalized shifted Legendre polynomial P̃ₘ(x)
+    Estimate the first derivative using manually implemented 4th-order finite differences.
+
+    Parameters:
+        f (callable): Function to differentiate.
+        x (float or array-like): Evaluation point(s).
+        ell (float): Upper bound of the domain.
+        h_init (float): Initial step size.
+
+    Returns:
+        tuple: (Estimated derivative(s), final step size used)
+    """
+    x, is_scalar, h_init = _validate_and_prepare_input(x, ell, h_init)
+    derivs = []
+
+    for xi in x:
+        try:
+            if xi - 2 * h_init < 0:
+                # Forward 4th-order finite difference
+                deriv = (-25 * f(xi) + 48 * f(xi + h_init) - 36 * f(xi + 2 * h_init)
+                         + 16 * f(xi + 3 * h_init) - 3 * f(xi + 4 * h_init)) / (12 * h_init)
+            elif xi + 2 * h_init > ell:
+                # Backward 4th-order finite difference
+                deriv = (25 * f(xi) - 48 * f(xi - h_init) + 36 * f(xi - 2 * h_init)
+                         - 16 * f(xi - 3 * h_init) + 3 * f(xi - 4 * h_init)) / (12 * h_init)
+            else:
+                # Central 4th-order finite difference
+                deriv = (-f(xi + 2 * h_init) + 8 * f(xi + h_init) - 8 * f(xi - h_init)
+                         + f(xi - 2 * h_init)) / (12 * h_init)
+        except Exception:
+            deriv = np.nan  # In case of domain errors or runtime issues
+        derivs.append(deriv)
+
+    result = np.array(derivs)
+    return (result[0] if is_scalar else result), h_init
+
+# --- Unified Interface for Derivative Estimation (numdifftools or manual method) ---
+def first_order_derivative_unified(f, x, ell, derivmeth='nd', h_init=1e-3):
+    """
+    Unified API to estimate first-order derivatives using either numdifftools
+    or manual finite difference methods.
+
+    Parameters:
+        f (callable): Function to differentiate.
+        x (float or array-like): Evaluation point(s).
+        ell (float): Upper bound of the domain.
+        derivmeth (str): Derivative method, either 'nd' (numdifftools) or 'sfd' (manual).
+        h_init (float): Initial step size.
+
+    Returns:
+        tuple: (Estimated derivative(s), final step size used)
+    """
+    if derivmeth == 'nd':
+        return first_order_derivative_nd(f, x, ell, h_init=h_init)
+    elif derivmeth == 'sfd':
+        return first_order_derivative(f, x, ell, h_init=h_init)
+    else:
+        raise ValueError("Invalid method. Use 'nd' (numdifftools) or 'sfd' (standard finite difference).")
+
+# --------------------------------------------------------------------------- #
+""" Gauss-Legendre Integration of f'(x)·P̃ₘ(x) Using 4th-Order Derivatives """
+# --------------------------------------------------------------------------- #
+
+def gauss_legendre_integrate_fprime_leg(f, m, ell, h=1e-3, derivmeth='nd', **quad_kwargs):
+    """
+    Approximates the integral:
+        ∫₀^ell f'(x) * P̃ₘ(x) dx
+
+    using:
+        - An adaptive quadrature routine
+        - A 4th-order finite difference scheme for estimating f'
+        - A normalized shifted Legendre polynomial basis P̃ₘ(x)
 
     Parameters
     ----------
-    f            : callable
-                   The original function f(x)
-    m            : int
-                   Degree of the normalized shifted Legendre polynomial
-    ell          : float
-                   Upper integration limit (must be > 0)
-    h            : float, optional
-                   Initial finite difference step size (default: 1e-3)
-    **quad_kwargs: dict, optional
-                   Keyword arguments passed to `unified_adaptive_quadrature`, e.g.:
-                       - tol: float
-                       - method: {"gleg", "agleg", "scipy"}
-                       - max_n: int
-                       - max_depth: int
-                       - n_points: int
+    f : callable
+        The function f(x) whose derivative will be integrated.
+    m : int
+        Degree of the normalized shifted Legendre polynomial.
+    ell : float
+        Upper limit of integration. Must be strictly positive.
+    h : float, optional
+        Initial step size for finite difference derivative. Default is 1e-3.
+    derivmeth : str, optional
+        Derivative estimation method: 'nd' (numdifftools) or 'sfd' (manual FD).
+    **quad_kwargs : dict, optional
+        Additional arguments passed to `unified_adaptive_quadrature`:
+            - tol: float (tolerance)
+            - method: {"glq", "hglq", "scipy"}
+            - max_n, max_depth, n_points, etc.
 
     Returns
     -------
-    integral     : float
-                   Approximated integral value
-    metric       : float or int
-                   Convergence info (e.g., estimated error or number of nodes)
+    integral : float
+        The numerical approximation of the integral.
+    metric : float or int
+        Additional diagnostic (e.g., error estimate or sample count).
     """
 
-    # ───────────────────────────────
-    # Validate input domain
-    # ───────────────────────────────
+    # --- Safety check for domain ---
     if ell <= 0:
-        raise ValueError("Parameter 'ell' must be greater than zero.")
+        raise ValueError("The upper integration limit 'ell' must be greater than zero.")
 
-    # ───────────────────────────────
-    # Adjust finite difference step h
-    # Ensure h is suitably small relative to the domain
-    # ───────────────────────────────
+    # --- Ensure h is small enough relative to ell ---
     while h >= ell / 4:
         h /= 2
 
-    # ───────────────────────────────
-    # Define integrand f'(x) * P̃ₘ(x)
-    # ───────────────────────────────
+    # --- Define the integrand function: f'(x) * P̃ₘ(x) ---
     def integrand(x):
-        x = np.atleast_1d(x)             # Vectorize if scalar
-        result = np.zeros_like(x)
+        x = np.atleast_1d(x)                 # Ensure x is array-like for loop handling
+        result = np.zeros_like(x)           # Preallocate output array
 
         for i, xi in enumerate(x):
-            # Compute derivative f'(xi) using a stable 4th-order finite difference
-            f_prime, _ = first_order_derivative_nd(f, xi, ell=ell, h_init=h)
+            # Estimate the derivative f'(xi) using the chosen method
+            f_prime, _ = first_order_derivative_unified(
+                f, xi, ell=ell, derivmeth=derivmeth, h_init=h
+            )
 
             # Evaluate normalized shifted Legendre polynomial P̃ₘ(xi)
             Pm_val = normalized_shifted_legendre(m, ell, xi)
 
+            # Multiply the derivative with the polynomial
             result[i] = f_prime * Pm_val
 
-        return result if result.size > 1 else result[0]
+        # Return scalar if input was scalar
+        return result[0] if result.size == 1 else result
 
-    # ───────────────────────────────
-    # Integrate using chosen quadrature strategy
-    # ───────────────────────────────
-    integral, metric = unified_adaptive_quadrature(
-        integrand,
-        ell,
-        **quad_kwargs  # Allows passing tol, method, etc.
+    # --- Apply adaptive quadrature to the integrand over [0, ell] ---
+    integral, metric, *_ = unified_adaptive_quadrature(
+        integrand, ell, **quad_kwargs
     )
 
     return integral, metric
@@ -685,61 +743,66 @@ def adaptive_gauss_legendre_integrate_fprime_leg(f, m, ell, h=1e-3, **quad_kwarg
     the square of derivative functions """
 # --------------------------------------------------------------------------- #
 
-def adaptive_gauss_legendre_integrate_fprime_sq(f, ell, h=1e-3, **quad_kwargs):
+def gauss_legendre_integrate_fprime_sq(f, ell, h=1e-3, derivmeth='nd', **quad_kwargs):
     """
-    Approximates the integral ∫₀^ℓ [f'(x)]² dx using:
-    - 4th-order finite differences for f'(x)
-    - Configurable adaptive quadrature via unified_adaptive_quadrature
+    Approximates the integral ∫₀^ℓ [f'(x)]² dx using numerical differentiation and adaptive quadrature.
 
     Parameters
     ----------
-    f           : callable
-                  Function f(x) to differentiate and square.
-    ell         : float
-                  Upper limit of integration (must be > 0).
-    h           : float, optional
-                  Initial finite difference step size (default: 1e-3).
-    **quad_kwargs: dict, optional
-                  Keyword arguments passed to `unified_adaptive_quadrature`, e.g.:
-                    - tol: float
-                    - method: {"gleg", "agleg", "scipy"}
-                    - max_n: int
-                    - max_depth: int
-                    - n_points: int
+    f : callable
+        The function f(x) whose squared derivative is to be integrated.
+    ell : float
+        The upper limit of integration. Must be positive.
+    h : float, optional
+        Initial step size for derivative approximation. Default is 1e-3.
+    derivmeth : str, optional
+        Method for derivative approximation. Options include:
+            - 'nd' : numdifftools (if available)
+            - 'sfd': simple finite difference (manual)
+            - others as supported by `first_order_derivative_unified`.
+    **quad_kwargs : dict
+        Additional keyword arguments passed to `unified_adaptive_quadrature`, e.g.:
+            - tol : float
+            - method : {"glq", "hglq", "scipy"}
+            - max_n : int
+            - max_depth : int
+            - n_points : int
 
     Returns
     -------
-    integral    : float
-                  Approximated value of the integral.
-    metric      : float or int
-                  Convergence metric (error estimate or points used).
+    integral : float
+        Approximated value of the integral ∫₀^ℓ [f'(x)]² dx.
+    metric : float or int
+        A metric from the quadrature routine (e.g., estimated error, number of nodes).
     """
-
-    if ell <= 0:
-        raise ValueError("Parameter 'ell' must be greater than zero.")
-
-    # Adjust finite difference step h relative to domain size
+    
+    # --- Validate the domain ---
+    if not callable(f):
+        raise TypeError("Parameter 'f' must be a callable function.")
+    if not (isinstance(ell, (int, float)) and ell > 0):
+        raise ValueError("Parameter 'ell' must be a positive float.")
+    
+    # --- Sanitize/adjust h to avoid too coarse a grid ---
     while h >= ell / 4:
         h /= 2
 
+    # --- Define the integrand: [f'(x)]² ---
     def integrand(x):
-        """
-        Compute squared derivative [f'(x)]^2 using 4th-order finite difference.
-        """
-        x = np.atleast_1d(x)
-        result = np.empty_like(x)
+        x = np.atleast_1d(x)                    # Ensure x is iterable (1D array)
+        result = np.empty_like(x)               # Allocate output array of same shape
 
         for i, xi in enumerate(x):
-            f_prime, _ = first_order_derivative_nd(f, xi, ell=ell, h_init=h)
-            result[i] = f_prime ** 2
+            # Compute derivative at xi using selected method
+            f_prime, _ = first_order_derivative_unified(
+                f, xi, ell=ell, h_init=h, derivmeth=derivmeth
+            )
+            result[i] = f_prime ** 2            # Square of the derivative value
 
-        return result if result.size > 1 else result[0]
+        return result[0] if result.size == 1 else result  # Return scalar or array
 
-    # Perform integration with unified adaptive quadrature
-    integral, metric = unified_adaptive_quadrature(
-        integrand,
-        ell,
-        **quad_kwargs
+    # --- Compute integral using an adaptive quadrature method ---
+    integral, metric, *_ = unified_adaptive_quadrature(
+        integrand, ell, **quad_kwargs
     )
 
     return integral, metric
@@ -749,67 +812,115 @@ def adaptive_gauss_legendre_integrate_fprime_sq(f, ell, h=1e-3, **quad_kwargs):
     for partial differential equation solvers """
 # --------------------------------------------------------------------------- #
 
-def compute_initial_integrals(u, v, N, ell):
+def compute_initial_integrals(u, v, N, ell, *, h=1e-3, derivmeth='nd', **quad_kwargs):
     """
-    Project initial condition functions onto basis functions and compute spatial derivatives.
-    
-    Parameters:
-        u   : list of functions [u0, u1], representing u(x, t=0) and ∂u/∂t at t=0
-        v   : list of functions [v0, v1], same as above for v
-        N   : int, number of basis functions
-        ell : float, scaling parameter for the domain
-    
-    Returns:
-        A dictionary containing:
-            - u_proj      : [∫ u0*φ_m dx, ∫ u1*φ_m dx] for m = 1..N
-            - v_proj      : [∫ v0*φ_m dx, ∫ v1*φ_m dx] for m = 1..N
-            - diff1_u1    : ∫ du1/dx * φ_m dx = ∫ -u1 * φ_m' dx for m = 1..N
-            - diff1_v1    : same for v1
-            - diff2_u     : [[∫ d²u0/dx² * φ_m dx], [∫ d²u1/dx² * φ_m dx]]
-            - diff2_v     : same for v
-    """
-    # Initialize projection arrays
-    u_proj = [np.zeros(N), np.zeros(N)]     # Projections of u0 and u1
-    v_proj = [np.zeros(N), np.zeros(N)]     # Projections of v0 and v1
-    diff1_u1 = np.zeros(N)                  # First derivative of u1 projected
-    diff1_v1 = np.zeros(N)                  # First derivative of v1 projected
-    diff2_u = np.zeros((2, N))              # Second derivative terms for u0 and u1
-    diff2_v = np.zeros((2, N))              # Second derivative terms for v0 and v1
+    Projects the initial conditions onto normalized Legendre basis functions and computes 
+    their first and second derivatives via integration by parts, assuming homogeneous 
+    Dirichlet boundary conditions (functions vanish at x=0 and x=ell).
 
+    Parameters
+    ----------
+    u, v : list of callable
+        Initial condition function lists: [u0, u1] and [v0, v1].
+    N : int
+        Number of Legendre basis functions (φ₁ through φ_N).
+    ell : float
+        Length of the spatial domain [0, ell].
+    h : float, optional
+        Step size for numerical differentiation.
+    derivmeth : str, optional
+        Method for approximating derivatives (e.g., 'nd', 'sfd').
+    **quad_kwargs : dict
+        Additional keyword arguments passed to all quadrature routines:
+            - unified_adaptive_quadrature
+            - integrate_with_phi_m
+            - gauss_legendre_integrate_fprime_leg
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+            'u_proj':   List [∫ u₀·φₘ dx, ∫ u₁·φₘ dx]
+            'v_proj':   List [∫ v₀·φₘ dx, ∫ v₁·φₘ dx]
+            'diff1_u1': Array ∫ u₁′·φₘ dx
+            'diff1_v1': Array ∫ v₁′·φₘ dx
+            'diff2_u':  Array [∫ u₀″·φₘ dx, ∫ u₁″·φₘ dx]
+            'diff2_v':  Array [∫ v₀″·φₘ dx, ∫ v₁″·φₘ dx]
+    """
+
+    # --- Validate input types and shapes ---
+    if not (isinstance(u, list) and isinstance(v, list) and 
+            len(u) == 2 and len(v) == 2 and 
+            callable(u[0]) and callable(u[1]) and 
+            callable(v[0]) and callable(v[1])):
+        raise ValueError("u and v must be lists of two callable functions each.")
+
+    if not isinstance(N, int) or N <= 0:
+        raise ValueError("N must be a positive integer.")
+
+    if not isinstance(ell, (int, float)) or ell <= 0:
+        raise ValueError("ell must be a positive real number.")
+
+    # --- Allocate memory for all projections ---
+    u_proj = [np.zeros(N), np.zeros(N)]  # ∫ u₀·φₘ, ∫ u₁·φₘ
+    v_proj = [np.zeros(N), np.zeros(N)]  # ∫ v₀·φₘ, ∫ v₁·φₘ
+    diff1_u1 = np.zeros(N)               # ∫ u₁′·φₘ
+    diff1_v1 = np.zeros(N)               # ∫ v₁′·φₘ
+    diff2_u = np.zeros((2, N))           # ∫ u₀″·φₘ, ∫ u₁″·φₘ
+    diff2_v = np.zeros((2, N))           # ∫ v₀″·φₘ, ∫ v₁″·φₘ
+
+    # --- Loop over each Legendre basis function φₘ ---
     for m in range(N):
-        m_idx = m + 1  # φ_m index starts at 1 in auxiliary functions
+        m_idx = m + 1  # φₘ corresponds to index m+1 in 1-based indexing
 
-        # --- Projections of initial values onto φ_m(x) ---
-        u_proj[0][m], _ = integrate_with_phi_m(u[0], m_idx, ell)  # u0
-        u_proj[1][m], _ = integrate_with_phi_m(u[1], m_idx, ell)  # u1
-        v_proj[0][m], _ = integrate_with_phi_m(v[0], m_idx, ell)  # v0
-        v_proj[1][m], _ = integrate_with_phi_m(v[1], m_idx, ell)  # v1
+        # --- Compute L² projection: ∫ u[i]·φₘ dx and ∫ v[i]·φₘ dx ---
+        for i in range(2):  # Loop over u₀/u₁ and v₀/v₁
+            u_proj[i][m], _ = integrate_with_phi_m(u[i], ell, m_idx, **quad_kwargs)
+            v_proj[i][m], _ = integrate_with_phi_m(v[i], ell, m_idx, **quad_kwargs)
 
-        # --- First derivative: ∂/∂x of u1 and v1, projected via weak form ---
-        diff1_u1[m], _ = adaptive_gauss_legendre(
-            lambda x: -u[1](x) * normalized_shifted_legendre(m_idx, ell, x), ell
-        )
-        diff1_v1[m], _ = adaptive_gauss_legendre(
-            lambda x: -v[1](x) * normalized_shifted_legendre(m_idx, ell, x), ell
-        )
+        # --- First derivative projections: ∫ u₁′·φₘ dx = -∫ u₁·φₘ′ dx ---
+        #     Integration by parts: assume u₁ and φₘ vanish at endpoints ⇒ no boundary term
+        diff1_u1[m] = unified_adaptive_quadrature(
+            lambda x: -u[1](x) * normalized_shifted_legendre(m_idx, ell, x),
+            ell,
+            **quad_kwargs
+        )[0]
 
-        # --- Second derivative terms from weak form using ∫ f' * φ'_m dx ---
+        diff1_v1[m] = unified_adaptive_quadrature(
+            lambda x: -v[1](x) * normalized_shifted_legendre(m_idx, ell, x),
+            ell,
+            **quad_kwargs
+        )[0]
+
+        # --- Second derivative projections: ∫ u″·φₘ dx = -∫ u′·φₘ′ dx ---
+        #     Obtained by applying integration by parts once, assuming φₘ vanishes at the boundaries
         for i in range(2):
-            diff2_u[i][m], _ = adaptive_gauss_legendre_integrate_fprime_leg(
-                lambda x, i=i: -u[i](x), m_idx, ell
-            )
-            diff2_v[i][m], _ = adaptive_gauss_legendre_integrate_fprime_leg(
-                lambda x, i=i: -v[i](x), m_idx, ell
+            diff2_u[i][m], _ = gauss_legendre_integrate_fprime_leg(
+                lambda x, i=i: -u[i](x),
+                m_idx,
+                ell,
+                h=h,
+                derivmeth=derivmeth,
+                **quad_kwargs
             )
 
-    # Return all components in a structured dict
+            diff2_v[i][m], _ = gauss_legendre_integrate_fprime_leg(
+                lambda x, i=i: -v[i](x),
+                m_idx,
+                ell,
+                h=h,
+                derivmeth=derivmeth,
+                **quad_kwargs
+            )
+
+    # --- Return results in organized dictionary ---
     return {
         'u_proj': u_proj,
         'v_proj': v_proj,
         'diff1_u1': diff1_u1,
         'diff1_v1': diff1_v1,
         'diff2_u': diff2_u,
-        'diff2_v': diff2_v,
+        'diff2_v': diff2_v
     }
 
 # --------------------------------------------------------------------------- #
