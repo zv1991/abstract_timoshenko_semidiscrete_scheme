@@ -12,6 +12,8 @@ from scipy.sparse import identity, diags, csr_matrix
 from numpy.linalg import cond
 # Import quad from scipy.integrate and alias it as scipy_quad to avoid naming conflicts
 from scipy.integrate import quad as scipy_quad
+# Import the warnings module to issue runtime alerts without raising exceptions
+import warnings
 
 # --------------------------------------------------------------------------- #
 """ Coefficients arising from inner products of Legendre polynomials 
@@ -142,14 +144,17 @@ def phi_m(m: int, ell: float, x: np.ndarray) -> np.ndarray:
 
 def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarray:
     """
-    Solves a tridiagonal system of equations using a specialized forward elimination 
-    and backward substitution method tailored to a spectral problem.
+    Solves a banded system of equations of spectral-Galerkin origin using 
+    a specialized forward elimination and backward substitution scheme.
+    
+    The matrix has a structure that allows optimized traversal and reuse 
+    of recurrence coefficients.
 
     Parameters:
         f (np.ndarray): Right-hand side vector of shape (N,).
         N (int): Number of equations (must be >= 2).
-        a (float): Coefficient in the system matrix.
-        b (float): Coefficient in the system matrix.
+        a (float): Scalar coefficient multiplying the identity matrix.
+        b (float): Scalar coefficient multiplying the Laplacian-like operator.
         ell (float): Scaling parameter related to domain length or physical context.
 
     Returns:
@@ -224,13 +229,13 @@ def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarra
 # --------------------------------------------------------------------------- #
 def gauss_legendre_integral(f, a, b, nodes, weights):
     """
-    Compute the Gauss-Legendre quadrature of f over [a, b].
+    Compute the Gauss-Legendre quadrature of function f over [a, b].
 
     Parameters:
         f       : callable
                   Function to integrate.
         a, b    : float
-                  Integration interval endpoints.
+                  Interval endpoints.
         nodes   : ndarray
                   Gauss-Legendre nodes on [-1, 1].
         weights : ndarray
@@ -239,38 +244,46 @@ def gauss_legendre_integral(f, a, b, nodes, weights):
     Returns:
         float : Approximated integral of f over [a, b].
     """
-    mid = 0.5 * (a + b)                         # Midpoint of interval
-    half_len = 0.5 * (b - a)                    # Half length for scaling
-    x_mapped = mid + half_len * nodes           # Map nodes to [a, b]
+    mid = 0.5 * (a + b)              # Midpoint of the interval
+    half_len = 0.5 * (b - a)         # Half the interval length
+    x_mapped = mid + half_len * nodes  # Transform nodes to [a, b]
 
     try:
-        # Attempt fast vectorized evaluation
+        # Attempt fast, vectorized evaluation of f at mapped nodes
         f_vals = np.asarray(f(x_mapped))
         if f_vals.shape != x_mapped.shape:
             raise ValueError("Function output shape mismatch.")
     except Exception:
-        # Fallback to non-vectorized evaluation
+        # Fallback: evaluate f pointwise if vectorization fails
         f_vals = np.array([f(xi) for xi in x_mapped])
 
-    return half_len * np.dot(weights, f_vals)   # Compute weighted sum
+    return half_len * np.dot(weights, f_vals)  # Weighted sum approximation
+
 
 # --------------------------------------------------------------------------- #
 # Method 1: Iterative Gauss-Legendre Quadrature ("glq")                       #
 # --------------------------------------------------------------------------- #
 def iter_gauss_legendre_quad(f, ell, tol=1e-6, max_n=1000):
     """
-    Estimate ∫₀^ℓ f(x) dx using increasing Gauss-Legendre points until convergence.
+    Estimate ∫₀^ℓ f(x) dx by increasing Gauss-Legendre nodes until convergence.
 
     Parameters:
         f       : callable
-        ell     : float, upper integration limit
-        tol     : float, absolute error tolerance
-        max_n   : int, maximum number of quadrature points
+                  Function to integrate.
+        ell     : float
+                  Upper integration limit (must be ≥ 0).
+        tol     : float
+                  Absolute error tolerance.
+        max_n   : int
+                  Maximum number of quadrature points.
 
     Returns:
         integral : float
-        error    : float, difference between last two estimates
-        n        : int, number of points used
+                   Final integral estimate.
+        error    : float
+                   Difference between last two estimates.
+        n        : int
+                   Number of nodes used in final iteration.
     """
     if ell < 0:
         raise ValueError("Upper limit 'ell' must be non-negative.")
@@ -278,7 +291,7 @@ def iter_gauss_legendre_quad(f, ell, tol=1e-6, max_n=1000):
         return 0.0, 0.0, 0
 
     a, b = 0.0, ell
-    n = 2
+    n = 2                      # Start with minimal node count
     prev_result = None
 
     while n <= max_n:
@@ -288,33 +301,44 @@ def iter_gauss_legendre_quad(f, ell, tol=1e-6, max_n=1000):
         if prev_result is not None:
             error = abs(integral - prev_result)
             if error < tol:
-                return integral, error, n
+                return integral, error, n  # Converged
 
         prev_result = integral
         n += 1
 
+    # Reached max_n without satisfying tolerance
     raise ValueError(
-        f"Did not converge within max_n = {max_n}. Last estimate: {prev_result:.6f}"
+        f"Did not converge within max_n = {max_n}. "
+        f"Last estimate: {prev_result:.6f}"
     )
+
 
 # --------------------------------------------------------------------------- #
 # Method 2: Halving Gauss-Legendre Quadrature ("hglq")                        #
 # --------------------------------------------------------------------------- #
 def halving_gauss_legendre_quadrature(f, ell, tol=1e-6, max_depth=20, n_gauss=10):
     """
-    Adaptive Gauss-Legendre integration using dyadic interval halving.
+    Adaptive Gauss-Legendre quadrature using interval halving.
 
     Parameters:
         f         : callable
-        ell       : float, upper integration limit
-        tol       : float, absolute error tolerance
-        max_depth : int, maximum number of refinement levels
-        n_gauss   : int, number of quadrature points per subinterval
+                    Function to integrate.
+        ell       : float
+                    Upper integration limit (must be ≥ 0).
+        tol       : float
+                    Absolute error tolerance.
+        max_depth : int
+                    Maximum number of interval refinements.
+        n_gauss   : int
+                    Gauss-Legendre nodes per subinterval.
 
     Returns:
         integral : float
+                   Final integral estimate.
         error    : float
-        depth    : int, number of refinements used
+                   Final error estimate.
+        depth    : int
+                   Number of halving refinements performed.
     """
     if ell < 0:
         raise ValueError("Parameter 'ell' must be non-negative.")
@@ -329,7 +353,7 @@ def halving_gauss_legendre_quadrature(f, ell, tol=1e-6, max_depth=20, n_gauss=10
         dx = ell / n_intervals
         current_integral = 0.0
 
-        # Apply quadrature to each subinterval
+        # Sum contributions from each subinterval
         for i in range(n_intervals):
             a, b = i * dx, (i + 1) * dx
             current_integral += gauss_legendre_integral(f, a, b, nodes, weights)
@@ -345,6 +369,7 @@ def halving_gauss_legendre_quadrature(f, ell, tol=1e-6, max_depth=20, n_gauss=10
         f"Last error: {error:.3e}"
     )
 
+
 # --------------------------------------------------------------------------- #
 # Method 3: SciPy Built-in Quadrature ("scipy")                               #
 # --------------------------------------------------------------------------- #
@@ -354,13 +379,18 @@ def scipy_quad_wrapper(f, ell, tol=1e-6):
 
     Parameters:
         f    : callable
+               Function to integrate.
         ell  : float
-        tol  : float, absolute error tolerance
+               Upper integration limit (must be ≥ 0).
+        tol  : float
+               Absolute error tolerance.
 
     Returns:
         integral : float
+                   Estimated integral value.
         error    : float
-        None     : placeholder for compatibility
+                   Estimated absolute error.
+        None     : Placeholder for compatibility with other methods.
     """
     if ell < 0:
         raise ValueError("Upper limit 'ell' must be non-negative.")
@@ -536,19 +566,28 @@ def compute_time_dependent_integrals(f, N, ell, t, **quad_kwargs):
     return integrals
 
 # --------------------------------------------------------------------------- #
-""" Fourth-order accurate finite difference scheme
-    for computing the first spatial derivative """
+""" 
+Module: Finite Difference Derivative Estimators
+
+Provides fourth-order accurate numerical schemes for estimating the first 
+derivative of a function using either:
+- numdifftools (adaptive, black-box style)
+- manually coded fourth-order finite differences (forward, backward, central)
+"""
 # --------------------------------------------------------------------------- #
 
 # --- Helper Function for Input Validation and Step Adjustment ---
 def _validate_and_prepare_input(x, ell, h_init):
     """
-    Validates and preprocesses the input values for derivative functions.
-    
+    Validates and preprocesses the input values for derivative estimation.
+
     Parameters:
-        x (float or array-like): Input point(s).
-        ell (float): Upper bound of the domain.
-        h_init (float): Initial step size.
+        x       : float or array-like
+                  Evaluation point(s).
+        ell     : float
+                  Upper bound of the domain.
+        h_init  : float
+                  Initial step size.
 
     Returns:
         tuple: (Processed x as np.ndarray, is_scalar flag, adjusted h_init)
@@ -569,16 +608,20 @@ def _validate_and_prepare_input(x, ell, h_init):
 # --- First Derivative Estimation Using numdifftools (4th-order accuracy) ---
 def first_order_derivative_nd(f, x, ell, h_init=1e-3):
     """
-    Estimate the first derivative using numdifftools with adaptive 4th-order method.
+    Estimate the first derivative using numdifftools with a 4th-order scheme.
 
     Parameters:
-        f (callable): Function to differentiate.
-        x (float or array-like): Evaluation point(s).
-        ell (float): Upper bound of the domain.
-        h_init (float): Initial step size.
+        f       : callable
+                  Function to differentiate.
+        x       : float or array-like
+                  Evaluation point(s).
+        ell     : float
+                  Upper domain bound.
+        h_init  : float
+                  Initial step size.
 
     Returns:
-        tuple: (Estimated derivative(s), final step size used)
+        tuple: (Estimated derivative(s), step size used)
     """
     x, is_scalar, h_init = _validate_and_prepare_input(x, ell, h_init)
     derivs = []
@@ -595,8 +638,10 @@ def first_order_derivative_nd(f, x, ell, h_init=1e-3):
         try:
             df = nd.Derivative(f, n=1, step=h_init, order=4, method=method)
             deriv = df(xi)
-        except Exception:
+        except Exception as e:
+            warnings.warn(f"Derivative estimation failed at x={xi}: {e}")
             deriv = np.nan  # Fallback for exceptions
+        
         derivs.append(deriv)
 
     result = np.array(derivs)
@@ -605,16 +650,20 @@ def first_order_derivative_nd(f, x, ell, h_init=1e-3):
 # --- First Derivative Estimation Using Manual 4th-Order Finite Differences ---
 def first_order_derivative(f, x, ell, h_init=1e-3):
     """
-    Estimate the first derivative using manually implemented 4th-order finite differences.
+    Estimate the first derivative using 4th-order finite difference manually.
 
     Parameters:
-        f (callable): Function to differentiate.
-        x (float or array-like): Evaluation point(s).
-        ell (float): Upper bound of the domain.
-        h_init (float): Initial step size.
+        f       : callable
+                  Function to differentiate.
+        x       : float or array-like
+                  Evaluation point(s).
+        ell     : float
+                  Upper domain bound.
+        h_init  : float
+                  Initial step size.
 
     Returns:
-        tuple: (Estimated derivative(s), final step size used)
+        tuple: (Estimated derivative(s), step size used)
     """
     x, is_scalar, h_init = _validate_and_prepare_input(x, ell, h_init)
     derivs = []
@@ -622,19 +671,21 @@ def first_order_derivative(f, x, ell, h_init=1e-3):
     for xi in x:
         try:
             if xi - 2 * h_init < 0:
-                # Forward 4th-order finite difference
+                # Forward 4th-order finite difference scheme near left boundary
                 deriv = (-25 * f(xi) + 48 * f(xi + h_init) - 36 * f(xi + 2 * h_init)
                          + 16 * f(xi + 3 * h_init) - 3 * f(xi + 4 * h_init)) / (12 * h_init)
             elif xi + 2 * h_init > ell:
-                # Backward 4th-order finite difference
+                # Backward 4th-order finite difference scheme near right boundary
                 deriv = (25 * f(xi) - 48 * f(xi - h_init) + 36 * f(xi - 2 * h_init)
                          - 16 * f(xi - 3 * h_init) + 3 * f(xi - 4 * h_init)) / (12 * h_init)
             else:
-                # Central 4th-order finite difference
+                # Central 4th-order finite difference scheme in the interior
                 deriv = (-f(xi + 2 * h_init) + 8 * f(xi + h_init) - 8 * f(xi - h_init)
                          + f(xi - 2 * h_init)) / (12 * h_init)
-        except Exception:
+        except Exception as e:
+            warnings.warn(f"Manual finite difference failed at x={xi}: {e}")
             deriv = np.nan  # In case of domain errors or runtime issues
+        
         derivs.append(deriv)
 
     result = np.array(derivs)
@@ -643,19 +694,26 @@ def first_order_derivative(f, x, ell, h_init=1e-3):
 # --- Unified Interface for Derivative Estimation (numdifftools or manual method) ---
 def first_order_derivative_unified(f, x, ell, derivmeth='nd', h_init=1e-3):
     """
-    Unified API to estimate first-order derivatives using either numdifftools
-    or manual finite difference methods.
+    Unified interface for estimating first-order derivatives.
 
     Parameters:
-        f (callable): Function to differentiate.
-        x (float or array-like): Evaluation point(s).
-        ell (float): Upper bound of the domain.
-        derivmeth (str): Derivative method, either 'nd' (numdifftools) or 'sfd' (manual).
-        h_init (float): Initial step size.
+        f         : callable
+                    Function to differentiate.
+        x         : float or array-like
+                    Evaluation point(s).
+        ell       : float
+                    Upper domain bound.
+        derivmeth : str
+                    Method: 'nd' for numdifftools, 'sfd' for manual scheme.
+        h_init    : float
+                    Initial step size.
 
     Returns:
-        tuple: (Estimated derivative(s), final step size used)
+        tuple: (Estimated derivative(s), step size used)
     """
+    # Convert the derivative method string to lowercase to allow case-insensitive input
+    derivmeth = derivmeth.lower()
+    
     if derivmeth == 'nd':
         return first_order_derivative_nd(f, x, ell, h_init=h_init)
     elif derivmeth == 'sfd':
@@ -664,146 +722,143 @@ def first_order_derivative_unified(f, x, ell, derivmeth='nd', h_init=1e-3):
         raise ValueError("Invalid method. Use 'nd' (numdifftools) or 'sfd' (standard finite difference).")
 
 # --------------------------------------------------------------------------- #
-""" Gauss-Legendre Integration of f'(x)·P̃ₘ(x) Using 4th-Order Derivatives """
+"""
+    Performs integration of f'(x)·P̃ₘ(x) over the interval [0, ell] using
+    adaptive quadrature and fourth-order finite difference schemes to 
+    approximate the derivative f'(x). The polynomial P̃ₘ(x) is a normalized 
+    shifted Legendre polynomial basis function.
+"""
 # --------------------------------------------------------------------------- #
 
-def gauss_legendre_integrate_fprime_leg(f, m, ell, h=1e-3, derivmeth='nd', **quad_kwargs):
+# Assumed available:
+# - first_order_derivative_unified: estimates f'(x) using 'nd' or 'sfd'
+# - normalized_shifted_legendre: evaluates P̃ₘ(x)
+# - unified_adaptive_quadrature: performs adaptive integration over [0, ell]
+
+def integrate_fprime_leg(f, m, ell, h=1e-3, derivmeth='nd', **quad_kwargs):
     """
     Approximates the integral:
         ∫₀^ell f'(x) * P̃ₘ(x) dx
 
-    using:
-        - An adaptive quadrature routine
-        - A 4th-order finite difference scheme for estimating f'
-        - A normalized shifted Legendre polynomial basis P̃ₘ(x)
+    where:
+        - f'(x) is the first derivative of f,
+        - P̃ₘ(x) is the normalized shifted Legendre polynomial of degree m.
 
     Parameters
     ----------
     f : callable
-        The function f(x) whose derivative will be integrated.
+        Function f(x) whose derivative will be integrated.
     m : int
         Degree of the normalized shifted Legendre polynomial.
     ell : float
-        Upper limit of integration. Must be strictly positive.
+        Upper limit of integration domain (must be > 0).
     h : float, optional
-        Initial step size for finite difference derivative. Default is 1e-3.
+        Initial step size for derivative estimation. Default is 1e-3.
     derivmeth : str, optional
-        Derivative estimation method: 'nd' (numdifftools) or 'sfd' (manual FD).
-    **quad_kwargs : dict, optional
-        Additional arguments passed to `unified_adaptive_quadrature`:
-            - tol: float (tolerance)
-            - method: {"glq", "hglq", "scipy"}
-            - max_n, max_depth, n_points, etc.
+        Method for estimating derivatives: 'nd' (numdifftools) or 'sfd' (manual).
+    **quad_kwargs : dict
+        Keyword arguments forwarded to `unified_adaptive_quadrature`.
 
     Returns
     -------
     integral : float
-        The numerical approximation of the integral.
+        Numerical approximation of the integral.
     metric : float or int
-        Additional diagnostic (e.g., error estimate or sample count).
+        Additional diagnostic from quadrature (e.g., error estimate or node count).
     """
-
-    # --- Safety check for domain ---
+    # --- Validate integration domain ---
     if ell <= 0:
         raise ValueError("The upper integration limit 'ell' must be greater than zero.")
 
-    # --- Ensure h is small enough relative to ell ---
+    # --- Adapt h to avoid overly coarse steps ---
     while h >= ell / 4:
         h /= 2
 
-    # --- Define the integrand function: f'(x) * P̃ₘ(x) ---
+    # --- Define integrand: f'(x) * P̃ₘ(x) ---
     def integrand(x):
-        x = np.atleast_1d(x)                 # Ensure x is array-like for loop handling
-        result = np.zeros_like(x)           # Preallocate output array
+        x = np.atleast_1d(x)           # Ensure input is array-like
+        result = np.zeros_like(x)      # Allocate result array
 
         for i, xi in enumerate(x):
-            # Estimate the derivative f'(xi) using the chosen method
-            f_prime, _ = first_order_derivative_unified(
-                f, xi, ell=ell, derivmeth=derivmeth, h_init=h
-            )
+            # Compute f'(xi) using the chosen method
+            f_prime, _ = first_order_derivative_unified(f, xi, ell=ell, derivmeth=derivmeth, h_init=h)
 
-            # Evaluate normalized shifted Legendre polynomial P̃ₘ(xi)
+            # Evaluate the normalized shifted Legendre polynomial P̃ₘ(xi)
             Pm_val = normalized_shifted_legendre(m, ell, xi)
 
-            # Multiply the derivative with the polynomial
+            # Multiply derivative with polynomial value
             result[i] = f_prime * Pm_val
 
-        # Return scalar if input was scalar
         return result[0] if result.size == 1 else result
 
-    # --- Apply adaptive quadrature to the integrand over [0, ell] ---
-    integral, metric, *_ = unified_adaptive_quadrature(
-        integrand, ell, **quad_kwargs
-    )
+    # --- Perform adaptive integration over [0, ell] ---
+    integral, metric, *_ = unified_adaptive_quadrature(integrand, ell, **quad_kwargs)
 
     return integral, metric
 
 # --------------------------------------------------------------------------- #
-""" Evaluation of a specific integral involving
-    the square of derivative functions """
+"""
+    Evaluates the integral of the squared first derivative, ∫₀^ell [f'(x)]² dx,
+    using a combination of high-accuracy numerical differentiation and adaptive 
+    quadrature techniques.
+"""
 # --------------------------------------------------------------------------- #
 
-def gauss_legendre_integrate_fprime_sq(f, ell, h=1e-3, derivmeth='nd', **quad_kwargs):
+def integrate_fprime_sq(f, ell, h=1e-3, derivmeth='nd', **quad_kwargs):
     """
-    Approximates the integral ∫₀^ℓ [f'(x)]² dx using numerical differentiation and adaptive quadrature.
+    Approximates the integral:
+        ∫₀^ell [f'(x)]² dx
+
+    using:
+        - 4th-order numerical differentiation
+        - adaptive quadrature
 
     Parameters
     ----------
     f : callable
-        The function f(x) whose squared derivative is to be integrated.
+        Function f(x) whose squared derivative will be integrated.
     ell : float
-        The upper limit of integration. Must be positive.
+        Upper integration limit (must be > 0).
     h : float, optional
-        Initial step size for derivative approximation. Default is 1e-3.
+        Initial finite difference step size. Default is 1e-3.
     derivmeth : str, optional
-        Method for derivative approximation. Options include:
-            - 'nd' : numdifftools (if available)
-            - 'sfd': simple finite difference (manual)
-            - others as supported by `first_order_derivative_unified`.
+        Method for derivative: 'nd' (numdifftools) or 'sfd' (manual FD).
     **quad_kwargs : dict
-        Additional keyword arguments passed to `unified_adaptive_quadrature`, e.g.:
-            - tol : float
-            - method : {"glq", "hglq", "scipy"}
-            - max_n : int
-            - max_depth : int
-            - n_points : int
+        Arguments passed to `unified_adaptive_quadrature`.
 
     Returns
     -------
     integral : float
-        Approximated value of the integral ∫₀^ℓ [f'(x)]² dx.
+        Approximate value of ∫₀^ell [f'(x)]² dx.
     metric : float or int
-        A metric from the quadrature routine (e.g., estimated error, number of nodes).
+        Diagnostic metric from the integration process.
     """
-    
-    # --- Validate the domain ---
+    # --- Validate inputs ---
     if not callable(f):
         raise TypeError("Parameter 'f' must be a callable function.")
     if not (isinstance(ell, (int, float)) and ell > 0):
         raise ValueError("Parameter 'ell' must be a positive float.")
-    
-    # --- Sanitize/adjust h to avoid too coarse a grid ---
+
+    # --- Adjust h to avoid domain boundary violations ---
     while h >= ell / 4:
         h /= 2
 
-    # --- Define the integrand: [f'(x)]² ---
+    # --- Define integrand: [f'(x)]² ---
     def integrand(x):
-        x = np.atleast_1d(x)                    # Ensure x is iterable (1D array)
-        result = np.empty_like(x)               # Allocate output array of same shape
+        x = np.atleast_1d(x)             # Ensure input is iterable
+        result = np.empty_like(x)        # Allocate result array
 
         for i, xi in enumerate(x):
-            # Compute derivative at xi using selected method
-            f_prime, _ = first_order_derivative_unified(
-                f, xi, ell=ell, h_init=h, derivmeth=derivmeth
-            )
-            result[i] = f_prime ** 2            # Square of the derivative value
+            # Compute derivative using chosen method
+            f_prime, _ = first_order_derivative_unified(f, xi, ell=ell, h_init=h, derivmeth=derivmeth)
 
-        return result[0] if result.size == 1 else result  # Return scalar or array
+            # Square the derivative
+            result[i] = f_prime ** 2
 
-    # --- Compute integral using an adaptive quadrature method ---
-    integral, metric, *_ = unified_adaptive_quadrature(
-        integrand, ell, **quad_kwargs
-    )
+        return result[0] if result.size == 1 else result
+
+    # --- Apply adaptive integration ---
+    integral, metric, *_ = unified_adaptive_quadrature(integrand, ell, **quad_kwargs)
 
     return integral, metric
 
@@ -895,7 +950,7 @@ def compute_initial_integrals(u, v, N, ell, *, h=1e-3, derivmeth='nd', **quad_kw
         # --- Second derivative projections: ∫ u″·φₘ dx = -∫ u′·φₘ′ dx ---
         #     Obtained by applying integration by parts once, assuming φₘ vanishes at the boundaries
         for i in range(2):
-            diff2_u[i][m], _ = gauss_legendre_integrate_fprime_leg(
+            diff2_u[i][m], _ = integrate_fprime_leg(
                 lambda x, i=i: -u[i](x),
                 m_idx,
                 ell,
@@ -904,7 +959,7 @@ def compute_initial_integrals(u, v, N, ell, *, h=1e-3, derivmeth='nd', **quad_kw
                 **quad_kwargs
             )
 
-            diff2_v[i][m], _ = gauss_legendre_integrate_fprime_leg(
+            diff2_v[i][m], _ = integrate_fprime_leg(
                 lambda x, i=i: -v[i](x),
                 m_idx,
                 ell,
