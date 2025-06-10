@@ -1112,3 +1112,60 @@ def condition_number_associated_matrix(N: int, ell: float, a: float, b: float) -
 
     # Convert to dense for condition number computation
     return cond(A.toarray(), p=2)
+
+# ----------------------------------------------------------------------
+# Function: galerkin_approx
+# Purpose : Computes the Galerkin approximation of u(x) using a set of 
+#           basis functions φₘ over a spatial domain [0, ell]. The 
+#           approximation is formed as a linear combination of φₘ 
+#           weighted by provided coefficients for each temporal layer.
+# Inputs  : 
+#    - ell   : Length of spatial domain (float)
+#    - coeff : Coefficient matrix of shape (n, N), where each row 
+#              corresponds to a temporal layer
+#    - x     : Spatial locations (float or np.ndarray)
+# Output  : 
+#    - Approximation result at x (scalar or np.ndarray of shape (n, len(x)))
+# ----------------------------------------------------------------------
+
+def galerkin_approx(ell: float, coeff: np.ndarray, x: np.ndarray) -> np.ndarray:
+    """
+    Compute the Galerkin approximation:
+        u(x) ≈ sum_{m=1}^{N} coeff[m-1] * phi_m(m, ell, x)
+
+    Parameters:
+    - ell (float): Length of spatial interval [0, ell] for each basis function phi_m(m, ell, x).
+    - coeff (np.ndarray): Coefficient matrix of shape (n, N), typically from solving a Galerkin system.
+                          Each row corresponds to a temporal layer.
+    - x (float or np.ndarray): Locations at which the approximation is evaluated.
+
+    Returns:
+    - np.ndarray or float: Evaluated approximation. Returns a scalar if input x is scalar,
+                           otherwise returns an array of shape (n, len(x)).
+    """
+    
+    # Ensure 'ell' is explicitly a float (e.g., if passed as an int)
+    ell = float(ell)
+
+    # Convert input arrays to float-type NumPy arrays to avoid unexpected behavior
+    coeff = np.asarray(coeff, dtype=float)
+    x = np.asarray(x, dtype=float)
+
+    # Determine the number of basis functions (assumes coeff shape is (n, N))
+    N = coeff.shape[1]
+
+    # Check if input 'x' is a scalar (to format output accordingly)
+    is_scalar = np.isscalar(x)
+
+    # Flatten 'x' to ensure it's always a 1D array for consistent processing
+    x = np.atleast_1d(x)
+
+    # Evaluate basis functions φₘ(x) for m = 1 to N
+    # Resulting shape: (N, len(x)), each row is phi_m for m in 1..N
+    phi_vals = np.array([phi_m(m + 1, ell, x) for m in range(N)])
+
+    # Compute linear combination: matrix multiplication of coeff (n x N) with phi_vals (N x len(x))
+    result = coeff @ phi_vals
+
+    # If x was scalar, return a vector (n,) with each row's result at that scalar x
+    return result[:, 0] if is_scalar else result
