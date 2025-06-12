@@ -19,4 +19,4 @@ t = np.linspace(0, T, n + 1)        # Time grid: n+1 points including endpoints
 tau = T / n                         # Time step size Δt = T / n
 
 # ------------------------- Spectral Method Settings ------------------------- #
-N = 5  # Number of Legendre basis functions (spectral order)
+N = 40  # Number of Legendre basis functions (spectral order)

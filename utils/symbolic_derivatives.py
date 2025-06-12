@@ -5,7 +5,7 @@
 import sympy as sp                               # Symbolic computation library
 import utils.config as cfg                       # Global configuration parameters (e.g., ell, alpha, beta)
 from utils.auxiliary import unified_adaptive_quadrature  # Custom quadrature routine
-from utils.benchmark_solutions import x, t, ell, u_expr, v_expr  # Symbolic variables and benchmark functions
+from utils.benchmark_sines import x, t, ell, u_expr, v_expr  # Symbolic variables and benchmark functions
 
 # ======================================================
 # SYMBOLIC DERIVATIVE CLASS
