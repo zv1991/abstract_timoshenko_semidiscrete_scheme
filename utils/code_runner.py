@@ -2,75 +2,144 @@
 # IMPORT MODULES
 # =========================
 
-# Physical and numerical configuration constants (domain size, time, coefficients, resolution)
-from utils.config import ell, T, alpha, beta, gamma, delta, a1, a2, n, N
+# Configuration parameters (e.g., domain size, simulation duration, resolution, and physical coefficients)
+import utils.config as cfg
 
-# Provides symbolic representations of derivatives for the benchmark (exact) solution and source terms
+# Symbolic derivatives and exact solutions for u(x, t), v(x, t), and their source terms
 from utils.symbolic_derivatives import SymbolicDerivatives as SD
 
-# Provides symbolic initial conditions for the Timoshenko beam model
-import utils.initial_conditions_symb as ic
-
-# Main solver class that implements the Galerkin method for the Timoshenko system
+# Solver class for the Timoshenko beam system using the Galerkin method
 from utils.class_timoshenko import TimoshenkoModelSolver
 
-# Provides numerical operations and array manipulation
-import numpy as np
+
+# =========================
+# UTILITY: TAYLOR EXPANSION
+# =========================
+
+def taylor_expansion(func0, func1, func2):
+    """
+    Constructs a second-order Taylor series approximation of a function evaluated at time τ.
+    
+    This is useful for approximating initial values at time τ using the known values and 
+    derivatives at time t = 0:
+    
+        f(τ) ≈ f(0) + τ·f'(0) + (τ²/2)·f''(0)
+
+    Args:
+        func0 (callable): Function representing f(x, 0), the value of f at t = 0
+        func1 (callable): Function representing f'(x, 0), the first time derivative of f at t = 0
+        func2 (callable): Function representing f''(x, 0), the second time derivative of f at t = 0
+
+    Returns:
+        callable: A lambda function representing f(x, τ) as a second-order Taylor approximation
+    """
+
+    # Return the approximated function at time τ
+    return lambda x: (
+        func0(x)                             # f(0)
+        + cfg.tau * func1(x)                 # τ·f'(0)
+        + 0.5 * cfg.tau**2 * func2(x)        # (τ²/2)·f''(0)
+    )
 
 
 # =========================
-# DEFINE EXACT SOLUTIONS (for testing and forcing terms)
+# INITIAL DATA CONSTRUCTOR
 # =========================
 
-# Exact benchmark solutions for displacement fields u(x, t) and v(x, t)
-u = lambda x, t: SD.u(x, t)
-v = lambda x, t: SD.v(x, t)
+def get_initial_data():
+    """
+    Constructs the symbolic source terms and initial conditions for the 
+    Timoshenko beam system using symbolic derivatives from the SD class.
+    
+    The function provides:
+      - Exact source terms `f1`, `f2` from symbolic PDE expressions
+      - Initial values u(x,0), v(x,0)
+      - Approximated values at time τ using 2nd-order Taylor expansion
 
-# Corresponding right-hand side (forcing) functions derived symbolically
-f1 = lambda x, t: SD.f1(x, t)  # Source term for equation governing u
-f2 = lambda x, t: SD.f2(x, t)  # Source term for equation governing v
+    Returns:
+        f1 (callable): Source term for u-equation (function of x, t)
+        f2 (callable): Source term for v-equation (function of x, t)
+        u0 (callable): Initial condition u(x, 0)
+        u1 (callable): Taylor-approximated u(x, τ)
+        v0 (callable): Initial condition v(x, 0)
+        v1 (callable): Taylor-approximated v(x, τ)
+    """
+    
+    # ----------------------------------------
+    # Symbolic exact solutions for displacements
+    # ----------------------------------------
+    u = lambda x, t: SD.u(x, t)  # Exact solution for u(x, t)
+    v = lambda x, t: SD.v(x, t)  # Exact solution for v(x, t)
+
+    # ----------------------------------------
+    # Symbolic source (forcing) terms
+    # ----------------------------------------
+    f1 = lambda x, t: SD.f1(x, t)  # Forcing term for u-equation
+    f2 = lambda x, t: SD.f2(x, t)  # Forcing term for v-equation
+
+    # ----------------------------------------
+    # Initial conditions for u(x, t)
+    # ----------------------------------------
+    varphi0 = lambda x: u(x, 0)  # Initial displacement u(x, 0)
+    varphi1 = lambda x: SD.diff1t_u(x, 0)  # Initial velocity ∂u/∂t at t = 0
+
+    # Compute ∂²u/∂t² using PDE rearrangement at t = 0
+    varphi2 = lambda x: (
+        f1(x, 0)
+        - cfg.a1 * SD.diff1x_v(x, 0)  # Coupling with ∂v/∂x
+        + (cfg.alpha + cfg.beta * SD.integr_term(0)) * SD.diff2x_u(x, 0)  # Damping & stiffness
+    )
+
+    # ----------------------------------------
+    # Initial conditions for v(x, t)
+    # ----------------------------------------
+    psi0 = lambda x: v(x, 0)  # Initial displacement v(x, 0)
+    psi1 = lambda x: SD.diff1t_v(x, 0)  # Initial velocity ∂v/∂t at t = 0
+
+    # Compute ∂²v/∂t² using PDE rearrangement at t = 0
+    psi2 = lambda x: (
+        f2(x, 0)
+        + cfg.a2 * SD.diff1x_u(x, 0)  # Coupling with ∂u/∂x
+        + cfg.gamma * SD.diff2x_v(x, 0)  # Stiffness term
+        - cfg.delta * psi0(x)  # Damping term
+    )
+
+    # ----------------------------------------
+    # Construct Taylor-expanded approximations at t = τ
+    # ----------------------------------------
+    u0 = varphi0  # u(x, 0)
+    u1 = taylor_expansion(varphi0, varphi1, varphi2)  # u(x, τ) ≈ 2nd-order Taylor expansion
+
+    v0 = psi0  # v(x, 0)
+    v1 = taylor_expansion(psi0, psi1, psi2)  # v(x, τ) ≈ 2nd-order Taylor expansion
+
+    # Return source terms and initial data
+    return f1, f2, u0, u1, v0, v1
 
 
 # =========================
-# INITIAL CONDITIONS
+# OBTAIN FORCING TERMS AND INITIAL DATA
 # =========================
 
-# Retrieve symbolic initial conditions: displacement and velocity for both fields
-data = ic.setup_initial_conditions()
-u_initial = data['u_initial']  # [u0, u1] where u0 = u(x, 0), u1 = ∂u/∂t(x, 0)
-v_initial = data['v_initial']  # [v0, v1] where v0 = v(x, 0), v1 = ∂v/∂t(x, 0)
-
-# Define callable initial condition functions for u and v
-u0 = lambda x: u_initial[0](x)  # Initial displacement u(x, 0)
-u1 = lambda x: u_initial[1](x)  # Initial velocity ∂u/∂t(x, 0)
-v0 = lambda x: v_initial[0](x)  # Initial displacement v(x, 0)
-v1 = lambda x: v_initial[1](x)  # Initial velocity ∂v/∂t(x, 0)
-
-
-# =========================
-# SPATIAL GRID (optional preview/testing grid)
-# =========================
-
-# Generate a coarse spatial grid for testing reconstruction (5 points across the domain)
-x = np.linspace(0, ell, 5)
+f1, f2, u0, u1, v0, v1 = get_initial_data()
 
 
 # =========================
 # SOLVER INITIALIZATION
 # =========================
 
-# Instantiate the solver with all required parameters, forcing terms, and initial conditions
+# Create and configure the solver instance
 TimoshenkoModelObject = TimoshenkoModelSolver(
-    ell=ell,
-    T=T,
-    alpha=alpha, beta=beta, gamma=gamma, delta=delta,
-    a1=a1, a2=a2,
-    n=n, N=N,
-    f1=f1, f2=f2,
-    u0=u0, u1=u1,
-    v0=v0, v1=v1
+    ell=cfg.ell,                # Spatial domain length
+    T=cfg.T,                    # Final simulation time
+    alpha=cfg.alpha, beta=cfg.beta,  # u-equation parameters
+    gamma=cfg.gamma, delta=cfg.delta,  # v-equation parameters
+    a1=cfg.a1, a2=cfg.a2,       # Coupling coefficients between u and v
+    n=cfg.n, N=cfg.N,           # Discretization: number of space/time intervals
+    f1=f1, f2=f2,               # Source (forcing) functions
+    u0=u0, u1=u1,               # Initial conditions for u
+    v0=v0, v1=v1                # Initial conditions for v
 )
-
 
 # =========================
 # GALERKIN RECONSTRUCTION
@@ -78,8 +147,7 @@ TimoshenkoModelObject = TimoshenkoModelSolver(
 
 # Compute Galerkin approximation for u(x, t) over a uniform spatial discretization
 # unif_prt_spc = 4 means evaluating at 5 equally spaced points in space
-gal_approx_u = TimoshenkoModelObject.galerkin_approx_u(x_val=1.0)
-print(gal_approx_u)
+gal_approx_u = TimoshenkoModelObject.galerkin_approx_u(4)
 cond_u = TimoshenkoModelObject.cond_u
 
 # (Optional) You can similarly call:

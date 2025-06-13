@@ -2,48 +2,47 @@
 # Import standard and custom libraries
 # ======================================
 
-# NumPy: Used for efficient array operations and numerical computing
-import numpy as np
+import numpy as np  # For efficient numerical computations and array handling
 
-# Custom module with helper functions for Galerkin projection and numerical routines
-import utils.auxiliary as aux
-
-# Symbolic module for defining initial conditions for the Timoshenko model
-import utils.initial_conditions_symb as ic
-
-# Numerical solver module that implements the Galerkin method for PDEs
-import utils.solver as soln
+# Custom utility modules
+import utils.auxiliary as aux  # Auxiliary functions for projections and Galerkin evaluations
+import utils.solver as soln    # Solver for evolving modal coefficients using Galerkin time stepping
 
 
 class TimoshenkoModelSolver:
     """
-    Solver class for the nonlinear Timoshenko beam equations using the Galerkin method.
-    This approach reduces the coupled PDE system to a system of ODEs via modal decomposition.
+    Solver for nonlinear Timoshenko beam equations using a Galerkin projection method.
+    Transforms the PDE system into ODEs using modal decomposition, which are then solved numerically.
     """
 
-    def __init__(self, ell, T,
-                 alpha, beta, gamma, delta, a1, a2,
-                 n, N,
+    def __init__(self, ell: float, T: float,
+                 alpha: float, beta: float, gamma: float, delta: float,
+                 a1: float, a2: float,
+                 n: int, N: int,
                  f1, f2,
-                 u0, u1,
-                 v0, v1):
+                 u0, u1, v0, v1):
         """
-        Initialize the solver with problem parameters.
+        Initialize the solver with physical parameters, time domain, and initial/boundary data.
 
         Parameters:
-        - ell (float): Length of the spatial domain.
-        - T (float): Total time for simulation.
-        - alpha, beta, gamma, delta (float): Material and model coefficients.
-        - a1, a2 (float): Coupling coefficients for the PDE system.
-        - n (int): Number of time steps.
-        - N (int): Number of Galerkin modes (basis functions).
-        - f1, f2 (callable): External forces (functions of x and t).
-        - u0, u1, v0, v1 (callable): Initial condition functions for displacement and velocity.
+        - ell (float): Length of the beam domain [0, ell]
+        - T (float): Total simulation time
+        - alpha, beta, gamma, delta (float): Material/model parameters
+        - a1, a2 (float): Coupling coefficients in the PDE system
+        - n (int): Number of time steps
+        - N (int): Number of spatial Galerkin modes
+        - f1, f2 (callable): External forcing functions, f1(x, t) and f2(x, t)
+        - u0, u1, v0, v1 (callable): Initial functions that provide starting values for the numerical solution process
         """
-        self.ell = ell
-        self.T = T
+        # Time and space discretization
+        self.ell = ell                      # Spatial domain length
+        self.T = T                          # Final simulation time
+        self.n = n                          # Number of time steps
+        self.N = N                          # Number of Galerkin modes
+        self.tau = T / n                    # Time step size Δt
+        self.t = np.linspace(0, T, n + 1)   # Time grid: 0 to T with (n+1) points
 
-        # Model parameters
+        # Model constants
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
@@ -51,72 +50,73 @@ class TimoshenkoModelSolver:
         self.a1 = a1
         self.a2 = a2
 
-        # Time discretization
-        self.n = n
-        self.N = N
-        self.tau = T / n  # Time step size
-        self.t = np.linspace(0, T, n + 1)  # Discrete time grid
-
-        # Source functions and initial conditions
+        # External forcing functions
         self.f1 = f1
         self.f2 = f2
-        self.u0 = u0
-        self.u1 = u1
-        self.v0 = v0
-        self.v1 = v1
 
-        # Solve the system and retrieve modal coefficients and condition numbers
+        # Initial data for displacement and rotation
+        self.u0 = u0  # u(x,0)
+        self.u1 = u1  # ∂u/∂t(x,0)
+        self.v0 = v0  # v(x,0)
+        self.v1 = v1  # ∂v/∂t(x,0)
+        self.u_initial = [u0, u1]
+        self.v_initial = [v0, v1]
+
+        # Solve the PDE using Galerkin method and store results
         self.tilde_u, self.tilde_v, self.cond_u, self.cond_v = self.solve_system()
 
     def solve_system(self):
         """
-        Solve the reduced system of ODEs obtained by Galerkin projection.
+        Run the Galerkin solver to compute time evolution of modal coefficients.
 
         Returns:
-        - tilde_u, tilde_v (np.ndarray): Modal coefficients for u and v over time.
-        - cond_u, cond_v (list): Condition numbers of system matrices at each step.
+        - tilde_u (ndarray): Modal coefficients of u(x, t) over time
+        - tilde_v (ndarray): Modal coefficients of v(x, t) over time
+        - cond_u (ndarray): Condition numbers of system matrix for u
+        - cond_v (ndarray): Condition numbers of system matrix for v
         """
         return soln.solve_system(
-            data=ic.setup_initial_conditions(),
+            u_initial=self.u_initial,
+            v_initial=self.v_initial,
             f1=self.f1,
             f2=self.f2
         )
 
     def galerkin_approx_u(self, unif_prt_spc: int = None, x_val: float = None, k: int = None):
         """
-        Compute the Galerkin approximation of u(x, t).
+        Evaluate the Galerkin approximation of displacement u(x, t).
 
         Parameters:
-        - unif_prt_spc (int, optional): Number of uniform spatial points (used if x_val is None).
-        - x_val (float, optional): Specific spatial location to evaluate u(x, t).
-        - k (int, optional): Time step index (0 ≤ k ≤ n). If None, return full time evolution.
+        - unif_prt_spc (int): Number of points in uniform spatial grid [0, ell]
+        - x_val (float): Evaluate u(x, t) at a specific x-location
+        - k (int): Time step index (0 ≤ k ≤ n). If None, return values at all time steps.
 
         Returns:
-        - np.ndarray or float: Approximate solution u(x, t) at given x and t.
+        - np.ndarray or float: u(x, t) approximation at specified spatial/time location
         """
         if x_val is None and unif_prt_spc is None:
-            raise ValueError("Either 'unif_prt_spc' or 'x_val' must be specified.")
+            raise ValueError("Specify either 'unif_prt_spc' for a grid or 'x_val' for a point.")
 
-        # Generate spatial points
+        # --- Spatial discretization ---
         if x_val is not None:
             if not (0 <= x_val <= self.ell):
-                raise ValueError("x_val must lie within [0, ell].")
+                raise ValueError(f"x_val={x_val} is outside domain [0, {self.ell}]")
             x = np.array([x_val])
         else:
             x = np.linspace(0, self.ell, unif_prt_spc + 1)
 
-        # Evaluate initial data
-        row0 = self.u0(x)
-        row1 = self.u1(x)
+        # --- Evaluate initial data (t = 0 and t = τ) ---
+        row0 = self.u0(x)  # u(x, 0)
+        row1 = self.u1(x)  # u(x, τ)
 
-        # Evaluate modal approximation for later time steps (k ≥ 2)
+        # --- Evaluate Galerkin approximation for t ≥ 2 ---
         others = aux.galerkin_approx(self.ell, self.tilde_u, x)
 
-        # Handle output based on k
+        # --- Return value(s) based on time index ---
         if k is None:
             return np.vstack([row0, row1, others])
         if not (0 <= k <= self.n):
-            raise ValueError("Time step k must satisfy 0 ≤ k ≤ n.")
+            raise ValueError(f"Invalid time index: k={k}, must be 0 ≤ k ≤ {self.n}.")
         if k == 0:
             return row0[0] if x_val is not None else row0
         elif k == 1:
@@ -127,39 +127,39 @@ class TimoshenkoModelSolver:
 
     def galerkin_approx_v(self, unif_prt_spc: int = None, x_val: float = None, k: int = None):
         """
-        Compute the Galerkin approximation of v(x, t).
+        Evaluate the Galerkin approximation of rotation v(x, t).
 
         Parameters:
-        - unif_prt_spc (int, optional): Number of uniform spatial points (used if x_val is None).
-        - x_val (float, optional): Specific spatial location to evaluate v(x, t).
-        - k (int, optional): Time step index (0 ≤ k ≤ n). If None, return full time evolution.
+        - unif_prt_spc (int): Number of points in uniform spatial grid [0, ell]
+        - x_val (float): Evaluate v(x, t) at a specific x-location
+        - k (int): Time step index (0 ≤ k ≤ n). If None, return values at all time steps.
 
         Returns:
-        - np.ndarray or float: Approximate solution v(x, t) at given x and t.
+        - np.ndarray or float: v(x, t) approximation at specified spatial/time location
         """
         if x_val is None and unif_prt_spc is None:
-            raise ValueError("Either 'unif_prt_spc' or 'x_val' must be specified.")
+            raise ValueError("Specify either 'unif_prt_spc' for a grid or 'x_val' for a point.")
 
-        # Generate spatial points
+        # --- Spatial discretization ---
         if x_val is not None:
             if not (0 <= x_val <= self.ell):
-                raise ValueError("x_val must lie within [0, ell].")
+                raise ValueError(f"x_val={x_val} is outside domain [0, {self.ell}]")
             x = np.array([x_val])
         else:
             x = np.linspace(0, self.ell, unif_prt_spc + 1)
 
-        # Evaluate initial data
-        row0 = self.v0(x)
-        row1 = self.v1(x)
+        # --- Evaluate initial data (t = 0 and t = τ) ---
+        row0 = self.v0(x)  # v(x, 0)
+        row1 = self.v1(x)  # v(x, τ)
 
-        # Evaluate modal approximation for later time steps (k ≥ 2)
+        # --- Evaluate Galerkin approximation for t ≥ 2 ---
         others = aux.galerkin_approx(self.ell, self.tilde_v, x)
 
-        # Handle output based on k
+        # --- Return value(s) based on time index ---
         if k is None:
             return np.vstack([row0, row1, others])
         if not (0 <= k <= self.n):
-            raise ValueError("Time step k must satisfy 0 ≤ k ≤ n.")
+            raise ValueError(f"Invalid time index: k={k}, must be 0 ≤ k ≤ {self.n}.")
         if k == 0:
             return row0[0] if x_val is not None else row0
         elif k == 1:

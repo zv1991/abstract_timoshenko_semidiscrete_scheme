@@ -1,73 +1,80 @@
 # --- Imports ---
-import numpy as np  # Used for array creation, dot product, and numerical operations
+import numpy as np  # NumPy: essential for array-based numerical computing, linear algebra, etc.
 
-# Local utility modules
-import utils.config as cfg          # Configuration file holding constants like tau, N, ell, delta, etc.
-import utils.auxiliary as aux       # Contains helper functions: numerical integration, projections, Galerkin operations
+# Project-specific configuration and utility modules
+import utils.config as cfg          # cfg: Contains simulation settings like domain length, time step size, constants, and discretization parameters
+import utils.auxiliary as aux       # aux: Provides helper functions for integration, projections, Galerkin stencils, system solving, etc.
 
-def solve_system(data, f1, f2, *, h=1e-3, derivmeth='nd', tol=1e-6, method='hglq',
-                 max_n=50, max_depth=20, n_points=10):
+
+def solve_system(
+    u_initial, v_initial, f1, f2,
+    *, h=1e-3, derivmeth='nd', tol=1e-6, method='hglq',
+    max_n=50, max_depth=20, n_points=10
+):
     """
-    Solve a coupled PDE system using an explicit Galerkin method.
+    Solves a coupled nonlinear PDE system using a Galerkin-based time-stepping approach.
 
     Parameters:
-        data (dict): Dictionary containing 'u_initial' and 'v_initial' as callable initial functions.
-        f1, f2 (callable): Source term functions f1(x, t), f2(x, t).
-        h (float, optional): Step size for numerical differentiation (default 1e-3).
-        derivmeth (str, optional): Method for derivatives, e.g., 'nd' (default).
-        tol (float, optional): Absolute error tolerance for quadrature (default 1e-6).
-        method (str, optional): Quadrature method ('glq', 'hglq', 'scipy') (default 'hglq').
-        max_n (int, optional): Maximum order for Gauss-Legendre quadrature (default 50).
-        max_depth (int, optional): Maximum recursion depth for hierarchical Gauss-Legendre (default 20).
-        n_points (int, optional): Number of points per interval for hierarchical Gauss-Legendre (default 10).
+        u_initial (tuple): Initial functions (u0, u1) where each u_i is a function of x.
+        v_initial (tuple): Initial functions (v0, v1) where each v_i is a function of x.
+        f1, f2 (callable): Time-dependent source functions f1(x, t), f2(x, t).
+        h (float): Step size for numerical differentiation (used in auxiliary computations).
+        derivmeth (str): Method for derivative approximation (default is 'nd' for numerical differentiation).
+        tol (float): Tolerance for adaptive quadrature.
+        method (str): Quadrature integration method ('hglq', 'glq', 'scipy').
+        max_n (int): Maximum quadrature order.
+        max_depth (int): Maximum recursion depth for hierarchical integration.
+        n_points (int): Number of evaluation points per integration subinterval.
 
     Returns:
-        tuple:
-            tild_u (ndarray): Modal coefficients for u over time (shape: (time_steps, modes)).
-            tild_v (ndarray): Modal coefficients for v over time.
-            cond_u (ndarray): Condition numbers of u-system matrices at each time step.
-            cond_v (ndarray): Condition numbers of v-system matrices at each time step.
+        tuple: (tild_u, tild_v, cond_u, cond_v)
+            - tild_u, tild_v (ndarray): Modal coefficients of u and v over time.
+            - cond_u, cond_v (ndarray): Condition numbers of the system matrices at each time step.
     """
-    # --- Preprocess integration parameters ---
-    quad_kwargs = dict(tol=tol, method=method, max_n=max_n, max_depth=max_depth, n_points=n_points)
 
-    # --- Initial conditions ---
-    u_initial = data['u_initial']
-    v_initial = data['v_initial']
+    # --- Define keyword arguments for quadrature routines ---
+    quad_kwargs = dict(
+        tol=tol,
+        method=method,
+        max_n=max_n,
+        max_depth=max_depth,
+        n_points=n_points
+    )
 
-    # --- Allocate output arrays ---
-    tild_u = np.zeros((cfg.n - 1, cfg.N))
-    tild_v = np.zeros((cfg.n - 1, cfg.N))
-    cond_u = np.zeros(cfg.n - 1)
-    cond_v = np.zeros(cfg.n - 1)
+    # --- Initialize storage arrays for solution and diagnostics ---
+    tild_u = np.zeros((cfg.n - 1, cfg.N))  # Modal coefficients of u
+    tild_v = np.zeros((cfg.n - 1, cfg.N))  # Modal coefficients of v
+    cond_u = np.zeros(cfg.n - 1)           # Condition numbers for u matrix at each step
+    cond_v = np.zeros(cfg.n - 1)           # Condition numbers for v matrix at each step
 
-    # --- Project source terms onto modal basis at each time step ---
+    # --- Precompute time-dependent source function projections ---
     f1_integr = aux.compute_time_dependent_integrals(f1, cfg.N, cfg.ell, cfg.t, **quad_kwargs)
     f2_integr = aux.compute_time_dependent_integrals(f2, cfg.N, cfg.ell, cfg.t, **quad_kwargs)
 
-    # --- Compute projections of initial conditions and spatial derivatives ---
+    # --- Compute initial condition projections and spatial derivatives ---
     init_data = aux.compute_initial_integrals(
-        u_initial, v_initial, cfg.N, cfg.ell,
-        h=h, derivmeth=derivmeth, **quad_kwargs
+        u_initial, v_initial, cfg.N, cfg.ell, h=h, derivmeth=derivmeth, **quad_kwargs
     )
-    u0_integr, u1_integr = init_data['u_proj']  # u initial position and velocity projections
-    v0_integr, v1_integr = init_data['v_proj']  # v initial position and velocity projections
-    diff1u1 = init_data['diff1_u1']             # First spatial derivative of u at t=0
-    diff1v1 = init_data['diff1_v1']             # First spatial derivative of v at t=0
-    diff2u = init_data['diff2_u']               # Second spatial derivative of u over modes
-    diff2v = init_data['diff2_v']               # Second spatial derivative of v over modes
+    u0_integr, u1_integr = init_data['u_proj']
+    v0_integr, v1_integr = init_data['v_proj']
+    diff1u1 = init_data['diff1_u1']
+    diff1v1 = init_data['diff1_v1']
+    diff2u = init_data['diff2_u']
+    diff2v = init_data['diff2_v']
 
-    # --- Precompute scalar constants for matrix terms ---
+    # --- Coefficient for v-equation matrix ---
     a0 = 4 / (2 + cfg.delta * cfg.tau**2)
 
-    # --- Initialize nonlinear term q using integral of squared spatial derivative of initial function u ---
+    # --- Initialize q (nonlinear term) from ∫(u1')² ---
     integral, _ = aux.integrate_fprime_sq(u_initial[1], cfg.ell)
     q_prev = cfg.alpha + cfg.beta * integral
 
-    # --- Main time-stepping loop ---
+    # --- Time-stepping loop ---
     for k in range(cfg.n - 1):
+
+        # --- Construct RHS for Galerkin system at each step ---
         if k == 0:
-            # --- Special Case: Time step 2 ---
+            # Step 2: Explicit handling of first time step
             b1 = (4 / cfg.ell**2) * (
                 cfg.tau**2 * f1_integr[k]
                 + 2 * u1_integr
@@ -82,49 +89,61 @@ def solve_system(data, f1, f2, *, h=1e-3, derivmeth='nd', tol=1e-6, method='hglq
                 - (1 + 0.5 * cfg.tau**2 * cfg.delta) * v0_integr
                 + 0.5 * cfg.tau**2 * cfg.gamma * diff2v[k]
             )
+
         elif k == 1:
-            # --- Special Case: Time step 3 ---
+            # Step 3: Use Galerkin stencils from step 2
             b1 = (4 / cfg.ell**2) * (
                 cfg.tau**2 * f1_integr[k]
                 + 0.5 * cfg.ell**2 * aux.galerkin_stencils(cfg.N, tild_u[k - 1])
-                - 0.5 * cfg.a1 * cfg.tau**2 * cfg.ell * aux.galerkin_stencils(cfg.N, tild_v[k - 1], operator="first-order")
+                - 0.5 * cfg.a1 * cfg.tau**2 * cfg.ell *
+                  aux.galerkin_stencils(cfg.N, tild_v[k - 1], operator="first-order")
                 - u1_integr
                 + 0.5 * cfg.tau**2 * q_prev * diff2u[k]
             )
             b2 = (2 * a0 / cfg.ell**2) * (
                 cfg.tau**2 * f2_integr[k]
                 + 0.5 * cfg.ell**2 * aux.galerkin_stencils(cfg.N, tild_v[k - 1])
-                + 0.5 * cfg.a2 * cfg.tau**2 * cfg.ell * aux.galerkin_stencils(cfg.N, tild_u[k - 1], operator="first-order")
+                + 0.5 * cfg.a2 * cfg.tau**2 * cfg.ell *
+                  aux.galerkin_stencils(cfg.N, tild_u[k - 1], operator="first-order")
                 - (1 + 0.5 * cfg.tau**2 * cfg.delta) * v1_integr
                 + 0.5 * cfg.tau**2 * cfg.gamma * diff2v[k]
             )
+
         else:
-            # --- General Case: Time step greater than or equal to 4 ---
+            # General step: use previous modal data for recursion
             b1 = (
                 (4 * cfg.tau**2 / cfg.ell**2) * f1_integr[k]
                 + 2 * aux.galerkin_stencils(cfg.N, tild_u[k - 1])
-                - (2 * cfg.a1 * cfg.tau**2 / cfg.ell) * aux.galerkin_stencils(cfg.N, tild_v[k - 1], operator="first-order")
+                - (2 * cfg.a1 * cfg.tau**2 / cfg.ell) *
+                  aux.galerkin_stencils(cfg.N, tild_v[k - 1], operator="first-order")
             )
             b2 = (
                 (2 * a0 * cfg.tau**2 / cfg.ell**2) * f2_integr[k]
                 + a0 * aux.galerkin_stencils(cfg.N, tild_v[k - 1])
-                + (a0 * cfg.a2 * cfg.tau**2 / cfg.ell) * aux.galerkin_stencils(cfg.N, tild_u[k - 1], operator="first-order")
+                + (a0 * cfg.a2 * cfg.tau**2 / cfg.ell) *
+                  aux.galerkin_stencils(cfg.N, tild_u[k - 1], operator="first-order")
             )
 
-        # --- Diagnostics: compute condition numbers for matrices being solved ---
-        cond_u[k] = aux.condition_number_associated_matrix(cfg.N, cfg.ell, 1, 0.5 * cfg.tau**2 * q_prev)
-        cond_v[k] = aux.condition_number_associated_matrix(cfg.N, cfg.ell, 1 + 0.5 * cfg.tau**2 * cfg.delta, 0.5 * cfg.tau**2 * cfg.gamma)
+        # --- Compute condition numbers of matrices at this step ---
+        cond_u[k] = aux.condition_number_associated_matrix(
+            cfg.N, cfg.ell, 1, 0.5 * cfg.tau**2 * q_prev
+        )
+        cond_v[k] = aux.condition_number_associated_matrix(
+            cfg.N, cfg.ell, 1 + 0.5 * cfg.tau**2 * cfg.delta, 0.5 * cfg.tau**2 * cfg.gamma
+        )
 
-        # --- Solve linear systems for u and v modal coefficients ---
+        # --- Solve linear systems to get modal coefficients ---
         tild_u[k] = aux.sys_soln(b1, cfg.N, 1, 0.5 * cfg.tau**2 * q_prev, cfg.ell)
-        tild_v[k] = aux.sys_soln(b2, cfg.N, 1 + 0.5 * cfg.tau**2 * cfg.delta, 0.5 * cfg.tau**2 * cfg.gamma, cfg.ell)
+        tild_v[k] = aux.sys_soln(
+            b2, cfg.N, 1 + 0.5 * cfg.tau**2 * cfg.delta, 0.5 * cfg.tau**2 * cfg.gamma, cfg.ell
+        )
 
-        # --- Apply correction for k >= 2 to account for previous time step values ---
+        # --- Apply leapfrog-type correction ---
         if k >= 2:
             tild_u[k] -= tild_u[k - 2]
             tild_v[k] -= tild_v[k - 2]
 
-        # --- Update nonlinear term q for next iteration using squared norm of current modal coeffs of u ---
-        q_prev = cfg.alpha + cfg.beta * np.dot(tild_u[k], tild_u[k])
+        # --- Update q for next step using new solution ---
+        q_prev = cfg.alpha + cfg.beta * np.dot(tild_u[k], tild_u[k])  # Nonlinear update
 
     return tild_u, tild_v, cond_u, cond_v
