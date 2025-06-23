@@ -1169,3 +1169,124 @@ def galerkin_approx(ell: float, coeff: np.ndarray, x: np.ndarray) -> np.ndarray:
 
     # If x was scalar, return a vector (n,) with each row's result at that scalar x
     return result[:, 0] if is_scalar else result
+
+# ============================================
+# Function: compute_L2_error
+# Short Description: 
+#   Computes the L2 error between exact and Galerkin-approximated solutions over a specified spatial domain.
+#
+# Detailed Description:
+#   This function calculates the L2 error, which measures the difference between the exact solution and the 
+#   Galerkin-approximated solution across the domain [0, ell]. It supports multiple integration methods (e.g., 
+#   Gauss-Legendre quadrature, hierarchical Gauss-Legendre quadrature, or scipy's integrate.quad) for 
+#   adaptive numerical integration. The L2 error can be computed either for a specific time step (k) or for all 
+#   time steps if no time index is specified.
+#
+# Parameters:
+#   exact_solution_generator : callable or list of callables
+#       Exact solution(s) for each time step: either a single function or a list of functions.
+#   approx_solution_generator : callable or list of callables
+#       Galerkin approximation(s) for each time step: either a single function or a list of functions.
+#   ell : float
+#       The domain length for integration [0, ell].
+#   k : int, optional
+#       A specific time step index to compute the error for. If None, computes for all time steps.
+#   tol : float, optional
+#       The integration tolerance (default is 1e-6).
+#   method : str, optional
+#       The integration method to use: 'glq', 'hglq', or 'scipy' (default is 'hglq').
+#
+# Returns:
+#   float or list of floats
+#       The L2 error at time t_k if k is specified, or the L2 errors for all time steps if k is None.
+# ============================================
+
+def compute_L2_error(
+    exact_solution_generator,
+    approx_solution_generator,
+    ell: float,
+    k: int = None,
+    tol: float = 1e-6,
+    method: str = "hglq"
+):
+    """
+    Compute the L2 error between exact and Galerkin-approximated solutions.
+
+    This function calculates the L2 error, which quantifies the difference between the exact solution 
+    and the Galerkin-approximated solution over a given spatial domain [0, ell].
+
+    Parameters
+    ----------
+    exact_solution_generator : callable or list of callables
+        Exact solution(s): either a single function or list of functions of the form x ↦ u(x, t_k).
+        If a list, each element corresponds to a different time step solution.
+    approx_solution_generator : callable or list of callables
+        Galerkin approximation(s): either a single function or list of functions of the form x ↦ ũ_k(x).
+        If a list, each element corresponds to a different time step solution.
+    ell : float
+        Domain length for integration [0, ell], which specifies the spatial range.
+    k : int, optional
+        Specific time index to compute error for. If None, compute the L2 error for all time steps.
+    tol : float, optional
+        Integration tolerance. The accuracy of the numerical integration method.
+    method : str, optional
+        Integration method to use: 'glq' (Gauss-Legendre quadrature), 'hglq' (Hierarchical Gauss-Legendre quadrature), 
+        or 'scipy' (scipy.integrate.quad).
+
+    Returns
+    -------
+    float or list of floats
+        The L2 error at time t_k (if k is specified) or for all time steps.
+    """
+
+    # Ensure both inputs are lists of callables (functions). Convert single functions to lists.
+    if callable(exact_solution_generator):
+        exact_solution_generator = [exact_solution_generator]
+    if callable(approx_solution_generator):
+        approx_solution_generator = [approx_solution_generator]
+
+    # Check that the lengths of the exact and approximate solution lists match
+    if len(exact_solution_generator) != len(approx_solution_generator):
+        raise ValueError("Mismatch: exact and approx solution lists must have the same length.")
+
+    def compute_error_at_k(k_idx):
+        """
+        Compute the L2 error for a specific time step k_idx.
+
+        This function calculates the squared difference between the exact and approximate solutions,
+        integrates it over the spatial domain [0, ell], and returns the L2 norm (square root of the integral).
+        
+        Parameters
+        ----------
+        k_idx : int
+            Index corresponding to the time step at which to compute the error.
+
+        Returns
+        -------
+        float
+            L2 error for the given time step k_idx.
+        """
+        # Extract the exact and approximate solutions for the given time step k_idx
+        exact_fn = exact_solution_generator[k_idx]
+        approx_fn = approx_solution_generator[k_idx]
+
+        # Define the squared difference between the exact and approximate solutions
+        def squared_diff(x):
+            return (exact_fn(x) - approx_fn(x)) ** 2
+
+        # Use adaptive quadrature to compute the integral of squared_diff over [0, ell]
+        # Depending on the chosen method, we use an appropriate integration technique
+        integral, _, _ = unified_adaptive_quadrature(
+            squared_diff, ell=ell, tol=tol, method=method
+        )
+        # Return the square root of the integral (L2 error)
+        return np.sqrt(integral)
+
+    # If a specific time index k is provided, compute the error for that time step
+    if k is not None:
+        if not (0 <= k < len(exact_solution_generator)):
+            raise ValueError(f"k = {k} out of bounds for list of length {len(exact_solution_generator)}")
+        return compute_error_at_k(k)
+
+    # If no time index is provided, compute the error for all time steps and return a list of errors
+    return [compute_error_at_k(i) for i in range(len(exact_solution_generator))]

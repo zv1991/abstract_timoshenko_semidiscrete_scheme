@@ -2,32 +2,39 @@
 # IMPORT MODULES
 # =========================
 
-import numpy as np  # For efficient array handling and numerical operations
+import numpy as np  # Efficient numerical computations and array manipulation
 
-# Configuration: time step (tau), domain length (ell), time grid (t), and PDE parameters (a1, a2, alpha, etc.)
+# Configuration parameters: time step size, domain length, physical constants, and time grid
 import utils.config as cfg
 
-# Symbolic derivatives of displacement functions (u, v and their time/spatial derivatives)
+# Symbolic PDE expressions: displacement fields, derivatives, source terms, etc.
 from utils.symbolic_derivatives import SymbolicDerivatives as SD
 
 
 # =========================
-# UTILITY FUNCTION: TAYLOR EXPANSION
+# TAYLOR EXPANSION UTILITY
 # =========================
 
 def taylor_expansion(tau: float, func0, func1, func2):
     """
-    Compute a second-order Taylor time approximation:
-        f(x, τ) ≈ f(x, 0) + τ·f'(x, 0) + (τ² / 2)·f''(x, 0)
+    Compute a second-order Taylor approximation in time:
+        f(x, τ) ≈ f(x, 0) + τ·f'(x, 0) + ½·τ²·f''(x, 0)
 
-    Parameters:
-        tau (float): Time step size (Δt or τ)
-        func0 (callable): f(x, 0) — Function value at initial time
-        func1 (callable): f'(x, 0) — First time derivative at initial time
-        func2 (callable): f''(x, 0) — Second time derivative at initial time
+    Parameters
+    ----------
+    tau : float
+        Time step size (Δt or τ)
+    func0 : callable
+        f(x, 0), function at t=0
+    func1 : callable
+        f'(x, 0), first time derivative at t=0
+    func2 : callable
+        f''(x, 0), second time derivative at t=0
 
-    Returns:
-        callable: Approximation of f(x, τ)
+    Returns
+    -------
+    callable
+        A function of x that approximates f(x, τ)
     """
     return lambda x: func0(x) + tau * func1(x) + 0.5 * tau**2 * func2(x)
 
@@ -36,47 +43,49 @@ def taylor_expansion(tau: float, func0, func1, func2):
 # SYMBOLIC FIELD DEFINITIONS
 # =========================
 
-# Symbolic displacement field u(x, t)
-u = lambda x, t: SD.u(x, t)
-
-# Symbolic rotation field v(x, t)
-v = lambda x, t: SD.v(x, t)
+# Symbolic displacement and rotation fields from the symbolic derivatives module
+u = lambda x, t: SD.u(x, t)  # u(x, t): Displacement
+v = lambda x, t: SD.v(x, t)  # v(x, t): Rotation
 
 
 # =========================
-# INITIAL DATA CONSTRUCTOR FOR THE TIMOSHENKO BEAM
+# INITIAL DATA GENERATOR
 # =========================
 
 def get_initial_data():
     """
-    Construct symbolic source terms and initial data for solving the Timoshenko beam system.
+    Constructs initial data (displacement, velocity, forcing) using symbolic PDE definitions.
 
-    Returns:
-        f1, f2 (callable): Forcing functions for u and v equations
-        u0, u1 (callable): Initial data for displacement field u(x, 0) and its time-evolved value u(x, τ)
-        v0, v1 (callable): Initial data for rotation field v(x, 0) and its time-evolved value v(x, τ)
+    Returns
+    -------
+    f1, f2 : callable
+        Source terms for the u and v equations respectively.
+    u0, u1 : callable
+        u(x, 0) and u(x, τ): initial displacement and Taylor-expanded value.
+    v0, v1 : callable
+        v(x, 0) and v(x, τ): initial rotation and Taylor-expanded value.
     """
 
-    # --- Source Terms ---
-    f1 = lambda x, t: SD.f1(x, t)  # Longitudinal external force
-    f2 = lambda x, t: SD.f2(x, t)  # Rotational external force
+    # --- Source (forcing) terms ---
+    f1 = lambda x, t: SD.f1(x, t)  # Forcing function in u-equation
+    f2 = lambda x, t: SD.f2(x, t)  # Forcing function in v-equation
 
-    # --- Initial Conditions for u(x, t) ---
-    varphi0 = lambda x: u(x, 0)  # u(x, 0)
-    varphi1 = lambda x: SD.diff1t_u(x, 0)  # ∂u/∂t at t=0
+    # --- Displacement u(x, t) initial values ---
+    varphi0 = lambda x: u(x, 0)  # Initial value u(x, 0)
+    varphi1 = lambda x: SD.diff1t_u(x, 0)  # Time derivative ∂u/∂t at t=0
 
-    # ∂²u/∂t² derived from the PDE:
+    # Second time derivative ∂²u/∂t² using PDE expression
     varphi2 = lambda x: (
         f1(x, 0)
         - cfg.a1 * SD.diff1x_v(x, 0)
         + (cfg.alpha + cfg.beta * SD.integr_term(0)) * SD.diff2x_u(x, 0)
     )
 
-    # --- Initial Conditions for v(x, t) ---
-    psi0 = lambda x: v(x, 0)  # v(x, 0)
-    psi1 = lambda x: SD.diff1t_v(x, 0)  # ∂v/∂t at t=0
+    # --- Rotation v(x, t) initial values ---
+    psi0 = lambda x: v(x, 0)  # Initial value v(x, 0)
+    psi1 = lambda x: SD.diff1t_v(x, 0)  # Time derivative ∂v/∂t at t=0
 
-    # ∂²v/∂t² derived from the PDE:
+    # Second time derivative ∂²v/∂t² using PDE expression
     psi2 = lambda x: (
         f2(x, 0)
         + cfg.a2 * SD.diff1x_u(x, 0)
@@ -84,7 +93,7 @@ def get_initial_data():
         - cfg.delta * psi0(x)
     )
 
-    # --- Apply 2nd-order Taylor Expansion to compute approximate solution at t = τ ---
+    # --- Compute approximate initial values at t = τ via Taylor expansion ---
     u0 = varphi0
     u1 = taylor_expansion(cfg.tau, varphi0, varphi1, varphi2)
 
@@ -95,7 +104,7 @@ def get_initial_data():
 
 
 # =========================
-# EXACT ANALYTICAL SOLUTION EVALUATOR
+# EXACT SOLUTION EVALUATOR
 # =========================
 
 def exact_solution(
@@ -105,54 +114,163 @@ def exact_solution(
     k: int = None
 ) -> np.ndarray | float:
     """
-    Evaluate the exact analytical solution (from symbolic expression) of u(x, t) or v(x, t).
+    Evaluate the exact symbolic solution u(x, t) or v(x, t) over a grid or at a point in time and space.
 
-    Supports evaluation at:
-    - A uniform spatial grid or a specific point `x_val`
-    - A specific time index `k`, or full time evolution if `k` is None
+    Parameters
+    ----------
+    solution_type : str
+        'u' for displacement or 'v' for rotation.
+    unif_prt_spc : int, optional
+        Number of spatial partitions for generating a grid.
+    x_val : float, optional
+        Single spatial point in [0, ell] to evaluate the function at.
+    k : int, optional
+        Time index (0 ≤ k ≤ n). If None, returns all time steps.
 
-    Parameters:
-        solution_type (str): Choose 'u' for displacement or 'v' for rotation
-        unif_prt_spc (int, optional): Number of uniform partitions over [0, ell] for grid evaluation
-        x_val (float, optional): A specific spatial location in [0, ell]
-        k (int, optional): Time index ∈ [0, n]; if provided, return only solution at t_k
+    Returns
+    -------
+    np.ndarray or float
+        - Full time evolution array of shape (n+1, len(x)) if `k` is None and grid is specified.
+        - 1D array at single time `k` across space.
+        - Single float if both `x_val` and `k` are given.
 
-    Returns:
-        np.ndarray | float:
-            - (n+1, len(x)) if full time evolution over a grid
-            - 1D array if grid at single time t_k
-            - float if point evaluation at x_val and time index k
-
-    Raises:
-        ValueError: If any argument is outside its expected domain
+    Raises
+    ------
+    ValueError
+        If arguments are outside valid domains or inconsistent.
     """
 
-    # --- Validate solution type ---
+    # Select the appropriate symbolic function
     if solution_type == 'u':
         func = u
     elif solution_type == 'v':
         func = v
     else:
-        raise ValueError("solution_type must be either 'u' or 'v'.")
+        raise ValueError("solution_type must be 'u' or 'v'.")
 
-    # --- Validate and construct spatial domain ---
+    # Ensure spatial evaluation is properly defined
     if x_val is None and unif_prt_spc is None:
-        raise ValueError("Either `unif_prt_spc` or `x_val` must be provided.")
+        raise ValueError("Specify either `x_val` (single point) or `unif_prt_spc` (grid).")
 
     if x_val is not None:
         if not (0 <= x_val <= cfg.ell):
-            raise ValueError(f"x_val = {x_val} is outside the spatial domain [0, {cfg.ell}].")
-        x = np.array([x_val], dtype=float)  # Evaluate at a single spatial point
+            raise ValueError(f"x_val = {x_val} is outside the domain [0, {cfg.ell}].")
+        x = np.array([x_val], dtype=float)  # Single-point evaluation
     else:
-        x = np.linspace(0, float(cfg.ell), unif_prt_spc + 1)  # Uniform spatial grid
+        x = np.linspace(0, cfg.ell, unif_prt_spc + 1)  # Uniform spatial grid
 
-    # --- Evaluate symbolic function over all time steps ---
+    # Evaluate over all time steps
     values = np.array([func(x, t_i) for t_i in cfg.t])  # Shape: (n+1, len(x))
 
-    # --- Handle time index output selection ---
     if k is not None:
         if not (0 <= k <= cfg.n):
-            raise ValueError(f"k = {k} is invalid. Must be in range 0 to {cfg.n}.")
-        return values[k]  # Either float (if x_val) or 1D array
+            raise ValueError(f"Invalid time index k = {k}. Must be in range [0, {cfg.n}].")
+        return values[k]  # Return slice at t_k
 
-    return values  # Entire time evolution across space
+    return values  # Return full time evolution
+
+
+# =========================
+# EXACT SOLUTION FUNCTION GENERATOR
+# =========================
+
+def compute_exact_solution(
+    solution_type: str,
+    k: int = None,
+    x_vals: float | int | list | np.ndarray = None
+):
+    """
+    Construct or evaluate the exact symbolic solution u(x, t_k) or v(x, t_k).
+
+    Parameters
+    ----------
+    solution_type : str
+        Type of solution to return:
+            'u' - Displacement field
+            'v' - Rotation field
+    k : int, optional
+        Time step index (0 ≤ k ≤ cfg.n). If None, applies to all time steps.
+    x_vals : float | int | list | np.ndarray, optional
+        Spatial location(s) to evaluate the solution. If None, returns callable(s)
+        instead of evaluated values.
+
+    Returns
+    -------
+    callable or list of callables, or float or np.ndarray
+        - If x_vals is None:
+            → Single callable if k is provided
+            → List of callables if k is None
+        - If x_vals is provided:
+            → Single float if x_vals is scalar and k is given
+            → NumPy array of evaluations otherwise
+
+    Raises
+    ------
+    ValueError
+        If `solution_type` is not 'u' or 'v', or if k is out of valid range.
+    TypeError
+        If x_vals is of an unsupported type.
+    """
+
+    # --- Select the symbolic solution function based on solution type ---
+    if solution_type == 'u':
+        func = u  # Symbolic displacement function: u(x, t)
+    elif solution_type == 'v':
+        func = v  # Symbolic rotation function: v(x, t)
+    else:
+        raise ValueError("solution_type must be either 'u' or 'v'.")
+
+    # --- Helper function to normalize and validate x_vals ---
+    def validate_and_convert_x_vals(x_input):
+        """
+        Ensures x_vals is of an acceptable type and converts it to float or ndarray.
+
+        Parameters
+        ----------
+        x_input : float | int | list | np.ndarray | None
+            Input spatial location(s)
+
+        Returns
+        -------
+        float or np.ndarray or None
+        """
+        if isinstance(x_input, (float, int)):
+            return float(x_input)
+        elif isinstance(x_input, list):
+            return np.array(x_input, dtype=float)
+        elif isinstance(x_input, np.ndarray):
+            return x_input.astype(float)
+        elif x_input is None:
+            return None
+        else:
+            raise TypeError("x_vals must be float, int, list, or np.ndarray.")
+
+    x_vals = validate_and_convert_x_vals(x_vals)
+
+    # --- Construct callable u(x, t_k) or v(x, t_k) at time index k_idx ---
+    def construct_exact_function_at_k(k_idx: int):
+        """
+        Returns a function representing u(x, t_k) or v(x, t_k).
+
+        Parameters
+        ----------
+        k_idx : int
+            Time index (0 ≤ k_idx ≤ cfg.n)
+
+        Returns
+        -------
+        callable
+            Function of one spatial variable x
+        """
+        if not (0 <= k_idx <= cfg.n):
+            raise ValueError(f"Time index k = {k_idx} must be in range [0, {cfg.n}].")
+        return lambda x: func(x, cfg.t[k_idx])
+
+    # --- Case 1: Single time step evaluation ---
+    if k is not None:
+        fn = construct_exact_function_at_k(k)
+        return fn if x_vals is None else fn(x_vals)
+
+    # --- Case 2: All time steps ---
+    all_functions = [construct_exact_function_at_k(k_idx) for k_idx in range(cfg.n + 1)]
+    return all_functions if x_vals is None else np.array([fn(x_vals) for fn in all_functions])
