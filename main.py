@@ -1,95 +1,99 @@
+# ===============================================================
+# SCRIPT: Solve and Analyze Timoshenko Beam Model (Galerkin)
+# ---------------------------------------------------------------
+# Description:
+#   - Loads benchmark data for the nonlinear Timoshenko beam PDE
+#   - Solves using a Galerkin method
+#   - Computes L2 error over time
+#   - Generates a LaTeX-styled error plot (saved as PDF)
+# ===============================================================
+
 # ---------------------------------------------------------------
 # IMPORT REQUIRED MODULES AND CLASSES
 # ---------------------------------------------------------------
 
-# Compute the L2 norm error between the exact and approximate solution
-from utils.auxiliary import compute_L2_error as L2_norm
+# Utility functions: L2 norm computation, LaTeX-styled plotting
+import utils.auxiliary as aux
 
-# Provides symbolic benchmark data for the Timoshenko beam model
+# Provides exact symbolic benchmark data (forces, initial conditions, solution)
 from utils.class_timoshenko_benchmark import TimoshenkoBenchmark
 
-# Configuration file containing physical constants and solver settings
+# Simulation configuration (domain, time, damping, discretization settings)
 import utils.config as cfg
 
-# Galerkin solver implementation for the nonlinear Timoshenko beam PDE system
+# Galerkin solver implementation for the nonlinear Timoshenko beam equations
 from utils.class_timoshenko import TimoshenkoModelSolver
 
-# For plotting the L2 error over time
-import matplotlib.pyplot as plt
-
 
 # ---------------------------------------------------------------
-# GENERATE SYMBOLIC BENCHMARK DATA
+# STEP 1: LOAD SYMBOLIC BENCHMARK DATA
 # ---------------------------------------------------------------
 
-# Instantiate benchmark object to obtain reference solutions and initial data
+# Instantiate the benchmark problem class
 benchmark = TimoshenkoBenchmark()
 
-# Retrieve:
-# - f1, f2: external force source terms
-# - u0, u1: initial displacement and its time derivative
-# - v0, v1: initial rotation and its time derivative
+# Extract source terms and initial conditions
+# f1, f2: external force terms
+# u0, u1: displacement and initial velocity
+# v0, v1: rotation and initial angular velocity
 f1, f2, u0, u1, v0, v1 = benchmark.get_initial_data()
 
 
 # ---------------------------------------------------------------
-# INITIALIZE AND CONFIGURE THE GALERKIN SOLVER
+# STEP 2: INITIALIZE THE GALERKIN SOLVER
 # ---------------------------------------------------------------
 
-# Create an instance of the Galerkin solver for the nonlinear Timoshenko beam equations
+# Instantiate the solver using configuration values
 solver = TimoshenkoModelSolver(
-    ell=cfg.ell,         # Length of the beam (spatial domain)
-    T=cfg.T,             # Total simulation time
-    alpha=cfg.alpha,     # Memory damping coefficient (displacement equation)
-    beta=cfg.beta,       # Viscous damping coefficient
-    gamma=cfg.gamma,     # Rotational stiffness
-    delta=cfg.delta,     # Damping in the rotational equation
-    a1=cfg.a1,           # Coupling term: ∂v/∂x → displacement
-    a2=cfg.a2,           # Coupling term: ∂u/∂x → rotation
-    n=cfg.n,             # Number of time steps
-    N=cfg.N,             # Number of spatial Galerkin modes
-    f1=f1, f2=f2,        # External forces
-    u0=u0, u1=u1,        # Displacement initial conditions
-    v0=v0, v1=v1         # Rotation initial conditions
+    ell=cfg.ell,        # Beam length (domain: x ∈ [0, ell])
+    T=cfg.T,            # Total simulation time
+    alpha=cfg.alpha,    # Damping in displacement equation
+    beta=cfg.beta,      # Viscous damping coefficient
+    gamma=cfg.gamma,    # Rotational stiffness
+    delta=cfg.delta,    # Damping in rotational equation
+    a1=cfg.a1,          # Coupling term: ∂v/∂x affects u
+    a2=cfg.a2,          # Coupling term: ∂u/∂x affects v
+    n=cfg.n,            # Number of time steps
+    N=cfg.N,            # Number of Galerkin spatial modes
+    f1=f1, f2=f2,       # External forces
+    u0=u0, u1=u1,       # Displacement and its time derivative
+    v0=v0, v1=v1        # Rotation and its time derivative
+    
 )
 
 
 # ---------------------------------------------------------------
-# COMPUTE APPROXIMATE SOLUTION AND L2 ERROR
+# STEP 3: COMPUTE L2 ERROR BETWEEN NUMERICAL AND EXACT SOLUTION
 # ---------------------------------------------------------------
 
-# Calculate L2 error between the exact solution u(x, t) and its Galerkin approximation
-L2_error = L2_norm(
-    benchmark.callable_exact_solution('u'),    # Callable exact solution u(x, t)
-    solver.callable_compute_ansatz('u'),       # Callable Galerkin approximation
-    cfg.ell                                    # Domain length for integration
+# Compute L2 norm error between:
+#   - Exact solution u(x, t)
+#   - Galerkin approximation u_h(x, t)
+L2_error = aux.compute_L2_error(
+    benchmark.callable_exact_solution('u'),     # Reference solution
+    solver.callable_compute_ansatz('u'),        # Numerical solution
+    cfg.ell                                     # Integration over spatial domain [0, ell]
 )
 
 
 # ---------------------------------------------------------------
-# DISPLAY L2 ERROR OVER TIME OR MODES
+# STEP 4: PRINT L2 ERROR (TIME-DEPENDENT)
 # ---------------------------------------------------------------
 
-# Check whether L2_error is a sequence (time series) or a scalar
-if hasattr(L2_error, '__len__'):
-    # L2 error is time-dependent; print error for each step
-    for k, err in enumerate(L2_error):
-        print(f"For k = {k}, the L2 error = {err:.6e}")
-else:
-    # L2 error is a single scalar value
-    print(f"The L2 error = {L2_error:.6e}")
+# Time-dependent error array: print error at each time step
+for k in range(cfg.n + 1):
+    print(f"Time step {k:3d}: L2 error = {L2_error[k]:.6e}")
 
 
 # ---------------------------------------------------------------
-# PLOT L2 ERROR OVER TIME
+# STEP 5: PLOT L2 ERROR OVER TIME AND EXPORT TO PDF
 # ---------------------------------------------------------------
 
-plt.figure(figsize=(8, 4))
-plt.plot(cfg.t, L2_error, marker='o', linestyle='-', label='L2 Error')
-plt.title("L2 Error Over Time")
-plt.xlabel("Time")
-plt.ylabel("L2 Error")
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.show()
+# Plot and export error as a LaTeX-styled publication-quality PDF
+pdf_file = aux.plot_L2_error_over_time(cfg.t, L2_error, cfg)
+
+# Confirm the output path to user
+print(f"Plot successfully saved to: {pdf_file}")
+
+cond_u = solver.cond_u
+cond_v = solver.cond_v

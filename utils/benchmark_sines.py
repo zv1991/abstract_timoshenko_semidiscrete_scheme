@@ -27,7 +27,7 @@ def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol, ell_sym: sp.Symbol) -> sp.Expr:
     Returns:
         sp.Expr: Symbolic expression for u(x, t)
     """
-    return t_sym * sp.sin(11 * sp.pi * x / ell_sym)
+    return sp.sin(sp.pi * t_sym) * sp.sin(5 * sp.pi * x / ell_sym)
 
 
 def v_sym(x_sym: sp.Symbol, t_sym: sp.Symbol, ell_sym: sp.Symbol) -> sp.Expr:

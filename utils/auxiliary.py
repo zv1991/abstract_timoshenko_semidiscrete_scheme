@@ -460,9 +460,9 @@ def unified_adaptive_quadrature(
 
 def integrate_with_phi_m(f, ell, m, *args, **quad_kwargs):
     """
-    Computes the integral ∫₀^ell f(x, *args) * φₘ(x) dx,
-    where φₘ is the m-th basis function (e.g., sine/cosine, orthogonal polynomial),
-    using a unified adaptive quadrature method.
+    Computes the integral ∫₀^ell f(x, *args) · φₘ(x) dx,
+    where φₘ is the m-th Legendre-based basis function, using a unified
+    adaptive quadrature strategy.
 
     Parameters:
         f            : callable
@@ -723,218 +723,226 @@ def first_order_derivative_unified(f, x, ell, derivmeth='nd', h_init=1e-3):
 
 # --------------------------------------------------------------------------- #
 """
-    Performs integration of f'(x)·P̃ₘ(x) over the interval [0, ell] using
-    adaptive quadrature and fourth-order finite difference schemes to 
-    approximate the derivative f'(x). The polynomial P̃ₘ(x) is a normalized 
-    shifted Legendre polynomial basis function.
+    This module evaluates integrals involving the first derivative f'(x) over 
+    the interval [0, ell], using either:
+
+    - Squared derivative form:    ∫₀^ell [f'(x)]² dx       (form = 'squared')
+    - Legendre projection form:   ∫₀^ell f'(x)·P̃ₘ(x) dx   (form = 'legendre')
+
+    The derivative f'(x) can be:
+        - Provided analytically via `df`
+        - Estimated numerically via `f` using:
+            - 4th-order finite differences ('sfd')
+            - External package (e.g., numdifftools) ('nd')
+
+    Assumed utility functions:
+        - first_order_derivative_unified: estimates f′(x) numerically
+        - normalized_shifted_legendre: evaluates P̃ₘ(x)
+        - unified_adaptive_quadrature: performs adaptive numerical integration
 """
 # --------------------------------------------------------------------------- #
 
-# Assumed available:
-# - first_order_derivative_unified: estimates f'(x) using 'nd' or 'sfd'
-# - normalized_shifted_legendre: evaluates P̃ₘ(x)
-# - unified_adaptive_quadrature: performs adaptive integration over [0, ell]
-
-def integrate_fprime_leg(f, m, ell, h=1e-3, derivmeth='nd', **quad_kwargs):
+def integrate_derivative_form(f=None, df=None, ell=None, m=None, form='squared',
+                              h=1e-3, derivmeth='nd', **quad_kwargs):
     """
-    Approximates the integral:
-        ∫₀^ell f'(x) * P̃ₘ(x) dx
-
-    where:
-        - f'(x) is the first derivative of f,
-        - P̃ₘ(x) is the normalized shifted Legendre polynomial of degree m.
+    Computes derivative-based integrals over [0, ell].
 
     Parameters
     ----------
-    f : callable
-        Function f(x) whose derivative will be integrated.
-    m : int
-        Degree of the normalized shifted Legendre polynomial.
-    ell : float
-        Upper limit of integration domain (must be > 0).
-    h : float, optional
-        Initial step size for derivative estimation. Default is 1e-3.
-    derivmeth : str, optional
-        Method for estimating derivatives: 'nd' (numdifftools) or 'sfd' (manual).
-    **quad_kwargs : dict
-        Keyword arguments forwarded to `unified_adaptive_quadrature`.
-
-    Returns
-    -------
-    integral : float
-        Numerical approximation of the integral.
-    metric : float or int
-        Additional diagnostic from quadrature (e.g., error estimate or node count).
-    """
-    # --- Validate integration domain ---
-    if ell <= 0:
-        raise ValueError("The upper integration limit 'ell' must be greater than zero.")
-
-    # --- Adapt h to avoid overly coarse steps ---
-    while h >= ell / 4:
-        h /= 2
-
-    # --- Define integrand: f'(x) * P̃ₘ(x) ---
-    def integrand(x):
-        x = np.atleast_1d(x)           # Ensure input is array-like
-        result = np.zeros_like(x)      # Allocate result array
-
-        for i, xi in enumerate(x):
-            # Compute f'(xi) using the chosen method
-            f_prime, _ = first_order_derivative_unified(f, xi, ell=ell, derivmeth=derivmeth, h_init=h)
-
-            # Evaluate the normalized shifted Legendre polynomial P̃ₘ(xi)
-            Pm_val = normalized_shifted_legendre(m, ell, xi)
-
-            # Multiply derivative with polynomial value
-            result[i] = f_prime * Pm_val
-
-        return result[0] if result.size == 1 else result
-
-    # --- Perform adaptive integration over [0, ell] ---
-    integral, metric, *_ = unified_adaptive_quadrature(integrand, ell, **quad_kwargs)
-
-    return integral, metric
-
-# --------------------------------------------------------------------------- #
-"""
-    Evaluates the integral of the squared first derivative, ∫₀^ell [f'(x)]² dx,
-    using a combination of high-accuracy numerical differentiation and adaptive 
-    quadrature techniques.
-"""
-# --------------------------------------------------------------------------- #
-
-def integrate_fprime_sq(f, ell, h=1e-3, derivmeth='nd', **quad_kwargs):
-    """
-    Approximates the integral:
-        ∫₀^ell [f'(x)]² dx
-
-    using:
-        - 4th-order numerical differentiation
-        - adaptive quadrature
-
-    Parameters
-    ----------
-    f : callable
-        Function f(x) whose squared derivative will be integrated.
+    f : callable, optional
+        Function f(x). Used if df is not provided (numerical differentiation).
+    df : callable, optional
+        Analytical derivative of f(x). Used directly if provided.
     ell : float
         Upper integration limit (must be > 0).
+    m : int, optional
+        Degree of normalized shifted Legendre polynomial (required if form='legendre').
+    form : {'squared', 'legendre'}
+        Type of integral:
+            - 'squared'  → ∫₀^ell [f'(x)]² dx
+            - 'legendre' → ∫₀^ell f'(x)·P̃ₘ(x) dx
     h : float, optional
-        Initial finite difference step size. Default is 1e-3.
-    derivmeth : str, optional
-        Method for derivative: 'nd' (numdifftools) or 'sfd' (manual FD).
+        Step size for finite difference derivative (only if f is used).
+    derivmeth : {'nd', 'sfd'}, optional
+        Method for numerical differentiation.
     **quad_kwargs : dict
-        Arguments passed to `unified_adaptive_quadrature`.
+        Additional arguments forwarded to `unified_adaptive_quadrature`.
 
     Returns
     -------
     integral : float
-        Approximate value of ∫₀^ell [f'(x)]² dx.
+        Numerical result of the integral.
     metric : float or int
-        Diagnostic metric from the integration process.
+        Diagnostic output (e.g., error estimate or node count).
     """
-    # --- Validate inputs ---
-    if not callable(f):
-        raise TypeError("Parameter 'f' must be a callable function.")
-    if not (isinstance(ell, (int, float)) and ell > 0):
-        raise ValueError("Parameter 'ell' must be a positive float.")
 
-    # --- Adjust h to avoid domain boundary violations ---
-    while h >= ell / 4:
-        h /= 2
+    # ------------------ Input validation ------------------ #
 
-    # --- Define integrand: [f'(x)]² ---
+    if ell is None or ell <= 0:
+        raise ValueError("The upper limit 'ell' must be a positive number.")
+
+    if (f is None and df is None) or (f is not None and df is not None):
+        raise ValueError("Specify exactly one of 'f' or 'df', not both.")
+
+    if form not in ('squared', 'legendre'):
+        raise ValueError("The 'form' argument must be either 'squared' or 'legendre'.")
+
+    if form == 'legendre' and m is None:
+        raise ValueError("Degree 'm' is required when form='legendre'.")
+
+    # ------------------ Step size adjustment ------------------ #
+
+    if f is not None:
+        # Prevent step size from exceeding domain scale
+        while h >= ell / 4:
+            h /= 2
+
+    # ------------------ Define the integrand ------------------ #
+
     def integrand(x):
-        x = np.atleast_1d(x)             # Ensure input is iterable
-        result = np.empty_like(x)        # Allocate result array
+        """
+        Inner integrand function to be passed to the adaptive integrator.
+        Computes either [f′(x)]² or f′(x)·P̃ₘ(x).
+        """
+        x = np.atleast_1d(x)           # Ensure input is array-like
+        result = np.empty_like(x)      # Allocate result array
 
         for i, xi in enumerate(x):
-            # Compute derivative using chosen method
-            f_prime, _ = first_order_derivative_unified(f, xi, ell=ell, h_init=h, derivmeth=derivmeth)
+            # Compute f′(x) either analytically or numerically
+            if df is not None:
+                f_prime = df(xi)
+            else:
+                f_prime, _ = first_order_derivative_unified(
+                    f, xi, ell=ell, h_init=h, derivmeth=derivmeth
+                )
 
-            # Square the derivative
-            result[i] = f_prime ** 2
+            # Choose form-specific integrand computation
+            if form == 'squared':
+                result[i] = f_prime * f_prime
+            elif form == 'legendre':
+                Pm_val = normalized_shifted_legendre(m, ell, xi)
+                result[i] = f_prime * Pm_val
 
         return result[0] if result.size == 1 else result
 
-    # --- Apply adaptive integration ---
+    # ------------------ Adaptive numerical integration ------------------ #
+
     integral, metric, *_ = unified_adaptive_quadrature(integrand, ell, **quad_kwargs)
 
     return integral, metric
 
 # --------------------------------------------------------------------------- #
-""" Legendre–Galerkin projections and initialization of modal coefficients 
-    for partial differential equation solvers """
+""" 
+Legendre–Galerkin projections and initialization of modal coefficients 
+for partial differential equation solvers.
+
+This routine computes the modal representation of initial conditions 
+(u, v) and their spatial derivatives using normalized shifted Legendre 
+polynomials as basis functions over the 1D domain [0, ℓ].
+
+Key outputs include:
+- L² projections: ⟨uᵢ, φₘ⟩ and ⟨vᵢ, φₘ⟩
+- First derivative projections: ⟨u₁′, φₘ⟩ and ⟨v₁′, φₘ⟩, via integration by parts
+- Second derivative projections: ⟨uᵢ″, φₘ⟩ and ⟨vᵢ″, φₘ⟩, also via integration by parts,
+  by computing ⟨−uᵢ′, φₘ′⟩ and ⟨−vᵢ′, φₘ′⟩
+
+Inputs `du` and `dv` are optional lists of analytical first derivatives 
+corresponding to `u` and `v`. When supplied, they are used to improve the 
+accuracy of second derivative projections. If not provided, numerical 
+differentiation is applied (using either 'nd' or 'sfd' methods).
+
+This routine supports spectral Galerkin discretizations for time-dependent 
+partial differential equations with homogeneous Dirichlet boundary conditions.
+"""
 # --------------------------------------------------------------------------- #
 
-def compute_initial_integrals(u, v, N, ell, *, h=1e-3, derivmeth='nd', **quad_kwargs):
+def compute_initial_integrals(u, v, N, ell, *,
+                              du=None, dv=None,
+                              h=1e-3, derivmeth='nd', **quad_kwargs):
     """
-    Projects the initial conditions onto normalized Legendre basis functions and computes 
-    their first and second derivatives via integration by parts, assuming homogeneous 
-    Dirichlet boundary conditions (functions vanish at x=0 and x=ell).
+    Computes Legendre–Galerkin modal coefficients of functions u(x), v(x),
+    including their L² projections and first/second spatial derivative projections,
+    using normalized shifted Legendre polynomials φₘ on the interval [0, ell].
 
     Parameters
     ----------
     u, v : list of callable
-        Initial condition function lists: [u0, u1] and [v0, v1].
+        Initial conditions. Each list should contain functions like:
+            u = [u₀(x), u₁(x)], v = [v₀(x), v₁(x)]
+    du, dv : list of callable or None
+        Optional analytical first derivatives of u and v:
+            du = [du₀(x), du₁(x)], dv = [dv₀(x), dv₁(x)]
+            If None or entries are None, numerical differentiation is used.
     N : int
-        Number of Legendre basis functions (φ₁ through φ_N).
+        Number of Legendre basis functions φ₁ to φ_N.
     ell : float
-        Length of the spatial domain [0, ell].
+        Length of spatial domain (integration interval is [0, ell]).
     h : float, optional
-        Step size for numerical differentiation.
-    derivmeth : str, optional
-        Method for approximating derivatives (e.g., 'nd', 'sfd').
+        Step size for numerical differentiation. Defaults to 1e-3.
+    derivmeth : {'nd', 'sfd'}, optional
+        Method for numerical differentiation: 'nd' = numdifftools, 'sfd' = finite difference.
     **quad_kwargs : dict
-        Additional keyword arguments passed to all quadrature routines:
-            - unified_adaptive_quadrature
-            - integrate_with_phi_m
-            - gauss_legendre_integrate_fprime_leg
+        Extra keyword arguments passed to quadrature and projection routines.
 
     Returns
     -------
     dict
-        Dictionary containing:
-            'u_proj':   List [∫ u₀·φₘ dx, ∫ u₁·φₘ dx]
-            'v_proj':   List [∫ v₀·φₘ dx, ∫ v₁·φₘ dx]
-            'diff1_u1': Array ∫ u₁′·φₘ dx
-            'diff1_v1': Array ∫ v₁′·φₘ dx
-            'diff2_u':  Array [∫ u₀″·φₘ dx, ∫ u₁″·φₘ dx]
-            'diff2_v':  Array [∫ v₀″·φₘ dx, ∫ v₁″·φₘ dx]
+        A dictionary with modal coefficient arrays:
+            - 'u_proj'   : list of ∫ u[i]·φₘ dx projections
+            - 'v_proj'   : list of ∫ v[i]·φₘ dx projections
+            - 'diff1_u1' : array of ∫ u₁′·φₘ dx (first derivative via parts)
+            - 'diff1_v1' : array of ∫ v₁′·φₘ dx
+            - 'diff2_u'  : array of ∫ u[i]″·φₘ dx (2D array, shape [len(u), N])
+            - 'diff2_v'  : array of ∫ v[i]″·φₘ dx (same shape)
     """
 
-    # --- Validate input types and shapes ---
-    if not (isinstance(u, list) and isinstance(v, list) and 
-            len(u) == 2 and len(v) == 2 and 
-            callable(u[0]) and callable(u[1]) and 
-            callable(v[0]) and callable(v[1])):
-        raise ValueError("u and v must be lists of two callable functions each.")
+    # --- Input validation helpers --- #
+    def is_valid_func_list(lst):
+        return isinstance(lst, list) and all(callable(f) for f in lst)
+
+    def is_valid_deriv_list(lst):
+        return isinstance(lst, list) and all(callable(f) or f is None for f in lst)
+
+    # --- Validate inputs --- #
+    if not (is_valid_func_list(u) and is_valid_func_list(v)):
+        raise ValueError("Inputs 'u' and 'v' must be lists of callable functions.")
+
+    # If derivatives not given, initialize as None-lists
+    du = [None] * len(u) if du is None else du
+    dv = [None] * len(v) if dv is None else dv
+
+    if not (is_valid_deriv_list(du) and is_valid_deriv_list(dv)):
+        raise ValueError("Inputs 'du' and 'dv' must be lists of callables or None.")
+
+    if not (len(u) == len(v) == len(du) == len(dv)):
+        raise ValueError("Lists 'u', 'v', 'du', and 'dv' must all be the same length.")
 
     if not isinstance(N, int) or N <= 0:
-        raise ValueError("N must be a positive integer.")
+        raise ValueError("Parameter 'N' must be a positive integer.")
 
     if not isinstance(ell, (int, float)) or ell <= 0:
-        raise ValueError("ell must be a positive real number.")
+        raise ValueError("Parameter 'ell' must be a positive float.")
 
-    # --- Allocate memory for all projections ---
-    u_proj = [np.zeros(N), np.zeros(N)]  # ∫ u₀·φₘ, ∫ u₁·φₘ
-    v_proj = [np.zeros(N), np.zeros(N)]  # ∫ v₀·φₘ, ∫ v₁·φₘ
-    diff1_u1 = np.zeros(N)               # ∫ u₁′·φₘ
-    diff1_v1 = np.zeros(N)               # ∫ v₁′·φₘ
-    diff2_u = np.zeros((2, N))           # ∫ u₀″·φₘ, ∫ u₁″·φₘ
-    diff2_v = np.zeros((2, N))           # ∫ v₀″·φₘ, ∫ v₁″·φₘ
+    # --- Allocate modal coefficient arrays --- #
+    num_components = len(u)
+    u_proj = [np.zeros(N) for _ in range(num_components)]
+    v_proj = [np.zeros(N) for _ in range(num_components)]
+    diff1_u1 = np.zeros(N)  # ∫ u₁′·φₘ dx
+    diff1_v1 = np.zeros(N)  # ∫ v₁′·φₘ dx
+    diff2_u = np.zeros((num_components, N))  # ∫ u″·φₘ dx
+    diff2_v = np.zeros((num_components, N))  # ∫ v″·φₘ dx
 
-    # --- Loop over each Legendre basis function φₘ ---
+    # --- Loop over all modal indices m = 1 to N --- #
     for m in range(N):
-        m_idx = m + 1  # φₘ corresponds to index m+1 in 1-based indexing
+        m_idx = m + 1  # Legendre basis uses 1-based indexing (φ₁, φ₂, ...)
 
-        # --- Compute L² projection: ∫ u[i]·φₘ dx and ∫ v[i]·φₘ dx ---
-        for i in range(2):  # Loop over u₀/u₁ and v₀/v₁
+        # --- Compute L² projections: ∫ u[i]·φₘ dx and ∫ v[i]·φₘ dx --- #
+        for i in range(num_components):
             u_proj[i][m], _ = integrate_with_phi_m(u[i], ell, m_idx, **quad_kwargs)
             v_proj[i][m], _ = integrate_with_phi_m(v[i], ell, m_idx, **quad_kwargs)
 
-        # --- First derivative projections: ∫ u₁′·φₘ dx = -∫ u₁·φₘ′ dx ---
-        #     Integration by parts: assume u₁ and φₘ vanish at endpoints ⇒ no boundary term
+        # --- First derivatives by integration by parts ---
+        #     ∫ u₁′·φₘ dx = -∫ u₁·φₘ′ dx (assuming zero boundary values)
         diff1_u1[m] = unified_adaptive_quadrature(
             lambda x: -u[1](x) * normalized_shifted_legendre(m_idx, ell, x),
             ell,
@@ -947,28 +955,38 @@ def compute_initial_integrals(u, v, N, ell, *, h=1e-3, derivmeth='nd', **quad_kw
             **quad_kwargs
         )[0]
 
-        # --- Second derivative projections: ∫ u″·φₘ dx = -∫ u′·φₘ′ dx ---
-        #     Obtained by applying integration by parts once, assuming φₘ vanishes at the boundaries
-        for i in range(2):
-            diff2_u[i][m], _ = integrate_fprime_leg(
-                lambda x, i=i: -u[i](x),
-                m_idx,
-                ell,
+        # --- Second derivatives: ∫ u″·φₘ dx = -∫ u′·φₘ′ dx --- #
+        for i in range(num_components):
+            # Prepare u[i]′ as df_u if available, else use f_u and compute numerically
+            f_u = None if du[i] else (lambda x, i=i: -u[i](x))
+            df_u = (lambda x, i=i: -du[i](x)) if du[i] else None
+
+            diff2_u[i][m], _ = integrate_derivative_form(
+                f=f_u,
+                df=df_u,
+                ell=ell,
+                m=m_idx,
+                form='legendre',
                 h=h,
                 derivmeth=derivmeth,
                 **quad_kwargs
             )
 
-            diff2_v[i][m], _ = integrate_fprime_leg(
-                lambda x, i=i: -v[i](x),
-                m_idx,
-                ell,
+            f_v = None if dv[i] else (lambda x, i=i: -v[i](x))
+            df_v = (lambda x, i=i: -dv[i](x)) if dv[i] else None
+
+            diff2_v[i][m], _ = integrate_derivative_form(
+                f=f_v,
+                df=df_v,
+                ell=ell,
+                m=m_idx,
+                form='legendre',
                 h=h,
                 derivmeth=derivmeth,
                 **quad_kwargs
             )
 
-    # --- Return results in organized dictionary ---
+    # --- Return modal coefficient dictionary --- #
     return {
         'u_proj': u_proj,
         'v_proj': v_proj,
@@ -1293,3 +1311,131 @@ def compute_L2_error(
 
     # Case: all time steps — return list of L2 errors
     return [compute_error_at_k(i) for i in range(len(exact_solution_generator))]
+
+# ===============================================================
+# FUNCTION: plot_L2_error_over_time
+# ---------------------------------------------------------------
+# Description:
+#   Generates a LaTeX-styled line plot of the L2 error over time
+#   for the displacement field in the Timoshenko beam model.
+#   Saves the figure as a timestamped PDF using simulation
+#   parameters (n, N) in the filename.
+#
+# Purpose:
+#   - Visually analyze convergence behavior over time
+#   - Produce publication-quality figures with LaTeX integration
+#   - Ensure reproducibility with dynamically named files
+#
+# Inputs:
+#   - time_array : array of time steps (e.g., cfg.t)
+#   - error_array : array of L2 errors corresponding to each time
+#   - config : object with .n and .N attributes
+#   - output_dir : target directory for saving the PDF
+#
+# Output:
+#   - Returns the full file path of the generated PDF
+# ===============================================================
+
+def plot_L2_error_over_time(time_array, error_array, config, output_dir: str = "plots") -> str:
+    """
+    Generate and save a LaTeX-styled plot of L2 error over time.
+
+    Parameters
+    ----------
+    time_array : array-like
+        Time values used in the simulation (e.g., cfg.t)
+
+    error_array : array-like
+        Corresponding L2 errors at each time step
+
+    config : object
+        Configuration object with attributes:
+            - config.n : number of time steps
+            - config.N : number of spatial Galerkin modes
+
+    output_dir : str, optional
+        Directory where the plot will be saved (default: 'plots')
+
+    Returns
+    -------
+    str
+        Full file path of the saved PDF figure
+    """
+    # -----------------------------------------------------------
+    # IMPORTS
+    # -----------------------------------------------------------
+    from pathlib import Path
+    from datetime import datetime
+    import matplotlib.pyplot as plt
+    from matplotlib import rcParams
+
+    # -----------------------------------------------------------
+    # SANITY CHECK: Validate input arrays
+    # -----------------------------------------------------------
+    if len(time_array) == 0 or len(error_array) == 0:
+        raise ValueError("Both 'time_array' and 'error_array' must be non-empty.")
+
+    # -----------------------------------------------------------
+    # CONFIGURE LATEX RENDERING
+    # -----------------------------------------------------------
+    rcParams["text.usetex"] = True
+    rcParams["font.family"] = "lmodern"
+    rcParams["text.latex.preamble"] = r"""
+    \usepackage[utf8]{inputenc}
+    \usepackage[T1]{fontenc}
+    \usepackage{lmodern}
+    \usepackage{slantsc}
+    \usepackage{dsfont}
+    \usepackage{upgreek}
+    \usepackage{amsmath,amssymb,amsthm,amstext,amsfonts}
+    \usepackage{mathtools}
+    \usepackage{nicefrac}
+    \usepackage{xcolor}
+    """
+
+    # -----------------------------------------------------------
+    # CREATE OUTPUT DIRECTORY IF NEEDED
+    # -----------------------------------------------------------
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # -----------------------------------------------------------
+    # EXTRACT TIME RANGE FOR LABEL
+    # -----------------------------------------------------------
+    t_min, t_max = float(time_array[0]), float(time_array[-1])
+
+    # -----------------------------------------------------------
+    # GENERATE PLOT
+    # -----------------------------------------------------------
+    plt.figure(figsize=(8, 4))
+    plt.plot(
+        time_array,
+        error_array,
+        marker='o',
+        linestyle='-',
+        label=r"$E_{1, k} = \left\| u(\cdot, t_k) - \tilde{u}_{k,N}(\cdot) \right\|$"
+    )
+
+    # Axis labels and title
+    plt.xlabel(rf"Time $t \in \left[ {t_min:.0f}, {t_max:.0f} \right]$")
+    plt.ylabel(r"$E_{1, k}$")
+    plt.title(r"Error $E_{1, k}$ Over Time")
+
+    # Styling
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+
+    # -----------------------------------------------------------
+    # CREATE TIMESTAMPED FILENAME
+    # -----------------------------------------------------------
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = output_path / f"L2_error_plot_n_{config.n}_N_{config.N}_date_{timestamp}.pdf"
+
+    # -----------------------------------------------------------
+    # EXPORT TO FILE
+    # -----------------------------------------------------------
+    plt.savefig(filename)
+    plt.close()  # Clean up memory for repeated use
+
+    return str(filename)

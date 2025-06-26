@@ -1,24 +1,51 @@
-# ======================================
-# Import standard and custom libraries
-# ======================================
+# --------------------------------------------------------------------------- #
+"""
+TimoshenkoModelSolver: Galerkin-based Solver for Nonlinear Timoshenko Beam PDEs
 
-import numpy as np  # NumPy is used for numerical computations, especially for arrays and linear algebra.
+This class numerically solves the coupled nonlinear system of partial differential
+equations modeling the dynamic behavior of a Timoshenko beam. It uses a Legendre–
+Galerkin method to reduce the PDEs to a system of time-dependent ordinary 
+differential equations (ODEs) by projecting the solution onto a basis of
+normalized shifted Legendre polynomials over the spatial domain [0, ell].
 
-# Custom utility modules containing problem-specific numerical routines
-import utils.auxiliary as aux  # Provides Galerkin basis functions and projection utilities.
-import utils.solver as soln    # Contains the time integrator for reduced-order ODE systems.
+The ODE system is then solved using a leapfrog-type time integration scheme,
+with modal coefficients stored and used to reconstruct the solution.
 
+Key Features:
+-------------
+- Modal Galerkin projection in space using orthonormal Legendre basis functions
+- Time stepping based on leapfrog integrator, using initial data at t = 0 and t = τ
+- Support for analytical first derivatives (du₀, du₁, dv₀, dv₁) or numerical approximation
+- Evaluation of second derivatives ⟨uᵢ″, φₘ⟩ and ⟨vᵢ″, φₘ⟩ via integration by parts
+- Flexible quadrature interface for adaptive integration:
+    - Supports 'hglq', 'glq', and SciPy's routines
+- Nonlinear coupling through the squared norm of the spatial derivative ‖u₁′‖²
+- Outputs include:
+    - Modal coefficients for displacement and rotation
+    - Condition numbers for Galerkin matrices (diagnostic information)
+- Provides callable solution reconstruction and pointwise evaluation support
 
-# ======================================
-# TimoshenkoModelSolver Class Definition
-# ======================================
+External dependencies:
+- `utils.auxiliary` (aux): Basis functions, projection routines
+- `utils.solver` (soln): Core time-stepping ODE solver
+
+Usage:
+------
+Instantiate the class with beam parameters, initial and forcing data, then
+use built-in methods to evaluate or reconstruct the solution at desired points.
+"""
+# --------------------------------------------------------------------------- #
+
+import numpy as np  # Core numerical computing (arrays, linear algebra)
+
+# Project-specific numerical routines
+import utils.auxiliary as aux  # Galerkin operators, Legendre basis, projections
+import utils.solver as soln    # Time integration and modal system solver
+
 
 class TimoshenkoModelSolver:
     """
-    Solver for the nonlinear Timoshenko beam system using Galerkin projection.
-
-    This class reduces the original PDE system to an ODE system via Galerkin decomposition
-    and solves it numerically. The solution is reconstructed from modal coefficients.
+    Nonlinear PDE solver for the Timoshenko system using a Galerkin framework.
     """
 
     def __init__(
@@ -29,34 +56,43 @@ class TimoshenkoModelSolver:
         n: int, N: int,
         f1, f2,
         u0, u1, v0, v1,
+        # Optional analytical derivatives
+        du0=None, du1=None, dv0=None, dv1=None,
         # Optional solver parameters
         h: float = 1e-3, derivmeth: str = 'nd', tol: float = 1e-6, method: str = 'hglq',
         max_n: int = 50, max_depth: int = 20, n_points: int = 10
     ):
         """
-        Initialize model parameters, initial data, and immediately solve the system.
+        Initialize the problem configuration and solve immediately.
 
         Parameters
         ----------
         ell : float
-            Beam length.
+            Length of the beam (domain [0, ell]).
         T : float
             Final simulation time.
         alpha, beta, gamma, delta : float
-            Physical and damping coefficients.
+            System physical parameters.
         a1, a2 : float
-            Coupling constants between displacement and rotation.
+            Coupling coefficients for the system.
         n : int
             Number of time steps.
         N : int
             Number of Galerkin modes.
         f1, f2 : callable
-            External source functions.
+            External forcing functions (f₁(x, t), f₂(x, t)).
         u0, u1, v0, v1 : callable
-            Initial condition functions at t=0 and t=τ.
-        h, derivmeth, tol, method, max_n, max_depth, n_points : Various numerical solver options.
+            Initial condition functions at t = 0 and t = τ.
+        du0, du1, dv0, dv1 : callable or None
+            Optional analytical derivatives of the initial data.
+        h : float
+            Step size for numerical derivatives (if needed).
+        derivmeth : str
+            Method for numerical differentiation ('nd' or 'sfd').
+        tol, method, max_n, max_depth, n_points : float | int
+            Quadrature control parameters.
         """
-        # Time grid
+        # Spatial and temporal setup
         self.ell = ell
         self.T = T
         self.n = n
@@ -64,19 +100,26 @@ class TimoshenkoModelSolver:
         self.tau = T / n
         self.t = np.linspace(0, T, n + 1)
 
-        # Physical and coupling parameters
+        # Model parameters
         self.alpha, self.beta = alpha, beta
         self.gamma, self.delta = gamma, delta
         self.a1, self.a2 = a1, a2
 
-        # Initial conditions and forcing
-        self.f1, self.f2 = f1, f2
+        # Store initial condition functions
         self.u0, self.u1 = u0, u1
         self.v0, self.v1 = v0, v1
         self.u_initial = [u0, u1]
         self.v_initial = [v0, v1]
 
-        # Solver config
+        # Derivatives: optional analytical expressions
+        self.du = [du0, du1]
+        self.dv = [dv0, dv1]
+
+        # External sources
+        self.f1 = f1
+        self.f2 = f2
+
+        # Quadrature and numerical settings
         self.h = h
         self.derivmeth = derivmeth
         self.tol = tol
@@ -85,32 +128,49 @@ class TimoshenkoModelSolver:
         self.max_depth = max_depth
         self.n_points = n_points
 
-        # Solve ODE system immediately and store modal solutions
+        # Precompute modal solution on initialization
         self.tilde_u, self.tilde_v, self.cond_u, self.cond_v = self.solve_system()
 
     def solve_system(self):
         """
-        Solve the Galerkin-reduced ODE system.
-
-        Returns
-        -------
+        solve_system: Solve the Galerkin-reduced system of ODEs for the Timoshenko model
+        
+        This method performs time integration on a modal ODE system derived from projecting
+        the nonlinear Timoshenko beam PDEs onto a Legendre–Galerkin basis.
+        
+        Method Overview:
+        ----------------
+        - Projects initial conditions and external forcing onto modal basis functions
+        - Supports optional analytical first derivatives (du, dv) for improved accuracy
+        - Computes second derivative projections ⟨uᵢ″, φₘ⟩ and ⟨vᵢ″, φₘ⟩ via integration by parts
+        - Evaluates nonlinear stiffness term qₖ = α + β * ‖uₖ′‖² at each time step
+        - Solves the resulting system using preassembled modal matrices
+        - Applies leapfrog-type time-stepping scheme for k ≥ 2
+        - Tracks matrix condition numbers for numerical diagnostics
+        
+        Returns:
+        --------
         tuple
-            Modal coefficients (tilde_u, tilde_v) and condition numbers (cond_u, cond_v).
+            (tilde_u, tilde_v): Modal coefficients of displacement u(x, t) and rotation v(x, t)
+            (cond_u, cond_v): Condition numbers of the Galerkin system matrices
         """
+        
         return soln.solve_system(
-            u_initial=self.u_initial,
-            v_initial=self.v_initial,
-            f1=self.f1,
-            f2=self.f2,
-            h=self.h,
-            derivmeth=self.derivmeth,
-            tol=self.tol,
-            method=self.method,
-            max_n=self.max_n,
-            max_depth=self.max_depth,
-            n_points=self.n_points
+            u_initial=self.u_initial,  # [u₀(x), u₁(x)]
+            v_initial=self.v_initial,  # [v₀(x), v₁(x)]
+            f1=self.f1,                # External force f₁(x, t)
+            f2=self.f2,                # External force f₂(x, t)
+            du=self.du,                # Optional: [du₀(x), du₁(x)]
+            dv=self.dv,                # Optional: [dv₀(x), dv₁(x)]
+            h=self.h,                  # Step size for numerical differentiation
+            derivmeth=self.derivmeth,  # Derivative computation method ('nd' or 'sfd')
+            tol=self.tol,              # Quadrature tolerance
+            method=self.method,        # Quadrature method ('hglq', 'glq', 'scipy')
+            max_n=self.max_n,          # Max points for adaptive quadrature
+            max_depth=self.max_depth,  # Max recursion depth for quadrature
+            n_points=self.n_points     # Fixed points for Gaussian quadrature
         )
-
+    
     def galerkin_approx_solution_on_grid(
         self,
         solution_type: str,
@@ -119,24 +179,30 @@ class TimoshenkoModelSolver:
         k: int = None
     ) -> np.ndarray | float:
         """
-        Reconstruct the Galerkin-approximated solution on a spatial grid or at a single point.
-
+        galerkin_approx_solution_on_grid: Evaluate Galerkin solution at spatial points or grid
+        
+        This method reconstructs the Galerkin-approximated solution using precomputed modal 
+        coefficients. It allows evaluation at a specific spatial point or over a uniform 
+        spatial grid, for a given time index.
+        
         Parameters
         ----------
         solution_type : str
-            'u' for displacement or 'v' for rotation.
-        unif_prt_spc : int
-            Number of spatial grid intervals (optional).
-        x_val : float
-            Specific spatial point (optional).
-        k : int
-            Specific time step index to extract (optional).
-
+            Either 'u' for displacement or 'v' for rotation.
+        unif_prt_spc : int, optional
+            Number of uniform spatial intervals to generate grid points.
+        x_val : float, optional
+            Specific spatial coordinate at which to evaluate the solution.
+        k : int, optional
+            Time index (0 ≤ k ≤ n) for evaluation.
+        
         Returns
         -------
         np.ndarray or float
-            Approximate solution array (full or at time k), or a single value at (x, t_k).
+            Reconstructed solution at all time steps on a spatial grid (array) or 
+            single value at a specific point in space and time.
         """
+        
         if solution_type not in {'u', 'v'}:
             raise ValueError("solution_type must be either 'u' or 'v'.")
 
@@ -177,26 +243,27 @@ class TimoshenkoModelSolver:
         x_vals: float | int | list | np.ndarray = None
     ):
         """
-        Return callable or evaluated ansatz u(x, t_k) or v(x, t_k).
-
+        Return callable or evaluated Galerkin ansatz u(x,t_k) or v(x,t_k)
+        
         Parameters
         ----------
         solution_type : str
-            'u' or 'v'.
+            'u' (displacement) or 'v' (rotation)
         k : int, optional
-            Time index.
-        x_vals : float | int | list | np.ndarray, optional
-            Points to evaluate the ansatz.
-
+            Time step index
+        x_vals : float | list | np.ndarray, optional
+            Evaluation points (optional)
+        
         Returns
         -------
-        callable | np.ndarray | float
-            Callable function of x or its evaluation at given points.
+        Callable or np.ndarray
+            Function u(x) or v(x), or array of values
         """
+        
         if solution_type not in {'u', 'v'}:
             raise ValueError("solution_type must be 'u' or 'v'.")
 
-        # Normalize x input
+        # Normalize and validate x input
         def validate_and_convert_x_vals(x_input):
             if isinstance(x_input, (float, int)):
                 return float(x_input)
@@ -211,14 +278,14 @@ class TimoshenkoModelSolver:
 
         x_vals = validate_and_convert_x_vals(x_vals)
 
-        # Construct Galerkin basis
+        # Generate Galerkin basis functions φₘ(x)
         def generate_basis():
             return [
                 (lambda m: (lambda x: aux.phi_m(m, self.ell, x)))(m + 1)
                 for m in range(self.N)
             ]
 
-        # Create ansatz at given time index
+        # Construct solution u(x,t_k) or v(x,t_k)
         def construct_function_at_k(k_idx: int):
             if k_idx == 0:
                 return self.u0 if solution_type == 'u' else self.v0

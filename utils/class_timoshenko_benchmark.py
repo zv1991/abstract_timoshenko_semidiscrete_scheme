@@ -11,7 +11,6 @@ import utils.config as cfg
 # Symbolic derivatives and expressions for displacement, rotation, and their derivatives.
 from utils.symbolic_derivatives import SymbolicDerivatives as SD
 
-
 # ----------------------------------------
 # Benchmark Class Definition
 # ----------------------------------------
