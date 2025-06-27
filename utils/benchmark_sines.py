@@ -15,6 +15,20 @@ x, t, ell = sp.symbols('x t ell', real=True, positive=True)
 # SYMBOLIC ANALYTICAL TEST FUNCTIONS
 # ======================================================
 
+# def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol, ell_sym: sp.Symbol) -> sp.Expr:
+#     """
+#     Define symbolic test function u(x, t) = t * φ₁(x)
+
+#     Args:
+#         x_sym (sp.Symbol): Position symbol
+#         t_sym (sp.Symbol): Time symbol
+#         ell_sym (sp.Symbol): Domain length symbol
+
+#     Returns:
+#         sp.Expr: Symbolic expression for u(x, t)
+#     """
+#     return sp.sin(sp.pi * t_sym) * sp.sin(5 * sp.pi * x / ell_sym)
+
 def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol, ell_sym: sp.Symbol) -> sp.Expr:
     """
     Define symbolic test function u(x, t) = t * φ₁(x)
@@ -27,7 +41,7 @@ def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol, ell_sym: sp.Symbol) -> sp.Expr:
     Returns:
         sp.Expr: Symbolic expression for u(x, t)
     """
-    return sp.sin(sp.pi * t_sym) * sp.sin(5 * sp.pi * x / ell_sym)
+    return t_sym * x ** 10 * (ell_sym - x)
 
 
 def v_sym(x_sym: sp.Symbol, t_sym: sp.Symbol, ell_sym: sp.Symbol) -> sp.Expr:

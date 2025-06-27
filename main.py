@@ -16,7 +16,7 @@
 import utils.auxiliary as aux
 
 # Provides exact symbolic benchmark data (forces, initial conditions, solution)
-from utils.class_timoshenko_benchmark import TimoshenkoBenchmark
+from utils.class_timoshenko_solns import TimoshenkoSolutions
 
 # Simulation configuration (domain, time, damping, discretization settings)
 import utils.config as cfg
@@ -25,18 +25,24 @@ import utils.config as cfg
 from utils.class_timoshenko import TimoshenkoModelSolver
 
 
-# ---------------------------------------------------------------
-# STEP 1: LOAD SYMBOLIC BENCHMARK DATA
-# ---------------------------------------------------------------
+# -------------------------------------
+# Create an instance of the class
+# -------------------------------------
 
-# Instantiate the benchmark problem class
-benchmark = TimoshenkoBenchmark()
+# Case 1: Using known analytical solutions
+benchmark = TimoshenkoSolutions(known_solutions=True)
 
-# Extract source terms and initial conditions
-# f1, f2: external force terms
-# u0, u1: displacement and initial velocity
-# v0, v1: rotation and initial angular velocity
-f1, f2, u0, u1, v0, v1 = benchmark.get_initial_data()
+# OR
+
+# Case 2: Using approximated Taylor-based initial data
+# benchmark = TimoshenkoSolutions(known_solutions=False)
+
+
+# -------------------------------------
+# Retrieve all data components
+# -------------------------------------
+
+f1, f2, u0, u1, v0, v1, du0, du1, dv0, dv1 = benchmark.get_initial_data()
 
 
 # ---------------------------------------------------------------
@@ -56,44 +62,49 @@ solver = TimoshenkoModelSolver(
     n=cfg.n,            # Number of time steps
     N=cfg.N,            # Number of Galerkin spatial modes
     f1=f1, f2=f2,       # External forces
-    u0=u0, u1=u1,       # Displacement and its time derivative
-    v0=v0, v1=v1        # Rotation and its time derivative
+    u0=u0, u1=u1,       # Displacement at at t=0, τ
+    v0=v0, v1=v1,       # Rotation at at t=0, τ
+    du0=du0, du1=du1,   # ∂u/∂x at t=0, τ
+    dv0=dv0, dv1=dv1    # ∂v/∂x at t=0, τ
     
 )
 
 
-# ---------------------------------------------------------------
-# STEP 3: COMPUTE L2 ERROR BETWEEN NUMERICAL AND EXACT SOLUTION
-# ---------------------------------------------------------------
+# # ---------------------------------------------------------------
+# # STEP 3: COMPUTE L2 ERROR BETWEEN NUMERICAL AND EXACT SOLUTION
+# # ---------------------------------------------------------------
 
-# Compute L2 norm error between:
-#   - Exact solution u(x, t)
-#   - Galerkin approximation u_h(x, t)
-L2_error = aux.compute_L2_error(
-    benchmark.callable_exact_solution('u'),     # Reference solution
-    solver.callable_compute_ansatz('u'),        # Numerical solution
-    cfg.ell                                     # Integration over spatial domain [0, ell]
-)
-
-
-# ---------------------------------------------------------------
-# STEP 4: PRINT L2 ERROR (TIME-DEPENDENT)
-# ---------------------------------------------------------------
-
-# Time-dependent error array: print error at each time step
-for k in range(cfg.n + 1):
-    print(f"Time step {k:3d}: L2 error = {L2_error[k]:.6e}")
+# # Compute L2 norm error between:
+# #   - Exact solution u(x, t)
+# #   - Galerkin approximation u_h(x, t)
+# L2_error = aux.compute_L2_error(
+#     benchmark.callable_exact_solution('u'),     # Reference solution
+#     solver.callable_compute_ansatz('u'),        # Numerical solution
+#     cfg.ell                                     # Integration over spatial domain [0, ell]
+# )
 
 
-# ---------------------------------------------------------------
-# STEP 5: PLOT L2 ERROR OVER TIME AND EXPORT TO PDF
-# ---------------------------------------------------------------
+# # ---------------------------------------------------------------
+# # STEP 4: PRINT L2 ERROR (TIME-DEPENDENT)
+# # ---------------------------------------------------------------
 
-# Plot and export error as a LaTeX-styled publication-quality PDF
-pdf_file = aux.plot_L2_error_over_time(cfg.t, L2_error, cfg)
+# # Time-dependent error array: print error at each time step
+# for k in range(cfg.n + 1):
+#     print(f"Time step {k:3d}: L2 error = {L2_error[k]:.6e}")
 
-# Confirm the output path to user
-print(f"Plot successfully saved to: {pdf_file}")
+
+# # ---------------------------------------------------------------
+# # STEP 5: PLOT L2 ERROR OVER TIME AND EXPORT TO PDF
+# # ---------------------------------------------------------------
+
+# # Plot and export error as a LaTeX-styled publication-quality PDF
+# pdf_file = aux.plot_L2_error_over_time(cfg.t, L2_error, cfg)
+
+# # Confirm the output path to user
+# print(f"Plot successfully saved to: {pdf_file}")
 
 cond_u = solver.cond_u
 cond_v = solver.cond_v
+
+tild_u = solver.tilde_u
+tild_v = solver.tilde_v

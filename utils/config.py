@@ -28,7 +28,7 @@ a2    = 1.0   # Coupling: gradient of displacement (∂u/∂x) influences rotati
 # TEMPORAL DISCRETIZATION
 # ---------------------------------------------------------------------------
 
-n = 4                       # Number of uniform time intervals (steps)
+n = 3                       # Number of uniform time intervals (steps)
 t = np.linspace(0, T, n + 1) # Time grid with (n+1) equally spaced points from 0 to T
 tau = T / n                  # Time step size τ = T / n
 
