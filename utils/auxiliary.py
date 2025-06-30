@@ -14,6 +14,8 @@ from numpy.linalg import cond
 from scipy.integrate import quad as scipy_quad
 # Import the warnings module to issue runtime alerts without raising exceptions
 import warnings
+# Contains simulation configuration: domain length `ell`, time vector `t`, and step count `n`
+import utils.config as cfg
 
 # --------------------------------------------------------------------------- #
 """ Coefficients arising from inner products of Legendre polynomials 
@@ -1188,6 +1190,134 @@ def galerkin_approx(ell: float, coeff: np.ndarray, x: np.ndarray) -> np.ndarray:
     # If x was scalar, return a vector (n,) with each row's result at that scalar x
     return result[:, 0] if is_scalar else result
 
+# =============================================================================
+# Analytical Solution Evaluation Utilities for Timoshenko Beam Model
+# -----------------------------------------------------------------------------
+# These two functions allow evaluation and inspection of exact analytical
+# solutions (u or v) of the Timoshenko beam model, either as precomputed arrays
+# over time-space grids or as callables for on-demand evaluation.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Function: exact_solution_on_grid
+# Description: Evaluate the analytical solution u(x, t) or v(x, t)
+#              at a spatial point or over a spatial grid for all/specific times.
+# -----------------------------------------------------------------------------
+def exact_solution_on_grid(
+    func: callable,
+    unif_prt_spc: int = None,
+    x_val: float = None,
+    k: int = None
+) -> np.ndarray | float:
+    """
+    Evaluate the analytical solution of the Timoshenko beam model on a spatial grid or specific point at given time(s).
+
+    Parameters
+    ----------
+    func : callable
+        The analytical solution of the Timoshenko beam model:
+        - `func(x, t)` must return either displacement u(x, t) or rotation v(x, t).
+        - Must support vectorized `x` and scalar `t`.
+    unif_prt_spc : int, optional
+        Number of uniform spatial partitions in the interval [0, cfg.ell].
+    x_val : float, optional
+        A single spatial coordinate in [0, cfg.ell] at which to evaluate the solution.
+    k : int, optional
+        Specific time step index from the time grid in cfg.t.
+
+    Returns
+    -------
+    np.ndarray or float
+        - If `k` is None: returns values at all time steps for the spatial grid or point.
+        - If `k` is specified: returns value(s) only at time index `k`.
+    """
+
+    # Require at least one spatial argument
+    if x_val is None and unif_prt_spc is None:
+        raise ValueError("Specify either `x_val` or `unif_prt_spc`.")
+
+    # Create spatial point or grid
+    if x_val is not None:
+        if not (0 <= x_val <= cfg.ell):
+            raise ValueError(f"x_val = {x_val} is outside domain [0, {cfg.ell}].")
+        x = np.array([x_val])  # Single-point input wrapped for vector compatibility
+    else:
+        x = np.linspace(0, cfg.ell, unif_prt_spc + 1)  # Uniform spatial discretization
+
+    # Evaluate the function across all times at spatial points
+    values = np.array([func(x, t_i) for t_i in cfg.t])  # Shape: (len(t), len(x))
+
+    # Return result at specific time index if requested
+    if k is not None:
+        if not (0 <= k <= cfg.n):
+            raise ValueError(f"Time index k = {k} out of range [0, {cfg.n}].")
+        return values[k]  # Return values at specific time step
+
+    return values  # Return full time evolution at grid or point
+
+# -----------------------------------------------------------------------------
+# Function: callable_exact_solution
+# Description: Return callable(s) or evaluated result(s) for u(x, t) or v(x, t)
+#              depending on whether x_vals and/or time index k is provided.
+# -----------------------------------------------------------------------------
+def callable_exact_solution(
+    func: callable,
+    k: int = None,
+    x_vals: float | int | list | np.ndarray = None
+):
+    """
+    Return callable(s) or evaluated values of the analytical solution of the Timoshenko beam model.
+
+    Parameters
+    ----------
+    func : callable
+        The analytical solution of the Timoshenko beam model:
+        - Accepts `func(x, t)` and returns u(x, t) or v(x, t).
+        - Must support vectorized `x` and scalar `t`.
+    k : int, optional
+        Specific time index from cfg.t. If None, operates over all time steps.
+    x_vals : float | int | list | np.ndarray, optional
+        Spatial locations to evaluate the solution, or leave None to return callable(s).
+
+    Returns
+    -------
+    callable | list[callable] | float | np.ndarray
+        - If k is set and x_vals is None: returns a callable in x for fixed t_k.
+        - If both k and x_vals are provided: returns evaluation at (x_vals, t_k).
+        - If k is None and x_vals is None: returns a list of callables, one per time step.
+        - If x_vals is provided but k is None: returns np.ndarray of evaluations over time.
+    """
+
+    def validate_and_convert_x_vals(x_input):
+        """Convert supported x inputs to float or ndarray."""
+        if isinstance(x_input, (float, int)):
+            return float(x_input)
+        elif isinstance(x_input, list):
+            return np.array(x_input, dtype=float)
+        elif isinstance(x_input, np.ndarray):
+            return x_input.astype(float)
+        elif x_input is None:
+            return None
+        else:
+            raise TypeError("x_vals must be float, int, list, or np.ndarray.")
+
+    x_vals = validate_and_convert_x_vals(x_vals)
+
+    def construct_exact_function_at_k(k_idx: int):
+        """Construct a function x ↦ func(x, t_k) for fixed time index k."""
+        if not (0 <= k_idx <= cfg.n):
+            raise ValueError(f"Time index k = {k_idx} must be in [0, {cfg.n}].")
+        return lambda x: func(x, cfg.t[k_idx])
+
+    if k is not None:
+        fn = construct_exact_function_at_k(k)
+        return fn if x_vals is None else fn(x_vals)
+
+    # Return list of callables or evaluate each at x_vals
+    all_functions = [construct_exact_function_at_k(k_idx) for k_idx in range(cfg.n + 1)]
+    return all_functions if x_vals is None else np.array([fn(x_vals) for fn in all_functions])
+
 # ============================================
 # Function: compute_L2_error
 # Short Description: 
@@ -1312,46 +1442,49 @@ def compute_L2_error(
     # Case: all time steps — return list of L2 errors
     return [compute_error_at_k(i) for i in range(len(exact_solution_generator))]
 
-# ===============================================================
-# FUNCTION: plot_L2_error_over_time
-# ---------------------------------------------------------------
-# Description:
-#   Generates a LaTeX-styled line plot of the L2 error over time
-#   for the displacement field in the Timoshenko beam model.
-#   Saves the figure as a timestamped PDF using simulation
-#   parameters (n, N) in the filename.
-#
+# =============================================================================
+# Function: plot_L2_errors_over_time
+# -----------------------------------------------------------------------------
 # Purpose:
-#   - Visually analyze convergence behavior over time
-#   - Produce publication-quality figures with LaTeX integration
-#   - Ensure reproducibility with dynamically named files
+# This function generates a high-quality, LaTeX-styled plot of time-dependent
+# L2 errors for both displacement (u) and rotation (v) in the Timoshenko beam
+# model. It uses a color-blind–friendly palette (Okabe-Ito) to ensure visual
+# clarity and accessibility for all users, including those with color vision
+# deficiencies.
 #
 # Inputs:
-#   - time_array : array of time steps (e.g., cfg.t)
-#   - error_array : array of L2 errors corresponding to each time
-#   - config : object with .n and .N attributes
-#   - output_dir : target directory for saving the PDF
+# - time_array     : 1D array of simulation time points
+# - error_u        : L2 error array for displacement u (denoted E_{1,k})
+# - error_v        : L2 error array for rotation v (denoted E_{2,k})
+# - config         : simulation configuration object with:
+#                    - config.n: number of time steps
+#                    - config.N: number of Galerkin modes (spatial resolution)
+# - output_dir     : path to directory where the plot will be saved (default = 'plots')
 #
 # Output:
-#   - Returns the full file path of the generated PDF
-# ===============================================================
+# - Saves a timestamped PDF figure showing both L2 error curves with LaTeX math labels.
+# - Returns the absolute file path as a string.
+# =============================================================================
 
-def plot_L2_error_over_time(time_array, error_array, config, output_dir: str = "plots") -> str:
+def plot_L2_errors_over_time(time_array, error_u, error_v, config, output_dir: str = "plots") -> str:
     """
-    Generate and save a LaTeX-styled plot of L2 error over time.
+    Create and export a combined L2 error plot for both displacement and rotation.
 
     Parameters
     ----------
     time_array : array-like
         Time values used in the simulation (e.g., cfg.t)
 
-    error_array : array-like
-        Corresponding L2 errors at each time step
+    error_u : array-like
+        L2 errors at each time step for displacement u (E₁ₖ)
+
+    error_v : array-like
+        L2 errors at each time step for rotation v (E₂ₖ)
 
     config : object
         Configuration object with attributes:
             - config.n : number of time steps
-            - config.N : number of spatial Galerkin modes
+            - config.N : number of Galerkin modes (spatial resolution)
 
     output_dir : str, optional
         Directory where the plot will be saved (default: 'plots')
@@ -1359,24 +1492,24 @@ def plot_L2_error_over_time(time_array, error_array, config, output_dir: str = "
     Returns
     -------
     str
-        Full file path of the saved PDF figure
+        Absolute path to the saved PDF figure
     """
     # -----------------------------------------------------------
     # IMPORTS
     # -----------------------------------------------------------
-    from pathlib import Path
-    from datetime import datetime
-    import matplotlib.pyplot as plt
-    from matplotlib import rcParams
+    from pathlib import Path                 # Cross-platform file path handling
+    from datetime import datetime           # For timestamping output filename
+    import matplotlib.pyplot as plt         # Plotting interface
+    from matplotlib import rcParams         # For LaTeX styling configuration
 
     # -----------------------------------------------------------
-    # SANITY CHECK: Validate input arrays
+    # VALIDATE INPUT
     # -----------------------------------------------------------
-    if len(time_array) == 0 or len(error_array) == 0:
-        raise ValueError("Both 'time_array' and 'error_array' must be non-empty.")
+    if not (len(time_array) and len(error_u) and len(error_v)):
+        raise ValueError("Inputs 'time_array', 'error_u', and 'error_v' must all be non-empty.")
 
     # -----------------------------------------------------------
-    # CONFIGURE LATEX RENDERING
+    # CONFIGURE LATEX-STYLE RENDERING FOR PLOT TEXT
     # -----------------------------------------------------------
     rcParams["text.usetex"] = True
     rcParams["font.family"] = "lmodern"
@@ -1394,48 +1527,204 @@ def plot_L2_error_over_time(time_array, error_array, config, output_dir: str = "
     """
 
     # -----------------------------------------------------------
-    # CREATE OUTPUT DIRECTORY IF NEEDED
+    # DEFINE COLOR-BLIND–FRIENDLY COLOR SCHEME (Okabe-Ito)
+    # -----------------------------------------------------------
+    
+    color_u = "#0072B2"  # Blue for displacement u (E₁ₖ)
+    color_v = "#E69F00"  # Orange for rotation v (E₂ₖ)
+
+    # -----------------------------------------------------------
+    # ENSURE OUTPUT DIRECTORY EXISTS
     # -----------------------------------------------------------
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     # -----------------------------------------------------------
-    # EXTRACT TIME RANGE FOR LABEL
+    # DETERMINE TIME RANGE FOR AXIS LABEL
     # -----------------------------------------------------------
     t_min, t_max = float(time_array[0]), float(time_array[-1])
 
     # -----------------------------------------------------------
-    # GENERATE PLOT
+    # INITIALIZE FIGURE
     # -----------------------------------------------------------
-    plt.figure(figsize=(8, 4))
+    plt.figure(figsize=(8, 4))  # Width x Height in inches
+
+    # -----------------------------------------------------------
+    # PLOT L2 ERROR FOR DISPLACEMENT (u)
+    # -----------------------------------------------------------
     plt.plot(
         time_array,
-        error_array,
+        error_u,
         marker='o',
         linestyle='-',
-        label=r"$E_{1, k} = \left\| u(\cdot, t_k) - \tilde{u}_{k,N}(\cdot) \right\|$"
+        color=color_u,
+        label=r"$E_{1,k} = \left\| u\left( \cdot, t_k \right) - \tilde{u}_{k,N}\left( \cdot \right) \right\|$"
     )
 
-    # Axis labels and title
-    plt.xlabel(rf"Time $t \in \left[ {t_min:.0f}, {t_max:.0f} \right]$")
-    plt.ylabel(r"$E_{1, k}$")
-    plt.title(r"Error $E_{1, k}$ Over Time")
+    # -----------------------------------------------------------
+    # PLOT L2 ERROR FOR ROTATION (v)
+    # -----------------------------------------------------------
+    plt.plot(
+        time_array,
+        error_v,
+        marker='s',
+        linestyle='--',
+        color=color_v,
+        label=r"$E_{2,k} = \left\| v\left( \cdot, t_k \right) - \tilde{v}_{k,N}\left( \cdot \right) \right\|$"
+    )
 
-    # Styling
+    # -----------------------------------------------------------
+    # LABELS, LEGEND, AND LAYOUT
+    # -----------------------------------------------------------
+    plt.xlabel(rf"Time $t \in \left[ {t_min:.0f}, {t_max:.0f} \right]$")
+    plt.ylabel(r"$E_k$")
+    plt.title(r"$L^2$ Error Evolution for Solutions $u\left( x, t \right)$ and $v\left( x, t \right)$ Over Time")
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
 
     # -----------------------------------------------------------
-    # CREATE TIMESTAMPED FILENAME
+    # EXPORT TO TIMESTAMPED PDF FILE
     # -----------------------------------------------------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = output_path / f"L2_error_plot_n_{config.n}_N_{config.N}_date_{timestamp}.pdf"
+    filename = output_path / f"L2_errors_combined_n_{config.n}_N_{config.N}_{timestamp}.pdf"
+
+    plt.savefig(filename)   # Save to file
+    plt.close()             # Free up memory/resources
+
+    return str(filename)
+
+def plot_exact_vs_approx_solution_at_time_k(
+    exact_soln: callable,
+    approx_solver: object,
+    solution_type: str,
+    time_layer: int,
+    config,
+    output_dir: str = "plots"
+) -> str:
+    """
+    Plot and export the exact and approximate solution (u or v) at a fixed time step index k.
+
+    Parameters
+    ----------
+    exact_soln : callable
+        Exact analytical solution u(x, t) or v(x, t), accepting (x, t).
+
+    approx_solver : object
+        Solver instance that provides callable_compute_ansatz(solution_type, k, x_vals).
+
+    solution_type : str
+        Either 'u' for displacement or 'v' for rotation.
+
+    time_layer : int
+        Time step index k ∈ [0, config.n]
+
+    config : object
+        Configuration object containing:
+            - ell : spatial domain length
+            - t : array of time values
+            - N : number of Galerkin modes
+
+    output_dir : str, optional
+        Directory where the plot will be saved (default: "plots")
+
+    Returns
+    -------
+    str
+        Absolute path of the saved PDF plot.
+    """
+    from pathlib import Path
+    from datetime import datetime
+    import matplotlib.pyplot as plt
+    from matplotlib import rcParams
+
+    # -----------------------------------------------------------
+    # VALIDATE TIME INDEX
+    # -----------------------------------------------------------
+    if not (0 <= time_layer <= config.n):
+        raise ValueError(f"time_layer must be in [0, {config.n}]")
+
+    # -----------------------------------------------------------
+    # GENERATE SPATIAL GRID
+    # -----------------------------------------------------------
+    num_points = 200
+    x_vals = np.linspace(0, config.ell, num_points)
+    t_k = config.t[time_layer]
+
+    # -----------------------------------------------------------
+    # EVALUATE BOTH SOLUTIONS AT TIME t_k
+    # -----------------------------------------------------------
+    exact_values = exact_soln(x_vals, t_k)
+    approx_values = approx_solver.callable_compute_ansatz(solution_type, k=time_layer, x_vals=x_vals)
+
+    # -----------------------------------------------------------
+    # COLOR-BLIND–FRIENDLY COLOR SCHEME (Okabe-Ito)
+    # -----------------------------------------------------------
+    color_exact = "#009E73"   # Green
+    color_approx = "#D55E00"  # Vermilion
+
+    # -----------------------------------------------------------
+    # CONFIGURE LATEX-STYLE RENDERING FOR PLOT TEXT
+    # -----------------------------------------------------------
+    rcParams["text.usetex"] = True
+    rcParams["font.family"] = "lmodern"
+    rcParams["text.latex.preamble"] = r"""
+    \usepackage[utf8]{inputenc}
+    \usepackage[T1]{fontenc}
+    \usepackage{lmodern}
+    \usepackage{slantsc}
+    \usepackage{dsfont}
+    \usepackage{upgreek}
+    \usepackage{amsmath,amssymb,amsthm,amstext,amsfonts}
+    \usepackage{mathtools}
+    \usepackage{nicefrac}
+    \usepackage{xcolor}
+    """
+
+    # -----------------------------------------------------------
+    # ENSURE OUTPUT DIRECTORY EXISTS
+    # -----------------------------------------------------------
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # -----------------------------------------------------------
+    # CREATE PLOT
+    # -----------------------------------------------------------
+    plt.figure(figsize=(8, 4))
+
+    # Plot exact solution
+    plt.plot(
+        x_vals,
+        exact_values,
+        label=rf"Exact: ${solution_type}(x, t_{{{time_layer}}})$",
+        color=color_exact,
+        linestyle='-'
+    )
+
+    # Plot Galerkin approximation
+    plt.plot(
+        x_vals,
+        approx_values,
+        label=rf"Approximate: $\tilde{{{solution_type}}}_{{k,N}}(x)$",
+        color=color_approx,
+        linestyle='--'
+    )
+
+    # Labels and layout
+    plt.xlabel(r"Spatial position $x$")
+    plt.ylabel(r"Solution value")
+    plt.title(rf"Comparison of Exact and Approximate ${solution_type}(x, t_{{{time_layer}}})$")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
 
     # -----------------------------------------------------------
     # EXPORT TO FILE
     # -----------------------------------------------------------
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = output_path / f"solution_{solution_type}_t{time_layer}_N{config.N}_{timestamp}.pdf"
+
     plt.savefig(filename)
-    plt.close()  # Clean up memory for repeated use
+    plt.close()
 
     return str(filename)

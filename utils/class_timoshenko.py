@@ -105,21 +105,19 @@ class TimoshenkoModelSolver:
         self.gamma, self.delta = gamma, delta
         self.a1, self.a2 = a1, a2
 
-        # Store initial condition functions
+        # Initial data (displacement and rotation)
         self.u0, self.u1 = u0, u1
         self.v0, self.v1 = v0, v1
-        self.u_initial = [u0, u1]
-        self.v_initial = [v0, v1]
 
-        # Derivatives: optional analytical expressions
-        self.du = [du0, du1]
-        self.dv = [dv0, dv1]
+        # Analytical derivatives if available (optional)
+        self.du0, self.du1 = du0, du1
+        self.dv0, self.dv1 = dv0, dv1
 
-        # External sources
+        # Forcing terms f1(x, t), f2(x, t)
         self.f1 = f1
         self.f2 = f2
 
-        # Quadrature and numerical settings
+        # Numerical quadrature and differentiation settings
         self.h = h
         self.derivmeth = derivmeth
         self.tol = tol
@@ -156,19 +154,19 @@ class TimoshenkoModelSolver:
         """
         
         return soln.solve_system(
-            u_initial=self.u_initial,  # [u₀(x), u₁(x)]
-            v_initial=self.v_initial,  # [v₀(x), v₁(x)]
-            f1=self.f1,                # External force f₁(x, t)
-            f2=self.f2,                # External force f₂(x, t)
-            du=self.du,                # Optional: [du₀(x), du₁(x)]
-            dv=self.dv,                # Optional: [dv₀(x), dv₁(x)]
-            h=self.h,                  # Step size for numerical differentiation
-            derivmeth=self.derivmeth,  # Derivative computation method ('nd' or 'sfd')
-            tol=self.tol,              # Quadrature tolerance
-            method=self.method,        # Quadrature method ('hglq', 'glq', 'scipy')
-            max_n=self.max_n,          # Max points for adaptive quadrature
-            max_depth=self.max_depth,  # Max recursion depth for quadrature
-            n_points=self.n_points     # Fixed points for Gaussian quadrature
+            u_initial=[self.u0, self.u1],     # [u₀(x), u₁(x)]
+            v_initial=[self.v0, self.v1],     # [v₀(x), v₁(x)]
+            f1=self.f1,                       # External force f₁(x, t)
+            f2=self.f2,                       # External force f₂(x, t)
+            du_initial=[self.du0, self.du1],  # Optional: [du₀(x), du₁(x)]
+            dv_initial=[self.dv0, self.dv1],  # Optional: [dv₀(x), dv₁(x)]
+            h=self.h,                         # Step size for numerical differentiation
+            derivmeth=self.derivmeth,         # Derivative computation method ('nd' or 'sfd')
+            tol=self.tol,                     # Quadrature tolerance
+            method=self.method,               # Quadrature method ('hglq', 'glq', 'scipy')
+            max_n=self.max_n,                 # Max points for adaptive quadrature
+            max_depth=self.max_depth,         # Max recursion depth for quadrature
+            n_points=self.n_points            # Fixed points for Gaussian quadrature
         )
     
     def galerkin_approx_solution_on_grid(
