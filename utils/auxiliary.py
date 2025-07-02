@@ -1318,6 +1318,232 @@ def callable_exact_solution(
     all_functions = [construct_exact_function_at_k(k_idx) for k_idx in range(cfg.n + 1)]
     return all_functions if x_vals is None else np.array([fn(x_vals) for fn in all_functions])
 
+# ==============================================================
+#  Compute L2 Norm of Galerkin Approximate Solution
+# ==============================================================
+# This module provides a function to compute the L2 norm of a Galerkin-
+# approximated solution across a spatial domain using numerical integration.
+# Supports:
+#   - Single or multiple time steps
+#   - Various integration methods (GLQ, hierarchical GLQ, adaptive)
+# ==============================================================
+def compute_L2_norm_galerkin_approx(
+    approx_solution_generator,
+    ell: float,
+    k: int = None,
+    tol: float = 1e-6,
+    method: str = "hglq"
+) -> float | list[float]:
+    """
+    Compute the L2 norm(s) of a Galerkin-approximated solution over [0, ell].
+
+    Parameters
+    ----------
+    approx_solution_generator : callable or list of callables
+        Either a single function or a list of functions where each maps x → ũ_k(x),
+        the Galerkin approximation at time step k.
+
+    ell : float
+        Spatial domain length [0, ell].
+
+    k : int, optional
+        Specific time index to compute the L2 norm. If None, norms for all time steps are computed.
+
+    tol : float, optional
+        Desired tolerance for numerical integration (default: 1e-6).
+
+    method : str, optional
+        Integration method:
+            - 'glq'   : Gauss-Legendre Quadrature
+            - 'hglq'  : Hierarchical Gauss-Legendre Quadrature
+            - 'scipy' : Adaptive quadrature (SciPy)
+
+    Returns
+    -------
+    float or list[float]
+        - A single float if k is provided (norm at that time step).
+        - A list of floats if k is None (norms at all time steps).
+
+    Raises
+    ------
+    ValueError
+        If provided time index k is out of bounds.
+
+    Example
+    -------
+    >>> u_callables = obj.callable_compute_ansatz(solution_type='u')
+    >>> compute_L2_norm_galerkin_approx(u_callables, ell=obj.ell)
+
+    >>> v_callable = obj.callable_compute_ansatz(solution_type='v', k=5)
+    >>> compute_L2_norm_galerkin_approx(v_callable, ell=obj.ell)
+    """
+
+    # ----------------------------------------------------------
+    # Ensure input is a list of callable functions
+    # ----------------------------------------------------------
+    if callable(approx_solution_generator):
+        approx_solution_generator = [approx_solution_generator]
+
+    def compute_norm_at_k(k_idx: int) -> float:
+        """
+        Compute L2 norm of the Galerkin solution at time index k_idx.
+
+        Parameters
+        ----------
+        k_idx : int
+            Index for the time step to evaluate.
+
+        Returns
+        -------
+        float
+            Computed L2 norm for the time step.
+        """
+        approx_fn = approx_solution_generator[k_idx]  # Get function at time step k_idx
+
+        def squared_fn(x: float) -> float:
+            """
+            Squared version of the approximate function.
+            This defines the integrand for the L2 norm.
+            """
+            return approx_fn(x) ** 2
+
+        # ----------------------------------------------------------
+        # Perform numerical integration using selected method
+        # ----------------------------------------------------------
+        integral, _, _ = unified_adaptive_quadrature(
+            squared_fn, ell=ell, tol=tol, method=method
+        )
+
+        # Return square root of integral for L2 norm
+        return np.sqrt(integral)
+
+    # ----------------------------------------------------------
+    # Handle single time step case
+    # ----------------------------------------------------------
+    if k is not None:
+        if not (0 <= k < len(approx_solution_generator)):
+            raise ValueError(f"Time index k = {k} is out of bounds.")
+        return compute_norm_at_k(k)
+
+    # ----------------------------------------------------------
+    # Otherwise compute norms for all time steps
+    # ----------------------------------------------------------
+    return [compute_norm_at_k(i) for i in range(len(approx_solution_generator))]
+
+# ==============================================================
+# Module: compute_L2_norm_from_galerkin_coeffs
+# --------------------------------------------------------------
+# Computes exact values of the L2 norm of an approximate Galerkin
+# solution using a matrix-vector-based formulation:
+#     L2 = (ell / 2) * sqrt(cᵀ * H * c)
+#
+# Assumes:
+# - Time discretized as: t = np.linspace(0, T, n + 1)
+# - Galerkin coefficients stored in shape (n - 1, N)
+# - Approximation uses Legendre polynomial differences starting
+#   from k = 2. Initial layers (k = 0, 1) are given and excluded.
+# ==============================================================
+def compute_L2_norm_from_galerkin_coeffs(
+    coeff: np.ndarray,
+    ell: float,
+    time_layer: int = None
+) -> float | list[float]:
+    """
+    Compute exact L2 norm(s) of a Galerkin-approximated solution using:
+        L2 = (ell / 2) * sqrt(cᵀ * H * c)
+
+    Parameters
+    ----------
+    coeff : np.ndarray
+        Array of shape (n - 1, N), where:
+        - Rows correspond to time layers k = 2 to k = n
+        - Columns contain Galerkin coefficients for basis functions
+
+    ell : float
+        Length of the spatial domain [0, ell].
+
+    time_layer : int, optional
+        Specific time index k to evaluate (must be ≥ 2).
+        If None, compute norms for all valid k.
+
+    Returns
+    -------
+    float or list[float]
+        - Single L2 norm for the requested time layer
+        - List of L2 norms for all time layers if `time_layer` is None
+
+    Raises
+    ------
+    IndexError
+        If `time_layer` is less than 2 or exceeds the number of time layers.
+    
+    Notes
+    -----
+    - The function assumes that `coeff` contains only the approximated
+      time steps (k = 2 to k = n).
+    - Initial time steps k = 0 and k = 1 are excluded, as they are
+      typically initial conditions.
+    """
+
+    # --------------------------------------------
+    # Validate and extract matrix dimensions
+    # --------------------------------------------
+    N = coeff.shape[1]           # Number of Galerkin basis functions (columns)
+    num_layers = coeff.shape[0]  # Number of time steps (k = 2 to k = n)
+
+    def compute_single(k_index: int) -> float:
+        """
+        Compute the L2 norm for a specific time layer.
+
+        Parameters
+        ----------
+        k_index : int
+            Index into coeff array (0-based), corresponds to time_layer = k_index + 2
+
+        Returns
+        -------
+        float
+            L2 norm at the given time step.
+        """
+        # Extract coefficient vector for the current time step
+        c_k = coeff[k_index, :]
+
+        # Apply Galerkin mass matrix: H * c_k (H implicitly defined by 'identity' operator)
+        H_c = galerkin_stencils(N=N, v=c_k, operator="identity")
+
+        # Compute quadratic form: cᵀ * H * c
+        l2_squared = np.dot(c_k, H_c)
+
+        # Scale by (ell / 2) and take square root to get L2 norm
+        return (ell / 2.0) * np.sqrt(l2_squared)
+
+    # --------------------------------------------
+    # Case 1: Compute L2 norm at a specific time layer
+    # --------------------------------------------
+    if time_layer is not None:
+        if time_layer < 2:
+            raise IndexError(
+                f"Invalid time_layer = {time_layer}. Must be ≥ 2 "
+                "since k = 0 and k = 1 are reserved for initial conditions."
+            )
+
+        # Map time layer to 0-based row index in coeff
+        k_index = time_layer - 2
+
+        if k_index >= num_layers:
+            raise IndexError(
+                f"time_layer = {time_layer} exceeds available layers. "
+                f"(got shape {coeff.shape}, valid k: 2 to {num_layers + 1})"
+            )
+
+        return compute_single(k_index)
+
+    # --------------------------------------------
+    # Case 2: Compute L2 norm for all valid time layers
+    # --------------------------------------------
+    return [compute_single(k_idx) for k_idx in range(num_layers)]
+
+
 # ============================================
 # Function: compute_L2_error
 # Short Description: 

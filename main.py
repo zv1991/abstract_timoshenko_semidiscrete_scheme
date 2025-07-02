@@ -145,135 +145,19 @@ else:
 # ---------------------------------------------------------------
 del known_solutions
 
-def compute_L2_norm(
-    approx_solution_generator,
-    ell: float,
-    k: int = None,
-    tol: float = 1e-6,
-    method: str = "hglq"
-):
-    """
-    Compute the L2 norm of the approximate solution ũ(x) over [0, ell].
-
-    Parameters
-    ----------
-    approx_solution_generator : callable or list of callables
-        Approximated solution(s). Each function maps x -> ũ_k(x).
-    
-    ell : float
-        Length of the spatial domain [0, ell].
-
-    k : int, optional
-        Time index. If provided, compute the L2 norm only at that time step.
-
-    tol : float, optional
-        Tolerance for numerical integration.
-
-    method : str, optional
-        Integration method to use. Options:
-            - 'glq'   : Gauss-Legendre quadrature
-            - 'hglq'  : Hierarchical GLQ
-            - 'scipy' : SciPy adaptive quadrature
-
-    Returns
-    -------
-    float or list of floats
-        L2 norm at time step k, or list of norms across all time steps.
-    """
-
-    # Normalize input to list
-    if callable(approx_solution_generator):
-        approx_solution_generator = [approx_solution_generator]
-
-    def compute_norm_at_k(k_idx):
-        """
-        Compute L2 norm at specific time index.
-        """
-        approx_fn = approx_solution_generator[k_idx]
-
-        def squared_fn(x):
-            return approx_fn(x)**2
-
-        integral, _, _ = aux.unified_adaptive_quadrature(
-            squared_fn, ell=ell, tol=tol, method=method
-        )
-
-        return np.sqrt(integral)
-
-    if k is not None:
-        if not (0 <= k < len(approx_solution_generator)):
-            raise ValueError(f"Time index k = {k} is out of bounds.")
-        return compute_norm_at_k(k)
-
-    return [compute_norm_at_k(i) for i in range(len(approx_solution_generator))]
-
-def L2_integral_matrix_approach(
-    N: int,
-    coeff: np.ndarray,
-    ell: float,
-    time_layer: int = None
-) -> float | list[float]:
-    """
-    Compute the L2 norm(s) of a Galerkin-approximated solution using matrix-vector form:
-    (ell / 2) * sqrt(cᵗ H c), where H is applied via `galerkin_stencils()`.
-
-    Assumes `coeff` has shape (num_time_layers, N), where time index k = 2 maps to row 0.
-
-    Parameters
-    ----------
-    N : int
-        Number of Galerkin basis functions (number of columns in coeff).
-    
-    coeff : np.ndarray
-        Coefficient matrix of shape (n-2, N), corresponding to time layers k = 2, ..., n-1.
-
-    ell : float
-        Length of the spatial domain.
-
-    time_layer : int, optional
-        Specific time step k (must satisfy k ≥ 2). If None, computes for all k.
-
-    Returns
-    -------
-    float or list of floats
-        Single L2 norm if `time_layer` is specified; list of norms for all valid k otherwise.
-    
-    Raises
-    ------
-    IndexError
-        If time_layer < 2 or exceeds available time steps.
-    """
-    if coeff.shape[1] != N:
-        raise ValueError(f"Expected coeff shape (*, {N}), got {coeff.shape}")
-
-    num_layers = coeff.shape[0]  # corresponds to time steps k = 2, ..., n-1
-
-    def compute_single(k_index: int) -> float:
-        """
-        Compute L2 norm for the coefficient vector at row k_index.
-        Maps to time_layer = k_index + 2.
-        """
-        c_k = coeff[k_index, :]
-        H_c = aux.galerkin_stencils(N=N, v=c_k, operator="identity")
-        l2_squared = np.dot(c_k, H_c)
-        return (ell / 2.0) * np.sqrt(l2_squared)
-
-    if time_layer is not None:
-        if time_layer < 2:
-            raise IndexError(f"Invalid time_layer = {time_layer}. Must be ≥ 2.")
-        k_index = time_layer - 2
-        if k_index >= num_layers:
-            raise IndexError(f"time_layer = {time_layer} is out of bounds for coeff shape {coeff.shape}")
-        return compute_single(k_index)
-
-    # Return for all valid time steps (k = 2 to n-1)
-    return [compute_single(k_idx) for k_idx in range(num_layers)]
-
 tilde_u = solver.tilde_u
 
-L2_norms = compute_L2_norm(approx_solution_generator=solver.callable_compute_ansatz('u'), ell=cfg.ell)
+L2_norms = aux.compute_L2_norm_galerkin_approx(
+    approx_solution_generator=solver.callable_compute_ansatz('u'),
+    ell=cfg.ell
+    )
 
-L2_norms_all = L2_integral_matrix_approach(N=cfg.N, coeff=solver.tilde_u, ell=cfg.ell)
+L2_norms_all = aux.compute_L2_norm_from_galerkin_coeffs(
+    coeff=solver.tilde_u,
+    ell=cfg.ell
+    )
 
 err1 = abs(L2_norms[2] - L2_norms_all[0])
+print(err1)
 err2 = abs(L2_norms[3] - L2_norms_all[1])
+print(err2)
