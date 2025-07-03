@@ -23,7 +23,7 @@ from utils.class_timoshenko import TimoshenkoModelSolver      # Galerkin solver 
 # CONFIGURATION: Toggle for using exact solutions (if known)
 # ---------------------------------------------------------------
 
-known_solutions = True
+known_solutions = False
 
 # ---------------------------------------------------------------
 # STEP 1: LOAD INITIAL AND BOUNDARY DATA FROM SOLUTION CLASS
