@@ -1678,7 +1678,7 @@ def compute_L2_difference_norms_from_coeffs(
     coeff_init: np.ndarray,
     coeff_next: np.ndarray,
     time_layer: int = None
-) -> float | list[float]:
+    ) -> float | list[float]:
     """
     Compute L2 norm(s) of the difference between two Galerkin
     approximations at specified time layers.
