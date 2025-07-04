@@ -18,7 +18,7 @@ import utils.config as cfg       # Configuration file with physical model consta
 # ===============================================================
 # USER-DEFINED FIXED PARAMETERS
 # ===============================================================
-lam = 25  # Spatial frequency mode (integer ≥ 1); adjustable for test case complexity
+lam = 1  # Spatial frequency mode (integer ≥ 1); adjustable for test case complexity
 
 # ===============================================================
 # SYMBOLIC VARIABLES

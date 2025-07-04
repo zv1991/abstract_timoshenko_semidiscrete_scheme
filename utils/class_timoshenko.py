@@ -158,6 +158,8 @@ class TimoshenkoModelSolver:
             v_initial=[self.v0, self.v1],     # [v₀(x), v₁(x)]
             f1=self.f1,                       # External force f₁(x, t)
             f2=self.f2,                       # External force f₂(x, t)
+            n=self.n,                         # Number of time steps (required)
+            N=self.N,                         # Number of Galerkin modes (required)
             du_initial=[self.du0, self.du1],  # Optional: [du₀(x), du₁(x)]
             dv_initial=[self.dv0, self.dv1],  # Optional: [dv₀(x), dv₁(x)]
             h=self.h,                         # Step size for numerical differentiation

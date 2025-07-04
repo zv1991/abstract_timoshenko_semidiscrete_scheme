@@ -157,3 +157,41 @@ else:
 # FINAL CLEANUP: REMOVE FLAGS AND TEMPORARY OBJECTS
 # ---------------------------------------------------------------
 del known_solutions
+
+solver_next = TimoshenkoModelSolver(
+    ell=cfg.ell,          # Beam length
+    T=cfg.T,              # Final time
+    alpha=cfg.alpha,      # Damping coefficient for displacement
+    beta=cfg.beta,        # Damping coefficient for rotation
+    gamma=cfg.gamma,      # Rotational stiffness
+    delta=cfg.delta,      # Rotational damping
+    a1=cfg.a1,            # Coupling in u-equation (∂v/∂x)
+    a2=cfg.a2,            # Coupling in v-equation (∂u/∂x)
+    n=cfg.n,              # Number of time steps
+    N=cfg.N + 1,              # Number of Galerkin modes (spatial)
+    f1=f1, f2=f2,         # External forcing terms
+    u0=u0, u1=u1,         # Initial displacement and velocity
+    v0=v0, v1=v1,         # Initial rotation and rotational velocity
+    du0=du0, du1=du1,     # Initial ∂u/∂x and ∂u/∂t
+    dv0=dv0, dv1=dv1      # Initial ∂v/∂x and ∂v/∂t
+)
+
+# Compare u(x, t_k) differences (Gal. mode N vs N+1)
+diff_u_norms = aux.compute_L2_difference_norms(
+    solver_init=solver,
+    solver_next=solver_next,
+    solution_type='u'
+    )
+
+# Compare v(x, t_k) differences
+diff_v_norms = aux.compute_L2_difference_norms(
+    solver_init=solver,
+    solver_next=solver_next,
+    solution_type='v'
+    )
+
+# L2 norms of differences in u-coefficients across all time steps
+diff_norms_u = aux.compute_L2_difference_norms_from_coeffs(
+    coeff_init=solver.tilde_u,
+    coeff_next=solver_next.tilde_u
+)
