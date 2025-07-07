@@ -22,77 +22,77 @@ ell = cfg.ell
 # GALERKIN BASIS FUNCTION DEFINITIONS
 # ======================================================
 
-def coeff_A_sym(m: int) -> sp.Expr:
-    """
-    Compute normalization coefficient for Galerkin basis functions.
-    A_m = 1 / sqrt(2m + 1)
+# def coeff_A_sym(m: int) -> sp.Expr:
+#     """
+#     Compute normalization coefficient for Galerkin basis functions.
+#     A_m = 1 / sqrt(2m + 1)
 
-    Parameters:
-    -----------
-    m : int
-        Basis function index
+#     Parameters:
+#     -----------
+#     m : int
+#         Basis function index
 
-    Returns:
-    --------
-    sp.Expr
-        Symbolic normalization coefficient A_m
-    """
-    return 1 / sp.sqrt(2 * m + 1)
-
-
-def shifted_legendre_sym(m: int, x_sym: sp.Symbol) -> sp.Expr:
-    """
-    Construct the m-th shifted Legendre polynomial over [0, ell].
-
-    The standard domain [-1, 1] is mapped from [0, ell] using:
-        ξ = 2x / ell - 1
-
-    Parameters:
-    -----------
-    m : int
-        Degree of the Legendre polynomial
-    x_sym : sp.Symbol
-        Symbolic spatial variable
-
-    Returns:
-    --------
-    sp.Expr
-        Shifted Legendre polynomial P_m(ξ)
-    """
-    xi = 2 * x_sym / ell - 1
-    return sp.legendre(m, xi)
+#     Returns:
+#     --------
+#     sp.Expr
+#         Symbolic normalization coefficient A_m
+#     """
+#     return 1 / sp.sqrt(2 * m + 1)
 
 
-def phi_m_sym(m: int, x_sym: sp.Symbol) -> sp.Expr:
-    """
-    Construct φ_m(x), the m-th Galerkin basis function.
+# def shifted_legendre_sym(m: int, x_sym: sp.Symbol) -> sp.Expr:
+#     """
+#     Construct the m-th shifted Legendre polynomial over [0, ell].
 
-    φ_m(x) = (√ell / 2) * A_m * [P_{m+1}(ξ) - P_{m-1}(ξ)]
+#     The standard domain [-1, 1] is mapped from [0, ell] using:
+#         ξ = 2x / ell - 1
 
-    Parameters:
-    -----------
-    m : int
-        Index of the basis function (must be ≥ 1)
-    x_sym : sp.Symbol
-        Symbolic spatial variable
+#     Parameters:
+#     -----------
+#     m : int
+#         Degree of the Legendre polynomial
+#     x_sym : sp.Symbol
+#         Symbolic spatial variable
 
-    Returns:
-    --------
-    sp.Expr
-        Symbolic Galerkin basis function φ_m(x)
+#     Returns:
+#     --------
+#     sp.Expr
+#         Shifted Legendre polynomial P_m(ξ)
+#     """
+#     xi = 2 * x_sym / ell - 1
+#     return sp.legendre(m, xi)
 
-    Raises:
-    -------
-    ValueError
-        If m < 1
-    """
-    if m < 1:
-        raise ValueError("Basis index m must be ≥ 1.")
 
-    A_m = coeff_A_sym(m)
-    return (sp.sqrt(ell) / 2) * A_m * (
-        shifted_legendre_sym(m + 1, x_sym) - shifted_legendre_sym(m - 1, x_sym)
-    )
+# def phi_m_sym(m: int, x_sym: sp.Symbol) -> sp.Expr:
+#     """
+#     Construct φ_m(x), the m-th Galerkin basis function.
+
+#     φ_m(x) = (√ell / 2) * A_m * [P_{m+1}(ξ) - P_{m-1}(ξ)]
+
+#     Parameters:
+#     -----------
+#     m : int
+#         Index of the basis function (must be ≥ 1)
+#     x_sym : sp.Symbol
+#         Symbolic spatial variable
+
+#     Returns:
+#     --------
+#     sp.Expr
+#         Symbolic Galerkin basis function φ_m(x)
+
+#     Raises:
+#     -------
+#     ValueError
+#         If m < 1
+#     """
+#     if m < 1:
+#         raise ValueError("Basis index m must be ≥ 1.")
+
+#     A_m = coeff_A_sym(m)
+#     return (sp.sqrt(ell) / 2) * A_m * (
+#         shifted_legendre_sym(m + 1, x_sym) - shifted_legendre_sym(m - 1, x_sym)
+#     )
 
 
 # ======================================================
@@ -101,11 +101,19 @@ def phi_m_sym(m: int, x_sym: sp.Symbol) -> sp.Expr:
 
 def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
     """Define symbolic displacement field: u(x, t) = t · φ₁(x)"""
-    return t_sym * phi_m_sym(1, x_sym)
+    return t_sym * sp.sin(5 * sp.pi * x / ell)
 
 def v_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
     """Define symbolic rotation field: v(x, t) = t · φ₁(x)"""
-    return t_sym * phi_m_sym(1, x_sym)
+    return t_sym * sp.sin(5 * sp.pi * x / ell)
+
+# def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
+#     """Define symbolic displacement field: u(x, t) = t · φ₁(x)"""
+#     return t_sym * phi_m_sym(1, x_sym)
+
+# def v_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
+#     """Define symbolic rotation field: v(x, t) = t · φ₁(x)"""
+#     return t_sym * phi_m_sym(1, x_sym)
 
 
 # ======================================================

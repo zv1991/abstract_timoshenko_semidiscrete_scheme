@@ -19,7 +19,7 @@ Key Features:
 - Evaluation of second derivatives ⟨uᵢ″, φₘ⟩ and ⟨vᵢ″, φₘ⟩ via integration by parts
 - Flexible quadrature interface for adaptive integration:
     - Supports 'hglq', 'glq', and SciPy's routines
-- Nonlinear coupling through the squared norm of the spatial derivative ‖u₁′‖²
+- Nonlinear coupling through the squared norm of the spatial derivative ‖uₖ′‖²
 - Outputs include:
     - Modal coefficients for displacement and rotation
     - Condition numbers for Galerkin matrices (diagnostic information)
@@ -40,7 +40,6 @@ import numpy as np  # Core numerical computing (arrays, linear algebra)
 
 # Project-specific numerical routines
 import utils.auxiliary as aux  # Galerkin operators, Legendre basis, projections
-import utils.solver as soln    # Time integration and modal system solver
 
 
 class TimoshenkoModelSolver:
@@ -48,6 +47,9 @@ class TimoshenkoModelSolver:
     Nonlinear PDE solver for the Timoshenko system using a Galerkin framework.
     """
 
+    # ----------------------------------------------------------------------- #
+    #                         Class Initialization Method                     #
+    # ----------------------------------------------------------------------- #
     def __init__(
         self,
         ell: float, T: float,
@@ -92,13 +94,14 @@ class TimoshenkoModelSolver:
         tol, method, max_n, max_depth, n_points : float | int
             Quadrature control parameters.
         """
+        
         # Spatial and temporal setup
-        self.ell = ell
-        self.T = T
-        self.n = n
-        self.N = N
-        self.tau = T / n
-        self.t = np.linspace(0, T, n + 1)
+        self.ell = ell                     # Beam length
+        self.T = T                         # Final simulation time
+        self.n = n                         # Number of time steps
+        self.N = N                         # Number of Galerkin basis modes
+        self.tau = T / n                   # Time step size
+        self.t = np.linspace(0, T, n + 1)  # Time discretization grid
 
         # Model parameters
         self.alpha, self.beta = alpha, beta
@@ -113,7 +116,7 @@ class TimoshenkoModelSolver:
         self.du0, self.du1 = du0, du1
         self.dv0, self.dv1 = dv0, dv1
 
-        # Forcing terms f1(x, t), f2(x, t)
+        # Forcing terms
         self.f1 = f1
         self.f2 = f2
 
@@ -129,6 +132,9 @@ class TimoshenkoModelSolver:
         # Precompute modal solution on initialization
         self.tilde_u, self.tilde_v, self.cond_u, self.cond_v = self.solve_system()
 
+    # ----------------------------------------------------------------------- #
+    #                   Solve Modal Galerkin System Method                    #
+    # ----------------------------------------------------------------------- #
     def solve_system(self):
         """
         solve_system: Solve the Galerkin-reduced system of ODEs for the Timoshenko model
@@ -136,41 +142,134 @@ class TimoshenkoModelSolver:
         This method performs time integration on a modal ODE system derived from projecting
         the nonlinear Timoshenko beam PDEs onto a Legendre–Galerkin basis.
         
-        Method Overview:
-        ----------------
-        - Projects initial conditions and external forcing onto modal basis functions
-        - Supports optional analytical first derivatives (du, dv) for improved accuracy
-        - Computes second derivative projections ⟨uᵢ″, φₘ⟩ and ⟨vᵢ″, φₘ⟩ via integration by parts
-        - Evaluates nonlinear stiffness term qₖ = α + β * ‖uₖ′‖² at each time step
-        - Solves the resulting system using preassembled modal matrices
-        - Applies leapfrog-type time-stepping scheme for k ≥ 2
-        - Tracks matrix condition numbers for numerical diagnostics
-        
         Returns:
         --------
         tuple
             (tilde_u, tilde_v): Modal coefficients of displacement u(x, t) and rotation v(x, t)
             (cond_u, cond_v): Condition numbers of the Galerkin system matrices
         """
-        
-        return soln.solve_system(
-            u_initial=[self.u0, self.u1],     # [u₀(x), u₁(x)]
-            v_initial=[self.v0, self.v1],     # [v₀(x), v₁(x)]
-            f1=self.f1,                       # External force f₁(x, t)
-            f2=self.f2,                       # External force f₂(x, t)
-            n=self.n,                         # Number of time steps (required)
-            N=self.N,                         # Number of Galerkin modes (required)
-            du_initial=[self.du0, self.du1],  # Optional: [du₀(x), du₁(x)]
-            dv_initial=[self.dv0, self.dv1],  # Optional: [dv₀(x), dv₁(x)]
-            h=self.h,                         # Step size for numerical differentiation
-            derivmeth=self.derivmeth,         # Derivative computation method ('nd' or 'sfd')
-            tol=self.tol,                     # Quadrature tolerance
-            method=self.method,               # Quadrature method ('hglq', 'glq', 'scipy')
-            max_n=self.max_n,                 # Max points for adaptive quadrature
-            max_depth=self.max_depth,         # Max recursion depth for quadrature
-            n_points=self.n_points            # Fixed points for Gaussian quadrature
+
+        # Package quadrature-related parameters
+        quad_kwargs = dict(
+            tol=self.tol,
+            method=self.method,
+            max_n=self.max_n,
+            max_depth=self.max_depth,
+            n_points=self.n_points
         )
+
+        # Project time-dependent forcing terms onto modal basis
+        f1_integr = aux.compute_time_dependent_integrals(self.f1, self.N, self.ell, self.t, **quad_kwargs)
+        f2_integr = aux.compute_time_dependent_integrals(self.f2, self.N, self.ell, self.t, **quad_kwargs)
+
+        # Project initial conditions and their (possibly approximate) derivatives
+        init_data = aux.compute_initial_integrals(
+            [self.u0, self.u1], [self.v0, self.v1], self.N, self.ell,
+            du=[self.du0, self.du1], dv=[self.dv0, self.dv1],
+            h=self.h, derivmeth=self.derivmeth, **quad_kwargs
+        )
+
+        # Extract projected initial values and derivatives
+        u0_integr, u1_integr = init_data['u_proj']
+        v0_integr, v1_integr = init_data['v_proj']
+        diff1u1 = init_data['diff1_u1']
+        diff1v1 = init_data['diff1_v1']
+        diff2u = init_data['diff2_u']
+        diff2v = init_data['diff2_v']
+
+        # Compute Initial Nonlinear Term ‖u₁′‖²
+        integral, _ = aux.integrate_derivative_form(
+            f=self.u1 if self.du1 is None else None,
+            df=self.du1 if self.du1 is not None else None,
+            ell=self.ell, m=None, form='squared',
+            h=self.h, derivmeth=self.derivmeth, **quad_kwargs
+        )
+        q_prev = self.alpha + self.beta * integral
+
+        # Allocate arrays for modal solutions and condition numbers
+        tild_u = np.zeros((self.n - 1, self.N))
+        tild_v = np.zeros((self.n - 1, self.N))
+        cond_u = np.zeros(self.n - 1)
+        cond_v = np.zeros(self.n - 1)
+
+        # ---------------- Time integration loop ---------------- #
+        for k in range(self.n - 1):
+
+            # Compute right-hand side (RHS) for linear systems at time step k
+            if k == 0:
+                # First step: uses projected ICs at t=0, t=τ (special handling)
+                b1 = (4 / self.ell**2) * (
+                    self.tau**2 * f1_integr[k] + 2 * u1_integr
+                    - self.a1 * self.tau**2 * diff1v1
+                    - u0_integr + 0.5 * self.tau**2 * q_prev * diff2u[k]
+                )
+                b2 = (8 / (2 + self.delta * self.tau**2) / self.ell**2) * (
+                    self.tau**2 * f2_integr[k] + 2 * v1_integr
+                    + self.a2 * self.tau**2 * diff1u1
+                    - (1 + 0.5 * self.tau**2 * self.delta) * v0_integr
+                    + 0.5 * self.tau**2 * self.gamma * diff2v[k]
+                )
+
+            elif k == 1:
+                # Second step: uses Galerkin stencils from step k-1
+                b1 = (4 / self.ell**2) * (
+                    self.tau**2 * f1_integr[k]
+                    + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_u[k - 1])
+                    - 0.5 * self.a1 * self.tau**2 * self.ell *
+                      aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order")
+                    - u1_integr + 0.5 * self.tau**2 * q_prev * diff2u[k]
+                )
+                b2 = (8 / (2 + self.delta * self.tau**2) / self.ell**2) * (
+                    self.tau**2 * f2_integr[k]
+                    + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_v[k - 1])
+                    + 0.5 * self.a2 * self.tau**2 * self.ell *
+                      aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order")
+                    - (1 + 0.5 * self.tau**2 * self.delta) * v1_integr
+                    + 0.5 * self.tau**2 * self.gamma * diff2v[k]
+                )
+
+            else:
+                # All later steps use fully recursive leapfrog stencils
+                b1 = (
+                    (4 * self.tau**2 / self.ell**2) * f1_integr[k]
+                    + 2 * aux.galerkin_stencils(self.N, tild_u[k - 1])
+                    - (2 * self.a1 * self.tau**2 / self.ell) *
+                      aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order")
+                )
+                b2 = (
+                    (8 * self.tau**2 / (2 + self.delta * self.tau**2) / self.ell**2) * f2_integr[k]
+                    + (4 / (2 + self.delta * self.tau**2)) *
+                      aux.galerkin_stencils(self.N, tild_v[k - 1])
+                    + (4 * self.a2 * self.tau**2 / (2 + self.delta * self.tau**2) / self.ell) *
+                      aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order")
+                )
+
+            # Solve linear systems for current modal coefficients
+            cond_u[k] = aux.condition_number_associated_matrix(self.N, self.ell, 1, 0.5 * self.tau**2 * q_prev)
+            cond_v[k] = aux.condition_number_associated_matrix(
+                self.N, self.ell,
+                1 + 0.5 * self.tau**2 * self.delta,
+                0.5 * self.tau**2 * self.gamma
+            )
+
+            tild_u[k] = aux.sys_soln(b1, self.N, 1, 0.5 * self.tau**2 * q_prev, self.ell)
+            tild_v[k] = aux.sys_soln(b2, self.N,
+                                     1 + 0.5 * self.tau**2 * self.delta,
+                                     0.5 * self.tau**2 * self.gamma, self.ell)
+
+            # Leapfrog correction for k ≥ 2
+            if k >= 2:
+                tild_u[k] -= tild_u[k - 2]
+                tild_v[k] -= tild_v[k - 2]
+
+            # Update nonlinear coefficient qₖ = α + β * ‖uₖ′‖² for next iteration
+            q_prev = self.alpha + self.beta * np.dot(tild_u[k], tild_u[k])
+
+        return tild_u, tild_v, cond_u, cond_v
     
+    # ----------------------------------------------------------------------- #
+    #                Evaluate Galerkin Solution on Grid or Point              #
+    # ----------------------------------------------------------------------- #
     def galerkin_approx_solution_on_grid(
         self,
         solution_type: str,
@@ -180,11 +279,11 @@ class TimoshenkoModelSolver:
     ) -> np.ndarray | float:
         """
         galerkin_approx_solution_on_grid: Evaluate Galerkin solution at spatial points or grid
-        
+
         This method reconstructs the Galerkin-approximated solution using precomputed modal 
         coefficients. It allows evaluation at a specific spatial point or over a uniform 
         spatial grid, for a given time index.
-        
+
         Parameters
         ----------
         solution_type : str
@@ -195,14 +294,14 @@ class TimoshenkoModelSolver:
             Specific spatial coordinate at which to evaluate the solution.
         k : int, optional
             Time index (0 ≤ k ≤ n) for evaluation.
-        
+
         Returns
         -------
         np.ndarray or float
             Reconstructed solution at all time steps on a spatial grid (array) or 
             single value at a specific point in space and time.
         """
-        
+
         if solution_type not in {'u', 'v'}:
             raise ValueError("solution_type must be either 'u' or 'v'.")
 
@@ -236,6 +335,9 @@ class TimoshenkoModelSolver:
 
         return all_results
 
+    # ----------------------------------------------------------------------- #
+    #                    Return Callable or Evaluated Ansatz                  #
+    # ----------------------------------------------------------------------- #
     def callable_compute_ansatz(
         self,
         solution_type: str,
@@ -244,7 +346,7 @@ class TimoshenkoModelSolver:
     ):
         """
         Return callable or evaluated Galerkin ansatz u(x,t_k) or v(x,t_k)
-        
+
         Parameters
         ----------
         solution_type : str
@@ -253,13 +355,13 @@ class TimoshenkoModelSolver:
             Time step index
         x_vals : float | list | np.ndarray, optional
             Evaluation points (optional)
-        
+
         Returns
         -------
         Callable or np.ndarray
             Function u(x) or v(x), or array of values
         """
-        
+
         if solution_type not in {'u', 'v'}:
             raise ValueError("solution_type must be 'u' or 'v'.")
 

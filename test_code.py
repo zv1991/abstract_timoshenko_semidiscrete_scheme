@@ -115,7 +115,7 @@ else:
     print("No exact solutions available; running convergence analysis...")
 
     tol = 1e-6
-    max_increment_n = 5
+    max_increment_n = 8
     max_galerkin_mode = 48
 
     n_base = cfg.n

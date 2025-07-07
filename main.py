@@ -23,7 +23,7 @@ from utils.class_timoshenko import TimoshenkoModelSolver      # Galerkin solver 
 # CONFIGURATION: Toggle for using exact solutions (if known)
 # ---------------------------------------------------------------
 
-known_solutions = False
+known_solutions = True
 
 # ---------------------------------------------------------------
 # STEP 1: LOAD INITIAL AND BOUNDARY DATA FROM SOLUTION CLASS
@@ -157,3 +157,13 @@ else:
 # FINAL CLEANUP: REMOVE FLAGS AND TEMPORARY OBJECTS
 # ---------------------------------------------------------------
 del known_solutions
+
+k_values = [32, 64, 96, 128]
+
+for k in k_values:
+    u_approx_val = solver_prev.callable_compute_ansatz(
+        solution_type='u',
+        k=k,
+        x_vals=1.0
+    )
+    print(f"u_approx_val at k={k}: {u_approx_val}")
