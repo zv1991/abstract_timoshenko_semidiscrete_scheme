@@ -1908,24 +1908,21 @@ def compute_L2_error(
 # Function: plot_L2_errors_over_time
 # -----------------------------------------------------------------------------
 # Purpose:
-# This function generates a high-quality, LaTeX-styled plot of time-dependent
-# L2 errors for both displacement (u) and rotation (v) in the Timoshenko beam
-# model. It uses a color-blind–friendly palette (Okabe-Ito) to ensure visual
-# clarity and accessibility for all users, including those with color vision
-# deficiencies.
-#
+#   Generate and save two separate LaTeX-styled plots of L2 errors over time
+#   for displacement (u) and rotation (v) in the Timoshenko beam model.
+#   Additionally, export custom-formatted error data to CSV files.
+# -----------------------------------------------------------------------------
 # Inputs:
-# - time_array     : 1D array of simulation time points
-# - error_u        : L2 error array for displacement u (denoted E_{1,k})
-# - error_v        : L2 error array for rotation v (denoted E_{2,k})
-# - config         : simulation configuration object with:
-#                    - config.n: number of time steps
-#                    - config.N: number of Galerkin modes (spatial resolution)
-# - output_dir     : path to directory where the plot will be saved (default = 'plots')
-#
-# Output:
-# - Saves a timestamped PDF figure showing both L2 error curves with LaTeX math labels.
-# - Returns the absolute file path as a string.
+#   - time_array : 1D array of simulation time points
+#   - error_u    : L2 error array for displacement u
+#   - error_v    : L2 error array for rotation v
+#   - config     : object with attributes:
+#                   - config.n: number of time steps
+#                   - config.N: number of Galerkin modes
+#   - output_dir : target directory for saving plots and CSVs
+# -----------------------------------------------------------------------------
+# Outputs:
+#   - Tuple of two strings with paths to the saved PDF plot files (u and v)
 # =============================================================================
 
 def plot_L2_errors_over_time(
@@ -1934,63 +1931,31 @@ def plot_L2_errors_over_time(
     error_v,
     config,
     output_dir: str = "plots"
-    ) -> str:
+) -> tuple[str, str]:
     """
-    Generate and save a high-quality LaTeX-styled plot of L2 errors over time
-    for both displacement (u) and rotation (v) in the Timoshenko beam model.
-
-    Parameters
-    ----------
-    time_array : array-like
-        Array of time values (e.g., config.t)
-
-    error_u : array-like
-        L2 error values for displacement u at each time step
-
-    error_v : array-like
-        L2 error values for rotation v at each time step
-
-    config : object
-        Simulation config with required attributes:
-            - config.n : number of time steps
-            - config.N : number of Galerkin basis functions
-
-    output_dir : str, optional
-        Directory where the PDF plot will be saved (default is 'plots')
+    Generate and save separate plots and CSV logs of L2 errors over time
+    for displacement (u) and rotation (v) in the Timoshenko beam model.
 
     Returns
     -------
-    str
-        Absolute path to the saved PDF file
+    tuple[str, str]
+        Paths to the saved PDF plot files for displacement (u) and rotation (v)
     """
 
-    # -------------------------
-    # Constants and Styling
-    # -------------------------
-    LINE_WIDTH = 2.00  # Line thickness for plots
+    # =========================================================================
+    # MODULE IMPORTS (kept local to reduce global namespace clutter)
+    # =========================================================================
+    from pathlib import Path            # For safe and cross-platform file paths
+    from datetime import datetime       # For generating unique file timestamps
+    import matplotlib.pyplot as plt     # Core plotting library
+    from matplotlib import rcParams     # For fine control of plot appearance
 
-    # -------------------------
-    # Imports (local to avoid clutter at module level)
-    # -------------------------
-    from pathlib import Path                  # Filesystem path abstraction
-    from datetime import datetime             # For timestamping output file
-    import matplotlib.pyplot as plt           # Main plotting interface
-    from matplotlib import rcParams           # LaTeX rendering configuration
-
-    # -------------------------
-    # Input Validation
-    # -------------------------
-    if not (len(time_array) and len(error_u) and len(error_v)):
-        raise ValueError("Inputs 'time_array', 'error_u', and 'error_v' must be non-empty.")
-    if not (len(time_array) == len(error_u) == len(error_v)):
-        raise ValueError("Input arrays must be of equal length.")
-
-    # -------------------------
-    # Configure LaTeX Rendering for Matplotlib
-    # -------------------------
-    rcParams["text.usetex"] = True
-    rcParams["font.family"] = "lmodern"
-    rcParams["text.latex.preamble"] = r"""
+    # =========================================================================
+    # CONFIGURE MATPLOTLIB FOR LATEX-STYLED RENDERING
+    # =========================================================================
+    rcParams["text.usetex"] = True                  # Enable LaTeX rendering
+    rcParams["font.family"] = "lmodern"             # Use LaTeX font
+    rcParams["text.latex.preamble"] = r"""          # Add common LaTeX math packages
     \usepackage[utf8]{inputenc}
     \usepackage[T1]{fontenc}
     \usepackage{lmodern}
@@ -2003,70 +1968,96 @@ def plot_L2_errors_over_time(
     \usepackage{xcolor}
     """
 
-    # -------------------------
-    # Colorblind-Friendly Palette (Okabe-Ito)
-    # -------------------------
-    color_u = "#0072B2"  # Blue: displacement u (E₁ₖ)
-    color_v = "#E69F00"  # Orange: rotation v (E₂ₖ)
+    # =========================================================================
+    # STYLE CONSTANTS
+    # =========================================================================
+    LINE_WIDTH = 2.0               # Plot line thickness
+    color_u = "#0072B2"            # Okabe-Ito blue for displacement u
+    color_v = "#E69F00"            # Okabe-Ito orange for rotation v
 
-    # -------------------------
-    # Ensure Output Directory Exists
-    # -------------------------
+    # =========================================================================
+    # INPUT VALIDATION
+    # =========================================================================
+    if not (len(time_array) and len(error_u) and len(error_v)):
+        raise ValueError("Inputs 'time_array', 'error_u', and 'error_v' must be non-empty.")
+    if not (len(time_array) == len(error_u) == len(error_v)):
+        raise ValueError("Input arrays must be of equal length.")
+
+    # =========================================================================
+    # FILE AND DIRECTORY SETUP
+    # =========================================================================
     output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    output_path.mkdir(parents=True, exist_ok=True)  # Create output directory if missing
 
-    # -------------------------
-    # Get Time Range for Labeling
-    # -------------------------
-    t_min, t_max = float(time_array[0]), float(time_array[-1])
+    t_min, t_max = float(time_array[0]), float(time_array[-1])  # For axis labeling
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")        # Unique file ID
 
-    # -------------------------
-    # Initialize Plot
-    # -------------------------
-    plt.figure(figsize=(8, 4))  # Width × Height in inches
-
-    # Plot L2 error for displacement u
+    # =========================================================================
+    # PLOT FOR DISPLACEMENT u
+    # =========================================================================
+    plt.figure(figsize=(8, 4))
     plt.plot(
-        time_array,
-        error_u,
+        time_array, error_u,
         marker='o',
         linestyle='-',
         linewidth=LINE_WIDTH,
         color=color_u,
-        label=r"$E_{1,k} = \left\| u \left( \cdot, t_k \right) - \tilde{u}_{k,N} \left( \cdot \right) \right\|$"
+        label=r"$E_{1,k} = \left\| u(\cdot, t_k) - \tilde{u}_{k,N}(\cdot) \right\|$"
     )
+    plt.xlabel(rf"Time $t \in \left[ {t_min:.0f}, {t_max:.0f} \right]$")
+    plt.ylabel(r"$E_{1, k}$")
+    plt.title(r"$L^2$ Error Evolution for $u(x, t)$")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
 
-    # Plot L2 error for rotation v
+    pdf_u = output_path / f"L2_error_u_n{config.n}_N{config.N}_{timestamp}.pdf"
+    plt.savefig(pdf_u)
+    plt.close()
+
+    # =========================================================================
+    # PLOT FOR ROTATION v
+    # =========================================================================
+    plt.figure(figsize=(8, 4))
     plt.plot(
-        time_array,
-        error_v,
+        time_array, error_v,
         marker='s',
         linestyle='--',
         linewidth=LINE_WIDTH,
         color=color_v,
-        label=r"$E_{2,k} = \left\| v \left( \cdot, t_k \right) - \tilde{v}_{k,N} \left( \cdot \right) \right\|$"
+        label=r"$E_{2,k} = \left\| v(\cdot, t_k) - \tilde{v}_{k,N}(\cdot) \right\|$"
     )
-
-    # -------------------------
-    # Axis Labels, Title, and Layout
-    # -------------------------
     plt.xlabel(rf"Time $t \in \left[ {t_min:.0f}, {t_max:.0f} \right]$")
-    plt.ylabel(r"$E_k$")
-    plt.title(r"$L^2$ Error Evolution for $u(x, t)$ and $v(x, t)$")
+    plt.ylabel(r"$E_{2, k}$")
+    plt.title(r"$L^2$ Error Evolution for $v(x, t)$")
     plt.grid(True)
     plt.legend()
-    plt.tight_layout()  # Prevent clipping of labels
+    plt.tight_layout()
 
-    # -------------------------
-    # Save Plot to PDF with Timestamp
-    # -------------------------
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = output_path / f"L2_errors_n{config.n}_N{config.N}_{timestamp}.pdf"
+    pdf_v = output_path / f"L2_error_v_n{config.n}_N{config.N}_{timestamp}.pdf"
+    plt.savefig(pdf_v)
+    plt.close()
 
-    plt.savefig(filename)   # Save figure as PDF
-    plt.close()             # Free memory and avoid overlap on future plots
+    # =========================================================================
+    # EXPORT CUSTOM CSV FILES WITH FORMATTED ERROR MESSAGES
+    # =========================================================================
 
-    return str(filename)    # Return full file path
+    # Write L2 error messages for displacement u
+    csv_u = output_path / f"L2_error_u_n{config.n}_N{config.N}_{timestamp}.csv"
+    with csv_u.open("w") as f_u:
+        for k, error in enumerate(error_u):
+            f_u.write(f"Time step {k:3d}: L2 error for solution 'u' = {error:.6e}\n")
+
+    # Write L2 error messages for rotation v
+    csv_v = output_path / f"L2_error_v_n{config.n}_N{config.N}_{timestamp}.csv"
+    with csv_v.open("w") as f_v:
+        for k, error in enumerate(error_v):
+            f_v.write(f"Time step {k:3d}: L2 error for solution 'v' = {error:.6e}\n")
+
+    # =========================================================================
+    # RETURN PATHS TO GENERATED PDF PLOTS
+    # =========================================================================
+    return str(pdf_u), str(pdf_v)
 
 
 # =============================================================================
@@ -2096,69 +2087,56 @@ def plot_exact_vs_approx_solution_at_time_k(
     time_layer: int,
     config,
     output_dir: str = "plots"
-    ) -> str:
+) -> str:
     """
     Generate a comparison plot between the exact and Galerkin-approximated solutions
     for a given time layer. The result is a LaTeX-styled, publication-quality plot.
-
-    Parameters:
-    - exact_soln      : callable, function returning exact solution values (x, t) -> array
-    - approx_solver   : object, must implement `callable_compute_ansatz(solution_type, k, x_vals)`
-    - solution_type   : str, 'u' for displacement or 'v' for rotation
-    - time_layer      : int, time index k in range [0, config.n]
-    - config          : object with attributes: ell (domain length), t (array of times), N (DOFs), n (max index)
-    - output_dir      : str, path to save output plots (default: "plots")
-
-    Returns:
-    - str: Full path to the saved PDF file
     """
 
-    # -------------------------
-    # Constants and Config
-    # -------------------------
-    LINE_WIDTH = 3.00  # Thickness of plotted lines for visual clarity
+    # =========================================================================
+    # CONSTANTS AND IMPORTS
+    # =========================================================================
+    LINE_WIDTH = 3.00  # Thickness of plotted lines for improved readability
 
-    # -------------------------
-    # Imports
-    # -------------------------
-    from pathlib import Path                   # For safe, cross-platform file path handling
-    from datetime import datetime              # To create a unique timestamped filename
-    import numpy as np                         # For numerical array operations
-    import matplotlib.pyplot as plt            # Main plotting interface
-    from matplotlib import rcParams            # For configuring LaTeX text rendering
+    from pathlib import Path            # For robust file and directory management
+    from datetime import datetime       # To generate timestamped filenames
+    import numpy as np                  # For numerical computation and array creation
+    import matplotlib.pyplot as plt     # Primary interface for plotting
+    from matplotlib import rcParams     # Configure font and LaTeX rendering
 
-    # -------------------------
-    # Input validation
-    # -------------------------
+    # =========================================================================
+    # INPUT VALIDATION
+    # =========================================================================
     if not (0 <= time_layer <= config.n):
         raise ValueError(f"time_layer must be in range [0, {config.n}]")
 
-    # -------------------------
-    # Generate spatial domain and time slice
-    # -------------------------
-    num_points = 200                           # Resolution of spatial grid
-    x_vals = np.linspace(0, config.ell, num_points)  # Spatial grid over [0, ell]
-    t_k = config.t[time_layer]                 # Time value at layer k
+    # =========================================================================
+    # SPATIAL DOMAIN AND TIME LAYER SETUP
+    # =========================================================================
+    num_points = 200  # Number of spatial points for high-resolution curve
+    x_vals = np.linspace(0, config.ell, num_points)  # Spatial domain over [0, ell]
+    t_k = config.t[time_layer]  # Retrieve time value at time index k
 
-    # -------------------------
-    # Evaluate exact and approximate solutions
-    # -------------------------
-    exact_values = exact_soln(x_vals, t_k)     # Compute exact solution
+    # =========================================================================
+    # EVALUATE EXACT AND APPROXIMATE SOLUTIONS
+    # =========================================================================
+    exact_values = exact_soln(x_vals, t_k)  # Evaluate exact solution u(x, t_k) or v(x, t_k)
+    
     approx_values = approx_solver.callable_compute_ansatz(
-        solution_type=solution_type,
-        k=time_layer,
-        x_vals=x_vals
-    )                                          # Compute Galerkin approximation
+        solution_type=solution_type,  # 'u' or 'v'
+        k=time_layer,                 # current time layer index
+        x_vals=x_vals                 # spatial positions to evaluate at
+    )
 
-    # -------------------------
-    # Define colors (Okabe-Ito palette: colorblind-safe)
-    # -------------------------
+    # =========================================================================
+    # DEFINE COLORBLIND-SAFE COLOR PALETTE (Okabe-Ito)
+    # =========================================================================
     color_exact = "#009E73"   # Green for exact solution
     color_approx = "#D55E00"  # Vermilion for approximate solution
 
-    # -------------------------
-    # Enable LaTeX-style text rendering
-    # -------------------------
+    # =========================================================================
+    # CONFIGURE LATEX-STYLED TEXT RENDERING FOR PUBLICATION-QUALITY OUTPUT
+    # =========================================================================
     rcParams["text.usetex"] = True
     rcParams["font.family"] = "lmodern"
     rcParams["text.latex.preamble"] = r"""
@@ -2174,18 +2152,20 @@ def plot_exact_vs_approx_solution_at_time_k(
     \usepackage{xcolor}
     """
 
-    # -------------------------
-    # Create output directory if it doesn't exist
-    # -------------------------
+    # =========================================================================
+    # ENSURE OUTPUT DIRECTORY EXISTS
+    # =========================================================================
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # -------------------------
-    # Begin plotting
-    # -------------------------
-    plt.figure(figsize=(8, 4))  # Set figure size in inches
+    # =========================================================================
+    # INITIALIZE PLOT
+    # =========================================================================
+    plt.figure(figsize=(8, 4))  # Set figure size (width, height) in inches
 
-    # Plot exact solution
+    # -------------------------
+    # Plot exact solution curve
+    # -------------------------
     plt.plot(
         x_vals,
         exact_values,
@@ -2195,7 +2175,9 @@ def plot_exact_vs_approx_solution_at_time_k(
         linewidth=LINE_WIDTH
     )
 
-    # Plot approximate solution
+    # -------------------------
+    # Plot Galerkin approximation
+    # -------------------------
     plt.plot(
         x_vals,
         approx_values,
@@ -2205,23 +2187,26 @@ def plot_exact_vs_approx_solution_at_time_k(
         linewidth=LINE_WIDTH
     )
 
-    # -------------------------
-    # Axis and plot formatting
-    # -------------------------
+    # =========================================================================
+    # FORMAT PLOT LABELS AND TITLE
+    # =========================================================================
     plt.xlabel(rf"Spatial coordinate $x \in \left[ 0, {config.ell:.0f} \right]$")
     plt.ylabel(r"Solution value")
     plt.title(rf"Exact vs Approximate Solution: ${solution_type}(x, t_{{{time_layer}}})$")
     plt.grid(True)
     plt.legend()
-    plt.tight_layout()  # Adjust layout to avoid label cutoff
+    plt.tight_layout()  # Automatically adjust spacing to prevent overlap
 
-    # -------------------------
-    # Export figure to file
-    # -------------------------
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
+    # =========================================================================
+    # SAVE PLOT TO TIMESTAMPED FILE
+    # =========================================================================
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g., 20250708_154215
     filename = output_path / f"solution_{solution_type}_t{time_layer}_N{config.N}_{timestamp}.pdf"
-    
-    plt.savefig(filename)   # Save as PDF
-    plt.close()             # Close figure to free memory
 
-    return str(filename)    # Return full file path
+    plt.savefig(filename)   # Save figure as a PDF
+    plt.close()             # Close figure to free memory/resources
+
+    # =========================================================================
+    # RETURN ABSOLUTE FILE PATH
+    # =========================================================================
+    return str(filename)

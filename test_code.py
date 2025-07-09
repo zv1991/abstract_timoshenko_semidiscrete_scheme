@@ -24,7 +24,7 @@ from utils.class_timoshenko import TimoshenkoModelSolver      # Galerkin solver 
 # CONFIGURATION: Toggle for using exact solutions (if known)
 # ---------------------------------------------------------------
 
-known_solutions = False  # Set this to False to enable convergence testing
+known_solutions = True  # Set this to False to enable convergence testing
 
 # ---------------------------------------------------------------
 # STEP 1: LOAD INITIAL AND BOUNDARY DATA FROM SOLUTION CLASS
@@ -41,7 +41,7 @@ f1, f2, u0, u1, v0, v1, du0, du1, dv0, dv1 = solns.get_initial_data()
 
 if known_solutions:
 
-    solver_prev = TimoshenkoModelSolver(
+    solver = TimoshenkoModelSolver(
         ell=cfg.ell, T=cfg.T,
         alpha=cfg.alpha, beta=cfg.beta,
         gamma=cfg.gamma, delta=cfg.delta,
@@ -51,7 +51,8 @@ if known_solutions:
         u0=u0, u1=u1,
         v0=v0, v1=v1,
         du0=du0, du1=du1,
-        dv0=dv0, dv1=dv1
+        dv0=dv0, dv1=dv1,
+        n_points=cfg.N
     )
 
     def select_solution_function(solution_type: str) -> callable:
@@ -67,10 +68,10 @@ if known_solutions:
 
         for sol_type in ['u', 'v']:
             exact_func = aux.callable_exact_solution(select_solution_function(sol_type))
-            approx_func = solver_prev.callable_compute_ansatz(sol_type)
+            approx_func = solver.callable_compute_ansatz(sol_type)
 
             L2_errors[f"L2_error_{sol_type}"] = aux.compute_L2_error(
-                exact_func, approx_func, cfg.ell
+                exact_func, approx_func, solver.ell, n_points=cfg.N
             )
 
         for sol_type in ['u', 'v']:
@@ -79,10 +80,10 @@ if known_solutions:
                 print(f"Time step {k:3d}: L2 error = {err:.6e}")
 
         plot_file = aux.plot_L2_errors_over_time(
-            cfg.t,
+            solver.t,
             L2_errors["L2_error_u"],
             L2_errors["L2_error_v"],
-            cfg
+            solver
         )
         print(f"\nCombined error plot saved to: {plot_file}")
 
@@ -94,15 +95,15 @@ if known_solutions:
 
     results = compute_and_report_L2_errors()
 
-    time_layer = 2
+    time_layer = solver.n
 
     for sol_type in ['u', 'v']:
         path = aux.plot_exact_vs_approx_solution_at_time_k(
             exact_soln=select_solution_function(sol_type),
-            approx_solver=solver_prev,
+            approx_solver=solver,
             solution_type=sol_type,
             time_layer=time_layer,
-            config=cfg
+            config=solver
         )
         print(f"Saved comparison plot for '{sol_type}' at time layer {time_layer}: {path}")
 
@@ -192,3 +193,8 @@ else:
 # FINAL CLEANUP: REMOVE FLAGS AND TEMPORARY OBJECTS
 # ---------------------------------------------------------------
 del known_solutions
+
+u_vals = solver.callable_compute_ansatz(solution_type='u', k=solver.n, x_vals=1.0)
+print(u_vals)
+v_vals = solver.callable_compute_ansatz(solution_type='v', k=solver.n, x_vals=1.0)
+print(v_vals)
