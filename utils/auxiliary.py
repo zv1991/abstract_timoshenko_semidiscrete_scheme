@@ -315,57 +315,88 @@ def iter_gauss_legendre_quad(f, ell, tol=1e-6, max_n=1000):
     )
 
 
-# --------------------------------------------------------------------------- #
-# Method 2: Halving Gauss-Legendre Quadrature ("hglq")                        #
-# --------------------------------------------------------------------------- #
-def halving_gauss_legendre_quadrature(f, ell, tol=1e-6, max_depth=20, n_gauss=10):
+# =====================================================================
+# Function: halving_gauss_legendre_quadrature
+# ---------------------------------------------------------------------
+# Purpose:
+#   Perform adaptive Gauss-Legendre quadrature over [0, ell] by 
+#   recursively halving the interval until the estimated integral error 
+#   falls below the specified tolerance.
+# =====================================================================
+def halving_gauss_legendre_quadrature(
+    f: callable,
+    ell: float,
+    tol: float = 1e-6,
+    max_depth: int = 20,
+    n_gauss: int = 10
+) -> tuple[float, float, int]:
     """
-    Adaptive Gauss-Legendre quadrature using interval halving.
+    Adaptive Gauss-Legendre quadrature using recursive interval halving.
 
-    Parameters:
-        f         : callable
-                    Function to integrate.
-        ell       : float
-                    Upper integration limit (must be ≥ 0).
-        tol       : float
-                    Absolute error tolerance.
-        max_depth : int
-                    Maximum number of interval refinements.
-        n_gauss   : int
-                    Gauss-Legendre nodes per subinterval.
+    Parameters
+    ----------
+    f : callable
+        The function to integrate. Must accept a single float x and return float.
+    ell : float
+        Upper bound of the integration interval [0, ell]. Must be ≥ 0.
+    tol : float, optional
+        Absolute error tolerance for convergence (default: 1e-6).
+    max_depth : int, optional
+        Maximum number of interval halving refinements (default: 20).
+    n_gauss : int, optional
+        Number of Gauss-Legendre nodes per subinterval (default: 10).
 
-    Returns:
-        integral : float
-                   Final integral estimate.
-        error    : float
-                   Final error estimate.
-        depth    : int
-                   Number of halving refinements performed.
+    Returns
+    -------
+    integral : float
+        Final integral estimate over [0, ell].
+    error : float
+        Final error estimate based on last refinement.
+    depth : int
+        Number of refinements (halving iterations) used.
     """
+
+    # -----------------------------------------------------
+    # Validate integration domain
+    # -----------------------------------------------------
     if ell < 0:
         raise ValueError("Parameter 'ell' must be non-negative.")
     if ell == 0:
         return 0.0, 0.0, 0
 
+    # -----------------------------------------------------
+    # Precompute Gauss-Legendre nodes and weights (on [-1, 1])
+    # -----------------------------------------------------
     nodes, weights = leggauss(n_gauss)
+
+    # -----------------------------------------------------
+    # Compute initial approximation over full interval
+    # -----------------------------------------------------
     prev_integral = gauss_legendre_integral(f, 0.0, ell, nodes, weights)
 
+    # -----------------------------------------------------
+    # Iteratively halve the interval and refine the estimate
+    # -----------------------------------------------------
     for k in range(1, max_depth + 1):
-        n_intervals = 2 ** k
-        dx = ell / n_intervals
-        current_integral = 0.0
+        n_intervals = 2 ** k             # Number of subintervals
+        dx = ell / n_intervals           # Width of each subinterval
+        current_integral = 0.0           # Reset estimate at this level
 
-        # Sum contributions from each subinterval
+        # Sum contributions from all subintervals
         for i in range(n_intervals):
             a, b = i * dx, (i + 1) * dx
             current_integral += gauss_legendre_integral(f, a, b, nodes, weights)
 
+        # Compute error and check convergence
         error = abs(current_integral - prev_integral)
         if error < tol:
             return current_integral, error, k
 
-        prev_integral = current_integral
+        prev_integral = current_integral  # Update for next iteration
 
+    # -----------------------------------------------------
+    # If we reach this point, convergence failed
+    # -----------------------------------------------------
     raise RuntimeError(
         f"Failed to converge within max_depth = {max_depth}. "
         f"Last error: {error:.3e}"
@@ -1780,36 +1811,43 @@ def compute_L2_difference_norms_from_coeffs(
     return [np.float64(0.0), np.float64(0.0)] + norms_k2_to_n
 
 
-# ============================================
+# ======================================================
 # Function: compute_L2_error
-# Short Description: 
-#   Computes the L2 error between exact and Galerkin-approximated solutions over a specified spatial domain.
+# ------------------------------------------------------
+# Purpose:
+#   Computes the L2 error between exact and Galerkin-approximated
+#   solutions over a specified spatial domain [0, ell].
 #
-# Detailed Description:
-#   This function calculates the L2 error, which measures the difference between the exact solution and the 
-#   Galerkin-approximated solution across the domain [0, ell]. It supports multiple integration methods (e.g., 
-#   Gauss-Legendre quadrature, hierarchical Gauss-Legendre quadrature, or scipy's integrate.quad) for 
-#   adaptive numerical integration. The L2 error can be computed either for a specific time step (k) or for all 
-#   time steps if no time index is specified.
+# Description:
+#   The L2 error quantifies the discrepancy between exact and numerical
+#   solutions. It integrates the squared error over space and returns
+#   its square root. Supports adaptive quadrature methods:
+#   'glq', 'hglq', or 'scipy'.
 #
 # Parameters:
 #   exact_solution_generator : callable or list of callables
-#       Exact solution(s) for each time step: either a single function or a list of functions.
+#       Exact solution(s) u(x, t_k)
 #   approx_solution_generator : callable or list of callables
-#       Galerkin approximation(s) for each time step: either a single function or a list of functions.
+#       Galerkin approximation(s) ũ_k(x)
 #   ell : float
-#       The domain length for integration [0, ell].
+#       Length of spatial domain [0, ell]
 #   k : int, optional
-#       A specific time step index to compute the error for. If None, computes for all time steps.
+#       Time index (if None, computes for all time steps)
 #   tol : float, optional
-#       The integration tolerance (default is 1e-6).
+#       Absolute integration tolerance (default: 1e-6)
 #   method : str, optional
-#       The integration method to use: 'glq', 'hglq', or 'scipy' (default is 'hglq').
+#       Integration method: 'glq', 'hglq', or 'scipy' (default: 'hglq')
+#   max_n : int, optional
+#       Max points (for 'glq' method)
+#   max_depth : int, optional
+#       Max recursion depth (for 'hglq' method)
+#   n_points : int, optional
+#       Number of Gauss points per subinterval (for 'hglq' method)
 #
 # Returns:
-#   float or list of floats
-#       The L2 error at time t_k if k is specified, or the L2 errors for all time steps if k is None.
-# ============================================
+#   float or list of floats:
+#       L2 error(s) at time step k or all steps
+# ======================================================
 
 def compute_L2_error(
     exact_solution_generator,
@@ -1817,91 +1855,114 @@ def compute_L2_error(
     ell: float,
     k: int = None,
     tol: float = 1e-6,
-    method: str = "hglq"
-    ):
+    method: str = "hglq",
+    max_n: int = 1000,
+    max_depth: int = 20,
+    n_points: int = 10
+):
     """
-    Compute the L2 error between exact and Galerkin-approximated solutions.
-
-    The L2 error quantifies how closely the numerical (Galerkin) approximation matches
-    the exact solution by computing the root of the integral of the squared error.
+    Compute the L2 error between exact and approximate solutions over [0, ell].
 
     Parameters
     ----------
     exact_solution_generator : callable or list of callables
-        Exact solution(s). Each function maps spatial input x to u(x, t_k).
-        Can be a single function or a list of time-indexed functions.
-        
+        One or more exact solution functions u(x, t_k)
+
     approx_solution_generator : callable or list of callables
-        Galerkin approximation(s). Each function maps x to ũ_k(x).
-        Can also be a single function or a list.
+        One or more Galerkin approximations ũ_k(x)
 
     ell : float
-        Length of the spatial domain [0, ell].
+        Length of the spatial domain
 
     k : int, optional
-        Specific time index. If provided, compute the error only at that time step.
+        Time step index (if None, compute error across all steps)
 
     tol : float, optional
-        Tolerance for the numerical integration method.
+        Tolerance for numerical integration
 
     method : str, optional
-        Integration method to use. Supported options:
-            - 'glq': Gauss-Legendre quadrature
-            - 'hglq': Hierarchical Gauss-Legendre quadrature
-            - 'scipy': Uses scipy.integrate.quad
+        Integration scheme: 'glq', 'hglq', or 'scipy'
+
+    max_n : int, optional
+        Max points for 'glq' method
+
+    max_depth : int, optional
+        Max recursion depth for 'hglq' method
+
+    n_points : int, optional
+        Gauss points per subinterval (for 'hglq')
 
     Returns
     -------
     float or list of floats
-        L2 error at time step k, or a list of L2 errors across all time steps.
+        The L2 error(s) for the given configuration
     """
 
-    # Ensure inputs are list-like: wrap single callables into single-element lists
+    # ----------------------------------------
+    # Input Normalization
+    # ----------------------------------------
+
+    # Ensure exact_solution_generator is a list
     if callable(exact_solution_generator):
         exact_solution_generator = [exact_solution_generator]
+
+    # Ensure approx_solution_generator is a list
     if callable(approx_solution_generator):
         approx_solution_generator = [approx_solution_generator]
 
-    # Ensure both solution lists have the same length
+    # Length check
     if len(exact_solution_generator) != len(approx_solution_generator):
         raise ValueError("Mismatch: exact and approx solution lists must have the same length.")
 
-    def compute_error_at_k(k_idx):
+    # ----------------------------------------
+    # Internal helper: compute error at a given index
+    # ----------------------------------------
+
+    def compute_error_at_k(k_idx: int) -> float:
         """
-        Compute the L2 error for a specific time index.
+        Compute the L2 norm of the difference between exact and approximate solution at time step k_idx.
 
         Parameters
         ----------
         k_idx : int
-            Index at which to compute L2 error.
+            Time index for which to compute the error
 
         Returns
         -------
         float
-            L2 norm of the difference between exact and approximate solutions.
+            L2 error at given time step
         """
         exact_fn = exact_solution_generator[k_idx]
         approx_fn = approx_solution_generator[k_idx]
 
-        # Define pointwise squared difference function
-        def squared_diff(x):
-            return (exact_fn(x) - approx_fn(x))**2
+        def squared_diff(x: float) -> float:
+            """Pointwise squared difference function."""
+            return (exact_fn(x) - approx_fn(x)) ** 2
 
-        # Perform numerical integration of the squared error over [0, ell]
+        # Perform adaptive quadrature integration of squared error over [0, ell]
         integral, _, _ = unified_adaptive_quadrature(
-            squared_diff, ell=ell, tol=tol, method=method
+            f=squared_diff,
+            ell=ell,
+            tol=tol,
+            method=method,
+            max_n=max_n,
+            max_depth=max_depth,
+            n_points=n_points
         )
 
-        # Return the square root of the integral to get the L2 norm
         return np.sqrt(integral)
 
-    # Case: specific time step
+    # ----------------------------------------
+    # Error computation logic
+    # ----------------------------------------
+
     if k is not None:
+        # If a specific time step is given
         if not (0 <= k < len(exact_solution_generator)):
             raise ValueError(f"Time index k = {k} is out of bounds.")
         return compute_error_at_k(k)
 
-    # Case: all time steps — return list of L2 errors
+    # Compute L2 error for all time steps
     return [compute_error_at_k(i) for i in range(len(exact_solution_generator))]
 
 # =============================================================================
@@ -1955,7 +2016,7 @@ def plot_L2_errors_over_time(
     # =========================================================================
     rcParams["text.usetex"] = True                  # Enable LaTeX rendering
     rcParams["font.family"] = "lmodern"             # Use LaTeX font
-    rcParams["text.latex.preamble"] = r"""          # Add common LaTeX math packages
+    rcParams["text.latex.preamble"] = r"""
     \usepackage[utf8]{inputenc}
     \usepackage[T1]{fontenc}
     \usepackage{lmodern}
