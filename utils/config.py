@@ -37,5 +37,5 @@ tau = T / n                  # Time step size τ = T / n
 # SPECTRAL METHOD CONFIGURATION
 # ---------------------------------------------------------------------------
 
-N = 2  # Number of Legendre polynomial basis functions for the Galerkin method
+N = 20  # Number of Legendre polynomial basis functions for the Galerkin method
         # Determines the spectral resolution in space (higher N → higher accuracy)

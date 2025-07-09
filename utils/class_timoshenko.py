@@ -130,7 +130,7 @@ class TimoshenkoModelSolver:
         self.n_points = n_points
 
         # Precompute modal solution on initialization
-        self.tilde_u, self.tilde_v, self.cond_u, self.cond_v = self.solve_system()
+        self.tilde_u, self.tilde_v, self.cond_u, self.cond_v, self.q_integr = self.solve_system()
 
     # ----------------------------------------------------------------------- #
     #                   Solve Modal Galerkin System Method                    #
@@ -177,7 +177,7 @@ class TimoshenkoModelSolver:
         diff2u = init_data['diff2_u']
         diff2v = init_data['diff2_v']
 
-        # Compute Initial Nonlinear Term ‖u₁′‖²
+        # Compute initial nonlinear coefficient q₁ = α + β‖u₁′‖²
         integral, _ = aux.integrate_derivative_form(
             f=self.u1 if self.du1 is None else None,
             df=self.du1 if self.du1 is not None else None,
@@ -186,11 +186,14 @@ class TimoshenkoModelSolver:
         )
         q_prev = self.alpha + self.beta * integral
 
-        # Allocate arrays for modal solutions and condition numbers
+        # Allocate memory for modal coefficients and matrix condition numbers
         tild_u = np.zeros((self.n - 1, self.N))
         tild_v = np.zeros((self.n - 1, self.N))
         cond_u = np.zeros(self.n - 1)
         cond_v = np.zeros(self.n - 1)
+        
+        # Store qₖ = α + β * ‖uₖ′‖² nonlinear coefficients
+        q_integr = [None, q_prev]  # Index 0 unused, q₁ known
 
         # ---------------- Time integration loop ---------------- #
         for k in range(self.n - 1):
@@ -262,10 +265,11 @@ class TimoshenkoModelSolver:
                 tild_u[k] -= tild_u[k - 2]
                 tild_v[k] -= tild_v[k - 2]
 
-            # Update nonlinear coefficient qₖ = α + β * ‖uₖ′‖² for next iteration
+            # Update qₖ for next step and store
             q_prev = self.alpha + self.beta * np.dot(tild_u[k], tild_u[k])
+            q_integr.append(q_prev)
 
-        return tild_u, tild_v, cond_u, cond_v
+        return tild_u, tild_v, cond_u, cond_v, q_integr
     
     # ----------------------------------------------------------------------- #
     #                Evaluate Galerkin Solution on Grid or Point              #
