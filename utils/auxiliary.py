@@ -1400,123 +1400,117 @@ def callable_exact_solution(
     all_functions = [construct_exact_function_at_k(k_idx) for k_idx in range(cfg.n + 1)]
     return all_functions if x_vals is None else np.array([fn(x_vals) for fn in all_functions])
 
-# ==============================================================
-# Module: compute_L2_norm_galerkin_approx
-# --------------------------------------------------------------
-# This module computes the L2 norm of a Galerkin-approximated solution
-# over the spatial domain [0, ell] using numerical integration:
-#
-#     L2 = sqrt(∫₀^ell [ũ_k(x)]² dx)
-#
-# Where ũ_k(x) is an approximation of u(x, t_k) or v(x, t_k).
-#
-# Requirements:
-#   - `cfg.ell`: domain length (import config as cfg)
-#   - `unified_adaptive_quadrature`: numerical integration handler
-# ==============================================================
+# ===============================================================
+# Function: compute_L2_norm_galerkin_approx
+# Purpose : Compute the L² norm of a Galerkin approximation ũₖ(x)
+#           over the spatial domain [0, ell] using adaptive quadrature.
+# Method  : Uses adaptive Gauss–Legendre quadrature
+# Dependencies:
+#   - cfg.ell: domain length (from utils.config)
+#   - adaptive_gauss_legendre_integrator: custom quadrature routine
+# ===============================================================
 
 def compute_L2_norm_galerkin_approx(
-    func: callable,
-    k: int = None,
-    tol: float = 1e-6,
-    method: str = "hglq"
-    ) -> float | list[float]:
+    func,
+    k=None,
+    **quad_kwargs
+    ):
     """
-    Numerically compute the L2 norm(s) of a Galerkin-approximated solution
-    using quadrature over the domain [0, ell].
+    Computes the L² norm of Galerkin-approximated solution(s) over the interval [0, ell]:
+    
+        L2_norm = sqrt( ∫₀^ell [uₖ(x)]² dx )
+
+    Can be used to evaluate:
+        - A single function uₖ(x)
+        - A sequence of functions [u₀(x), ..., uₙ(x)]
 
     Parameters
     ----------
     func : callable or list of callables
-        The approximated solution(s) at time step(s).
-        - Single callable: corresponds to u_k(x) or v_k(x)
-        - List of callables: for time steps k = 0 to k = n
+        The Galerkin-approximated function(s). May represent u(x, tₖ) or v(x, tₖ):
+            - If a single callable → computes norm at that step
+            - If a list of callables → computes norms at all steps or at index `k`
 
     k : int, optional
-        Time index to evaluate. If None, computes all.
+        Time index to evaluate. If None, computes for all entries in `func`.
 
-    tol : float, optional
-        Tolerance for quadrature integration (default: 1e-6).
+    **quad_kwargs : dict, optional
+        Optional keyword arguments passed to `adaptive_gauss_legendre_integrator`.
 
-    method : str, optional
-        Integration strategy:
-            - 'glq'   : Gauss–Legendre Quadrature
-            - 'hglq'  : Hierarchical GLQ (default)
-            - 'scipy' : Adaptive integration via SciPy
+        Supported keys with default values:
+            - tol       : float = 1e-6
+                → Absolute tolerance for adaptive convergence.
+            - min_dx    : float = 1 / 128
+                → Minimum width of a subinterval during subdivision.
+            - n_gauss   : int = 5
+                → Number of Gauss–Legendre nodes per subinterval initially.
+            - max_gauss : int = 50
+                → Maximum allowable Gauss–Legendre nodes in refinement.
 
     Returns
     -------
-    float or list[float]
-        Single L2 norm if `k` is specified; otherwise, a list of norms.
+    float or list of float
+        - Single float if `k` is provided.
+        - List of L² norms across time steps if `k` is None.
 
     Raises
     ------
     ValueError
-        If input type is invalid or time index is out of range.
+        If `func` is not a callable or list of callables, or if `k` is invalid.
     """
 
     # ----------------------------------------------------------
-    # Step 1: Access the spatial domain length from configuration
+    # Step 1: Retrieve domain length from configuration module
     # ----------------------------------------------------------
-    ell = cfg.ell  # Requires external: import config as cfg
+    ell = cfg.ell  # Spatial domain upper bound, assumes: import utils.config as cfg
 
     # ----------------------------------------------------------
-    # Step 2: Standardize input as a list of callables
+    # Step 2: Normalize func into a list of callables
     # ----------------------------------------------------------
     if callable(func):
         func_list = [func]
     elif isinstance(func, list) and all(callable(f) for f in func):
         func_list = func
     else:
-        raise ValueError(
-            "`func` must be a callable or a list of callables representing u_k(x) or v_k(x)."
-        )
+        raise ValueError("`func` must be a callable or a list of callables.")
 
     # ----------------------------------------------------------
-    # Step 3: Define internal function to compute L2 norm at a time index
+    # Step 3: Internal helper function to compute single L² norm
     # ----------------------------------------------------------
-    def compute_single_l2_norm(index: int) -> float:
+    def compute_single_l2_norm(i):
         """
-        Compute the L2 norm for the solution at a given time index.
-
-        Parameters
-        ----------
-        index : int
-            Index into the `func_list`.
-
-        Returns
-        -------
-        float
-            L2 norm of the function at time index `index`.
+        Computes L² norm for the i-th function in func_list.
         """
-        approx_fn = func_list[index]  # Retrieve u_k(x) or v_k(x)
+        approx_fn = func_list[i]
 
-        # Define the integrand for ∫ [approx_fn(x)]² dx
-        def integrand(x: float) -> float:
+        # Define the squared integrand: [u(x)]²
+        def integrand(x):
             return approx_fn(x) ** 2
 
-        # Numerically evaluate the integral ∫₀^ell [u_k(x)]² dx
-        integral, _, _ = unified_adaptive_quadrature(
-            integrand, ell=ell, tol=tol, method=method
+        # Perform adaptive Gauss–Legendre quadrature
+        integral, _, *_ = adaptive_gauss_legendre_integrator(
+            integrand,
+            ell,
+            **quad_kwargs
         )
 
-        # Final L2 norm computation: √(integral)
         return np.sqrt(integral)
 
     # ----------------------------------------------------------
-    # Step 4: Handle single time step case
+    # Step 4: Handle specific time index `k` if provided
     # ----------------------------------------------------------
     if k is not None:
         if not isinstance(k, int):
-            raise ValueError("`k` must be an integer.")
+            raise ValueError("Parameter `k` must be an integer.")
         if not (0 <= k < len(func_list)):
-            raise ValueError(f"Invalid time index: k = {k}. Valid range: 0 to {len(func_list) - 1}.")
+            raise ValueError(f"Invalid time index `k={k}`. Valid range: 0 to {len(func_list) - 1}.")
         return compute_single_l2_norm(k)
 
     # ----------------------------------------------------------
-    # Step 5: Compute L2 norms for all available time steps
+    # Step 5: Evaluate all norms if `k` is None
     # ----------------------------------------------------------
     return [compute_single_l2_norm(i) for i in range(len(func_list))]
+
 
 # ==============================================================
 # Module: compute_L2_difference_norms
@@ -1861,159 +1855,132 @@ def compute_L2_difference_norms_from_coeffs(
     norms_k2_to_n = compute_L2_norm_from_galerkin_coeffs(coeff_diff)
     return [np.float64(0.0), np.float64(0.0)] + norms_k2_to_n
 
-
-# ======================================================
+# ===============================================================
 # Function: compute_L2_error
-# ------------------------------------------------------
-# Purpose:
-#   Computes the L2 error between exact and Galerkin-approximated
-#   solutions over a specified spatial domain [0, ell].
-#
-# Description:
-#   The L2 error quantifies the discrepancy between exact and numerical
-#   solutions. It integrates the squared error over space and returns
-#   its square root. Supports adaptive quadrature methods:
-#   'glq', 'hglq', or 'scipy'.
-#
-# Parameters:
-#   exact_solution_generator : callable or list of callables
-#       Exact solution(s) u(x, t_k)
-#   approx_solution_generator : callable or list of callables
-#       Galerkin approximation(s) ũ_k(x)
-#   ell : float
-#       Length of spatial domain [0, ell]
-#   k : int, optional
-#       Time index (if None, computes for all time steps)
-#   tol : float, optional
-#       Absolute integration tolerance (default: 1e-6)
-#   method : str, optional
-#       Integration method: 'glq', 'hglq', or 'scipy' (default: 'hglq')
-#   max_n : int, optional
-#       Max points (for 'glq' method)
-#   max_depth : int, optional
-#       Max recursion depth (for 'hglq' method)
-#   n_points : int, optional
-#       Number of Gauss points per subinterval (for 'hglq' method)
-#
-# Returns:
-#   float or list of floats:
-#       L2 error(s) at time step k or all steps
-# ======================================================
+# Purpose : Compute the L² error between exact and Galerkin-approximated
+#           solutions over a spatial domain [0, ell].
+# Method  : Uses adaptive Gauss–Legendre quadrature
+# ===============================================================
 
 def compute_L2_error(
     exact_solution_generator,
     approx_solution_generator,
-    ell: float,
-    k: int = None,
-    tol: float = 1e-6,
-    method: str = "hglq",
-    max_n: int = 1000,
-    max_depth: int = 20,
-    n_points: int = 10
+    ell,
+    k=None,
+    **quad_kwargs
 ):
     """
-    Compute the L2 error between exact and approximate solutions over [0, ell].
+    Computes the L² error between exact and Galerkin-approximated solutions
+    over the spatial domain [0, ell] at a specific time step or across all steps.
+
+    L² error is defined as:
+        L2_error = sqrt( ∫₀^ell [u_exact(x) - u_approx(x)]² dx )
 
     Parameters
     ----------
     exact_solution_generator : callable or list of callables
-        One or more exact solution functions u(x, t_k)
+        - The exact solution(s) u(x, tₖ).
+        - Can be a single callable or a list of time-dependent callables.
 
     approx_solution_generator : callable or list of callables
-        One or more Galerkin approximations ũ_k(x)
+        - The Galerkin approximation(s) ũₖ(x).
+        - Must correspond in size and order to the exact solutions.
 
     ell : float
-        Length of the spatial domain
+        The upper bound of the spatial domain [0, ell].
 
     k : int, optional
-        Time step index (if None, compute error across all steps)
+        Time index for which to compute the error.
+        If None, the function computes L² error across all time steps.
 
-    tol : float, optional
-        Tolerance for numerical integration
+    **quad_kwargs : dict, optional
+        Additional parameters passed to `adaptive_gauss_legendre_integrator`.
 
-    method : str, optional
-        Integration scheme: 'glq', 'hglq', or 'scipy'
-
-    max_n : int, optional
-        Max points for 'glq' method
-
-    max_depth : int, optional
-        Max recursion depth for 'hglq' method
-
-    n_points : int, optional
-        Gauss points per subinterval (for 'hglq')
+        Supported keyword arguments:
+        - tol       : float (default = 1e-6)
+              → Integration convergence tolerance.
+        - min_dx    : float (default = 1 / 128)
+              → Minimum subinterval width in the adaptive scheme.
+        - n_gauss   : int (default = 5)
+              → Initial number of Gauss–Legendre nodes per subinterval.
+        - max_gauss : int (default = 50)
+              → Maximum allowable Gauss–Legendre nodes for refinement.
 
     Returns
     -------
-    float or list of floats
-        The L2 error(s) for the given configuration
+    float or list of float
+        - If `k` is specified: returns the L² error at that time step.
+        - If `k` is None: returns a list of L² errors for all time steps.
+
+    Raises
+    ------
+    ValueError
+        If the input types are not callable or lists of callables,
+        or if the lengths of exact and approximated lists differ,
+        or if the time index `k` is out of range.
     """
 
-    # ----------------------------------------
-    # Input Normalization
-    # ----------------------------------------
-
-    # Ensure exact_solution_generator is a list
+    # ----------------------------------------------------------
+    # Step 1: Normalize input to lists of callables
+    # ----------------------------------------------------------
     if callable(exact_solution_generator):
         exact_solution_generator = [exact_solution_generator]
 
-    # Ensure approx_solution_generator is a list
     if callable(approx_solution_generator):
         approx_solution_generator = [approx_solution_generator]
 
-    # Length check
+    if not (isinstance(exact_solution_generator, list) and
+            isinstance(approx_solution_generator, list) and
+            all(callable(f) for f in exact_solution_generator) and
+            all(callable(f) for f in approx_solution_generator)):
+        raise ValueError("Inputs must be callable functions or lists of callables.")
+
     if len(exact_solution_generator) != len(approx_solution_generator):
-        raise ValueError("Mismatch: exact and approx solution lists must have the same length.")
+        raise ValueError("Exact and approximate function lists must be the same length.")
 
-    # ----------------------------------------
-    # Internal helper: compute error at a given index
-    # ----------------------------------------
-
-    def compute_error_at_k(k_idx: int) -> float:
+    # ----------------------------------------------------------
+    # Step 2: Define internal function for a specific time index
+    # ----------------------------------------------------------
+    def compute_error_at_k(k_idx):
         """
-        Compute the L2 norm of the difference between exact and approximate solution at time step k_idx.
+        Compute L² error for time step `k_idx` by integrating the
+        pointwise squared error over [0, ell].
 
         Parameters
         ----------
         k_idx : int
-            Time index for which to compute the error
+            Index of the solution pair to evaluate.
 
         Returns
         -------
         float
-            L2 error at given time step
+            L² error at time step `k_idx`.
         """
         exact_fn = exact_solution_generator[k_idx]
         approx_fn = approx_solution_generator[k_idx]
 
-        def squared_diff(x: float) -> float:
-            """Pointwise squared difference function."""
+        # Define squared error function
+        def squared_error(x):
             return (exact_fn(x) - approx_fn(x)) ** 2
 
-        # Perform adaptive quadrature integration of squared error over [0, ell]
-        integral, _, _ = unified_adaptive_quadrature(
-            f=squared_diff,
-            ell=ell,
-            tol=tol,
-            method=method,
-            max_n=max_n,
-            max_depth=max_depth,
-            n_points=n_points
+        # Perform adaptive Gauss–Legendre quadrature
+        integral, _, *_ = adaptive_gauss_legendre_integrator(
+            squared_error, ell, **quad_kwargs
         )
 
         return np.sqrt(integral)
 
-    # ----------------------------------------
-    # Error computation logic
-    # ----------------------------------------
-
+    # ----------------------------------------------------------
+    # Step 3: Compute and return error(s)
+    # ----------------------------------------------------------
     if k is not None:
-        # If a specific time step is given
+        if not isinstance(k, int):
+            raise ValueError("`k` must be an integer index.")
         if not (0 <= k < len(exact_solution_generator)):
-            raise ValueError(f"Time index k = {k} is out of bounds.")
+            raise ValueError(f"Invalid index k={k}. Valid range: 0 to {len(exact_solution_generator) - 1}.")
         return compute_error_at_k(k)
 
-    # Compute L2 error for all time steps
+    # Compute for all time steps
     return [compute_error_at_k(i) for i in range(len(exact_solution_generator))]
 
 # =============================================================================
