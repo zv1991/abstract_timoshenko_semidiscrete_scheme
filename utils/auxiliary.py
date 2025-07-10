@@ -1,19 +1,52 @@
-# Provides fast and vectorized numerical operations, including array manipulation and linear algebra
+# ===============================================================
+# MODULE IMPORTS
+# ===============================================================
+
+# -------------------------------
+# Standard Library Modules
+# -------------------------------
+import warnings  # Used to issue runtime alerts without interrupting program execution
+
+# -------------------------------
+# Core Scientific Libraries
+# -------------------------------
 import numpy as np
-# Returns an unshifted Legendre polynomial of specified degree as a polynomial object
+# Provides fast, vectorized numerical operations and array manipulation
+
 from scipy.special import legendre
-# Generates Gauss–Legendre quadrature nodes and weights for numerical integration
+# Returns unshifted Legendre polynomial of a given degree as a callable object
+
 from numpy.polynomial.legendre import leggauss
-# Library for numerical differentiation; used here for computing derivatives via finite differences (e.g., nd.Derivative)
-import numdifftools as nd
-# Utilities for constructing and manipulating sparse matrices, crucial for large-scale linear systems
+# Computes Gauss–Legendre quadrature nodes and weights for high-precision integration
+
 from scipy.sparse import identity, diags, csr_matrix
-# Computes the condition number of a matrix using the 2-norm, indicating sensitivity to numerical errors
+# Efficient construction of sparse identity and banded matrices (used in linear systems)
+
 from numpy.linalg import cond
-# Import the warnings module to issue runtime alerts without raising exceptions
-import warnings
-# Contains simulation configuration: domain length `ell`, time vector `t`, and step count `n`
+# Computes matrix condition number using the 2-norm (sensitivity measure)
+
+# -------------------------------
+# Optional External Differentiation Tool
+# -------------------------------
+try:
+    import numdifftools as nd
+    # Provides automatic numerical differentiation using adaptive finite difference schemes
+except ImportError:
+    raise ImportError(
+        "This module requires 'numdifftools'. Please install it via:\n"
+        "  pip install numdifftools\n"
+        "or\n"
+        "  conda install -c conda-forge numdifftools"
+    )
+
+# -------------------------------
+# Project-Specific Configuration
+# -------------------------------
 import utils.config as cfg
+# Loads simulation constants from configuration file:
+#   cfg.ell : float     → domain length
+#   cfg.t   : np.array  → time discretization vector
+#   cfg.n   : int       → number of time steps
 
 # --------------------------------------------------------------------------- #
 """ Coefficients arising from inner products of Legendre polynomials 
@@ -586,54 +619,63 @@ def compute_time_dependent_integrals(f, N, ell, t, **quad_kwargs):
     # ------------------------------------------
     return integrals
 
-# --------------------------------------------------------------------------- #
-""" 
-Module: Finite Difference Derivative Estimators
-
-Provides fourth-order accurate numerical schemes for estimating the first 
-derivative of a function using either:
-- numdifftools (adaptive, black-box style)
+# ===============================================================
+# MODULE: Finite Difference Derivative Estimators
+# ===============================================================
+"""
+Provides fourth-order accurate numerical schemes for estimating 
+the first derivative of a function using either:
+- `numdifftools` (adaptive, black-box style)
 - manually coded fourth-order finite differences (forward, backward, central)
 """
-# --------------------------------------------------------------------------- #
 
-# --- Helper Function for Input Validation and Step Adjustment ---
+# ===============================================================
+# Function: _validate_and_prepare_input
+# Purpose : Input preprocessing and step size adjustment
+# ===============================================================
+
 def _validate_and_prepare_input(x, ell, h_init):
     """
-    Validates and preprocesses the input values for derivative estimation.
+    Validates and preprocesses input values for derivative estimation.
 
     Parameters:
         x       : float or array-like
-                  Evaluation point(s).
+                  Point(s) at which the derivative is to be evaluated.
         ell     : float
-                  Upper bound of the domain.
+                  Upper bound of the domain (used to constrain step size).
         h_init  : float
-                  Initial step size.
+                  Initial finite difference step size.
 
     Returns:
-        tuple: (Processed x as np.ndarray, is_scalar flag, adjusted h_init)
+        tuple:
+            - x         : np.ndarray (broadcasted input)
+            - is_scalar : bool (True if original input was scalar)
+            - h_init    : float (adjusted step size to remain within domain)
     """
     if ell is None:
         raise ValueError("Parameter 'ell' must be specified.")
 
-    # Ensure x is at least 1D and determine if the original input was scalar
     is_scalar = np.isscalar(x)
     x = np.atleast_1d(x)
 
-    # Reduce h_init until it is small enough relative to the domain
+    # Ensure h_init is no larger than 1/4 of the domain span
     while h_init > ell / 4:
         h_init /= 2
 
     return x, is_scalar, h_init
 
-# --- First Derivative Estimation Using numdifftools (4th-order accuracy) ---
+# ===============================================================
+# Function: first_order_derivative_nd
+# Purpose : First derivative estimation using numdifftools (4th-order)
+# ===============================================================
+
 def first_order_derivative_nd(f, x, ell, h_init=1e-3):
     """
     Estimate the first derivative using numdifftools with a 4th-order scheme.
 
     Parameters:
         f       : callable
-                  Function to differentiate.
+                  Function whose derivative is to be computed.
         x       : float or array-like
                   Evaluation point(s).
         ell     : float
@@ -642,13 +684,15 @@ def first_order_derivative_nd(f, x, ell, h_init=1e-3):
                   Initial step size.
 
     Returns:
-        tuple: (Estimated derivative(s), step size used)
+        tuple:
+            - derivative(s) at x : float or np.ndarray
+            - h_init              : float (final step size used)
     """
     x, is_scalar, h_init = _validate_and_prepare_input(x, ell, h_init)
     derivs = []
 
     for xi in x:
-        # Determine direction of finite difference based on boundary proximity
+        # Select direction of difference based on proximity to boundaries
         if xi - 2 * h_init < 0:
             method = 'forward'
         elif xi + 2 * h_init > ell:
@@ -660,18 +704,22 @@ def first_order_derivative_nd(f, x, ell, h_init=1e-3):
             df = nd.Derivative(f, n=1, step=h_init, order=4, method=method)
             deriv = df(xi)
         except Exception as e:
-            warnings.warn(f"Derivative estimation failed at x={xi}: {e}")
-            deriv = np.nan  # Fallback for exceptions
-        
+            warnings.warn(f"Derivative estimation failed at x={xi:.6f}: {e}")
+            deriv = np.nan
+
         derivs.append(deriv)
 
     result = np.array(derivs)
     return (result[0] if is_scalar else result), h_init
 
-# --- First Derivative Estimation Using Manual 4th-Order Finite Differences ---
+# ===============================================================
+# Function: first_order_derivative
+# Purpose : Manual 4th-order finite difference (forward/backward/central)
+# ===============================================================
+
 def first_order_derivative(f, x, ell, h_init=1e-3):
     """
-    Estimate the first derivative using 4th-order finite difference manually.
+    Estimate the first derivative using manually coded 4th-order finite differences.
 
     Parameters:
         f       : callable
@@ -681,10 +729,12 @@ def first_order_derivative(f, x, ell, h_init=1e-3):
         ell     : float
                   Upper domain bound.
         h_init  : float
-                  Initial step size.
+                  Initial finite difference step size.
 
     Returns:
-        tuple: (Estimated derivative(s), step size used)
+        tuple:
+            - derivative(s) at x : float or np.ndarray
+            - h_init              : float (step size used)
     """
     x, is_scalar, h_init = _validate_and_prepare_input(x, ell, h_init)
     derivs = []
@@ -692,49 +742,56 @@ def first_order_derivative(f, x, ell, h_init=1e-3):
     for xi in x:
         try:
             if xi - 2 * h_init < 0:
-                # Forward 4th-order finite difference scheme near left boundary
-                deriv = (-25 * f(xi) + 48 * f(xi + h_init) - 36 * f(xi + 2 * h_init)
-                         + 16 * f(xi + 3 * h_init) - 3 * f(xi + 4 * h_init)) / (12 * h_init)
+                # Near left boundary: use forward 4th-order difference
+                deriv = (-25*f(xi) + 48*f(xi + h_init) - 36*f(xi + 2*h_init)
+                         + 16*f(xi + 3*h_init) - 3*f(xi + 4*h_init)) / (12 * h_init)
             elif xi + 2 * h_init > ell:
-                # Backward 4th-order finite difference scheme near right boundary
-                deriv = (25 * f(xi) - 48 * f(xi - h_init) + 36 * f(xi - 2 * h_init)
-                         - 16 * f(xi - 3 * h_init) + 3 * f(xi - 4 * h_init)) / (12 * h_init)
+                # Near right boundary: use backward 4th-order difference
+                deriv = (25*f(xi) - 48*f(xi - h_init) + 36*f(xi - 2*h_init)
+                         - 16*f(xi - 3*h_init) + 3*f(xi - 4*h_init)) / (12 * h_init)
             else:
-                # Central 4th-order finite difference scheme in the interior
-                deriv = (-f(xi + 2 * h_init) + 8 * f(xi + h_init) - 8 * f(xi - h_init)
-                         + f(xi - 2 * h_init)) / (12 * h_init)
+                # In the interior: use central 4th-order difference
+                deriv = (-f(xi + 2*h_init) + 8*f(xi + h_init)
+                         - 8*f(xi - h_init) + f(xi - 2*h_init)) / (12 * h_init)
         except Exception as e:
-            warnings.warn(f"Manual finite difference failed at x={xi}: {e}")
-            deriv = np.nan  # In case of domain errors or runtime issues
-        
+            warnings.warn(f"Manual finite difference failed at x={xi:.6f}: {e}")
+            deriv = np.nan
+
         derivs.append(deriv)
 
     result = np.array(derivs)
     return (result[0] if is_scalar else result), h_init
 
-# --- Unified Interface for Derivative Estimation (numdifftools or manual method) ---
+# ===============================================================
+# Function: first_order_derivative_unified
+# Purpose : Dispatch derivative computation via 'nd' or manual 'sfd'
+# ===============================================================
+
 def first_order_derivative_unified(f, x, ell, derivmeth='nd', h_init=1e-3):
     """
-    Unified interface for estimating first-order derivatives.
+    Unified interface for estimating first-order derivatives using either:
+        - 'nd'  : numdifftools-based differentiation (default)
+        - 'sfd' : standard manually implemented 4th-order finite differences
 
     Parameters:
         f         : callable
-                    Function to differentiate.
+                    Function whose derivative is to be estimated.
         x         : float or array-like
                     Evaluation point(s).
         ell       : float
-                    Upper domain bound.
+                    Upper bound of the domain.
         derivmeth : str
-                    Method: 'nd' for numdifftools, 'sfd' for manual scheme.
+                    Derivative method to use: 'nd' or 'sfd'.
         h_init    : float
-                    Initial step size.
+                    Initial step size for finite differences.
 
     Returns:
-        tuple: (Estimated derivative(s), step size used)
+        tuple:
+            - derivative(s) at x : float or np.ndarray
+            - h_init              : float (final step size used)
     """
-    # Convert the derivative method string to lowercase to allow case-insensitive input
     derivmeth = derivmeth.lower()
-    
+
     if derivmeth == 'nd':
         return first_order_derivative_nd(f, x, ell, h_init=h_init)
     elif derivmeth == 'sfd':
@@ -742,94 +799,109 @@ def first_order_derivative_unified(f, x, ell, derivmeth='nd', h_init=1e-3):
     else:
         raise ValueError("Invalid method. Use 'nd' (numdifftools) or 'sfd' (standard finite difference).")
 
-# --------------------------------------------------------------------------- #
-"""
-    This module evaluates integrals involving the first derivative f'(x) over 
-    the interval [0, ell], using either:
+# ===============================================================
+# Function: integrate_derivative_form
+# Purpose : Evaluate integrals involving the first derivative f′(x) over [0, ell], using:
+#           - 'squared'  → ∫₀^ell [f′(x)]² dx
+#           - 'legendre' → ∫₀^ell f′(x) · P̃ₘ(x) dx
+# ===============================================================
 
-    - Squared derivative form:    ∫₀^ell [f'(x)]² dx       (form = 'squared')
-    - Legendre projection form:   ∫₀^ell f'(x)·P̃ₘ(x) dx   (form = 'legendre')
-
-    The derivative f'(x) can be:
-        - Provided analytically via `df`
-        - Estimated numerically via `f` using:
-            - 4th-order finite differences ('sfd')
-            - External package (e.g., numdifftools) ('nd')
-
-    Assumed utility functions:
-        - first_order_derivative_unified: estimates f′(x) numerically
-        - normalized_shifted_legendre: evaluates P̃ₘ(x)
-        - unified_adaptive_quadrature: performs adaptive numerical integration
-"""
-# --------------------------------------------------------------------------- #
-
-def integrate_derivative_form(f=None, df=None, ell=None, m=None, form='squared',
-                              h=1e-3, derivmeth='nd', **quad_kwargs):
+def integrate_derivative_form(
+    f=None,
+    df=None,
+    ell=None,
+    form='squared',
+    m=None,
+    h=1e-3,
+    derivmeth='nd',
+    **quad_kwargs
+    ):
     """
-    Computes derivative-based integrals over [0, ell].
+    Computes integrals involving f′(x) over the domain [0, ell] using adaptive Gauss–Legendre quadrature.
+
+    The integrals supported are:
+        - Squared gradient:     ∫₀^ell [f′(x)]² dx
+        - Legendre projection:  ∫₀^ell f′(x) · P̃ₘ(x) dx
 
     Parameters
     ----------
     f : callable, optional
-        Function f(x). Used if df is not provided (numerical differentiation).
+        Function f(x). Required if analytical derivative df is not provided.
+
     df : callable, optional
-        Analytical derivative of f(x). Used directly if provided.
+        Analytical derivative f′(x). If provided, it will be used directly.
+
     ell : float
-        Upper integration limit (must be > 0).
+        Upper bound of the integration domain [0, ell]. Must be positive.
+
+    form : {'squared', 'legendre'}, default='squared'
+        Integral form to evaluate:
+            - 'squared'  → ∫ [f′(x)]² dx
+            - 'legendre' → ∫ f′(x) · P̃ₘ(x) dx
+
     m : int, optional
-        Degree of normalized shifted Legendre polynomial (required if form='legendre').
-    form : {'squared', 'legendre'}
-        Type of integral:
-            - 'squared'  → ∫₀^ell [f'(x)]² dx
-            - 'legendre' → ∫₀^ell f'(x)·P̃ₘ(x) dx
-    h : float, optional
-        Step size for finite difference derivative (only if f is used).
-    derivmeth : {'nd', 'sfd'}, optional
-        Method for numerical differentiation.
-    **quad_kwargs : dict
-        Additional arguments forwarded to `unified_adaptive_quadrature`.
+        Degree of normalized shifted Legendre polynomial P̃ₘ(x). Required only for form='legendre'.
+
+    h : float, default=1e-3
+        Initial step size used for numerical differentiation if df is not given.
+
+    derivmeth : {'nd', 'sfd'}, default='nd'
+        Differentiation method used when df is not provided:
+            - 'nd'  → Use numdifftools
+            - 'sfd' → Use 4th-order finite differences
+
+    **quad_kwargs : dict, optional
+        Additional keyword arguments forwarded to `adaptive_gauss_legendre_integrator`, such as:
+            - tol       : float  (convergence tolerance)
+            - min_dx    : float  (minimum subinterval width)
+            - n_gauss   : int    (initial Gauss–Legendre nodes)
+            - max_gauss : int    (maximum Gauss–Legendre nodes)
 
     Returns
     -------
     integral : float
         Numerical result of the integral.
-    metric : float or int
-        Diagnostic output (e.g., error estimate or node count).
+
+    metric : float
+        Estimated error from the quadrature process.
     """
 
     # ------------------ Input validation ------------------ #
 
     if ell is None or ell <= 0:
-        raise ValueError("The upper limit 'ell' must be a positive number.")
+        raise ValueError("The upper integration limit 'ell' must be a positive number.")
 
     if (f is None and df is None) or (f is not None and df is not None):
         raise ValueError("Specify exactly one of 'f' or 'df', not both.")
 
     if form not in ('squared', 'legendre'):
-        raise ValueError("The 'form' argument must be either 'squared' or 'legendre'.")
+        raise ValueError("Parameter 'form' must be either 'squared' or 'legendre'.")
 
-    if form == 'legendre' and m is None:
-        raise ValueError("Degree 'm' is required when form='legendre'.")
+    if form == 'legendre':
+        if m is None:
+            raise ValueError("Parameter 'm' is required when form='legendre'.")
+    elif form == 'squared' and m is not None:
+        warnings.warn("Parameter 'm' is ignored when form='squared'.", stacklevel=2)
 
-    # ------------------ Step size adjustment ------------------ #
+    # ------------------ Adjust finite difference step size ------------------ #
 
     if f is not None:
-        # Prevent step size from exceeding domain scale
+        # Make sure h is sufficiently small relative to the domain size
         while h >= ell / 4:
             h /= 2
 
-    # ------------------ Define the integrand ------------------ #
+    # ------------------ Define the integrand function ------------------ #
 
     def integrand(x):
         """
-        Inner integrand function to be passed to the adaptive integrator.
-        Computes either [f′(x)]² or f′(x)·P̃ₘ(x).
+        Compute integrand: either [f′(x)]² or f′(x)·P̃ₘ(x) for each x.
+        Supports scalar or vector inputs.
         """
-        x = np.atleast_1d(x)           # Ensure input is array-like
-        result = np.empty_like(x)      # Allocate result array
+        x = np.atleast_1d(x)               # Ensure array input
+        result = np.empty_like(x)          # Preallocate output array
 
         for i, xi in enumerate(x):
-            # Compute f′(x) either analytically or numerically
+            # Compute the derivative f′(x)
             if df is not None:
                 f_prime = df(xi)
             else:
@@ -837,84 +909,85 @@ def integrate_derivative_form(f=None, df=None, ell=None, m=None, form='squared',
                     f, xi, ell=ell, h_init=h, derivmeth=derivmeth
                 )
 
-            # Choose form-specific integrand computation
+            # Form-dependent expression
             if form == 'squared':
-                result[i] = f_prime * f_prime
-            elif form == 'legendre':
+                result[i] = f_prime ** 2
+            else:  # form == 'legendre'
                 Pm_val = normalized_shifted_legendre(m, ell, xi)
                 result[i] = f_prime * Pm_val
 
         return result[0] if result.size == 1 else result
 
-    # ------------------ Adaptive numerical integration ------------------ #
+    # ------------------ Numerical integration ------------------ #
 
-    integral, metric, *_ = unified_adaptive_quadrature(integrand, ell, **quad_kwargs)
+    integral, error_estimate, *_ = adaptive_gauss_legendre_integrator(
+        integrand, ell, **quad_kwargs
+    )
 
-    return integral, metric
+    return integral, error_estimate
 
-# --------------------------------------------------------------------------- #
-""" 
-Legendre–Galerkin projections and initialization of modal coefficients 
-for partial differential equation solvers.
+# ===============================================================
+# Function: compute_initial_integrals
+# Purpose : Compute modal Legendre–Galerkin coefficients for u(x), v(x),
+#           and their derivatives using projection over shifted Legendre basis.
+# ===============================================================
 
-This routine computes the modal representation of initial conditions 
-(u, v) and their spatial derivatives using normalized shifted Legendre 
-polynomials as basis functions over the 1D domain [0, ℓ].
-
-Key outputs include:
-- L² projections: ⟨uᵢ, φₘ⟩ and ⟨vᵢ, φₘ⟩
-- First derivative projections: ⟨u₁′, φₘ⟩ and ⟨v₁′, φₘ⟩, via integration by parts
-- Second derivative projections: ⟨uᵢ″, φₘ⟩ and ⟨vᵢ″, φₘ⟩, also via integration by parts,
-  by computing ⟨−uᵢ′, φₘ′⟩ and ⟨−vᵢ′, φₘ′⟩
-
-Inputs `du` and `dv` are optional lists of analytical first derivatives 
-corresponding to `u` and `v`. When supplied, they are used to improve the 
-accuracy of second derivative projections. If not provided, numerical 
-differentiation is applied (using either 'nd' or 'sfd' methods).
-
-This routine supports spectral Galerkin discretizations for time-dependent 
-partial differential equations with homogeneous Dirichlet boundary conditions.
-"""
-# --------------------------------------------------------------------------- #
-
-def compute_initial_integrals(u, v, N, ell, *,
-                              du=None, dv=None,
-                              h=1e-3, derivmeth='nd', **quad_kwargs):
+def compute_initial_integrals(
+    u, v, N, ell, *,
+    du=None, dv=None,
+    h=1e-3, derivmeth='nd', **quad_kwargs
+    ):
     """
-    Computes Legendre–Galerkin modal coefficients of functions u(x), v(x),
-    including their L² projections and first/second spatial derivative projections,
-    using normalized shifted Legendre polynomials φₘ on the interval [0, ell].
+    Computes Legendre–Galerkin modal coefficients of initial conditions u(x), v(x),
+    including projections of their L² form, first derivatives, and second derivatives,
+    using normalized shifted Legendre polynomials over the interval [0, ell].
 
     Parameters
     ----------
     u, v : list of callable
-        Initial conditions. Each list should contain functions like:
+        Initial condition functions. Each list must include callable functions:
             u = [u₀(x), u₁(x)], v = [v₀(x), v₁(x)]
-    du, dv : list of callable or None
-        Optional analytical first derivatives of u and v:
+
+    du, dv : list of callable or None, optional
+        Optional list of analytical first derivatives:
             du = [du₀(x), du₁(x)], dv = [dv₀(x), dv₁(x)]
-            If None or entries are None, numerical differentiation is used.
+            If not provided or individual entries are None, numerical differentiation is used.
+
     N : int
-        Number of Legendre basis functions φ₁ to φ_N.
+        Number of Legendre basis functions φ₁, ..., φ_N used in the projection.
+
     ell : float
-        Length of spatial domain (integration interval is [0, ell]).
-    h : float, optional
-        Step size for numerical differentiation. Defaults to 1e-3.
-    derivmeth : {'nd', 'sfd'}, optional
-        Method for numerical differentiation: 'nd' = numdifftools, 'sfd' = finite difference.
-    **quad_kwargs : dict
-        Extra keyword arguments passed to quadrature and projection routines.
+        Length of the spatial domain; the integration interval is [0, ell].
+
+    h : float, default=1e-3
+        Initial step size for numerical differentiation.
+
+    derivmeth : {'nd', 'sfd'}, default='nd'
+        Differentiation method when `du`/`dv` are not available:
+            - 'nd'  → use numdifftools
+            - 'sfd' → use manually-coded 4th-order finite difference
+
+    **quad_kwargs : dict, optional
+        Optional keyword arguments forwarded to `adaptive_gauss_legendre_integrator`. Defaults:
+            - tol       : float, default=1e-6
+                          Absolute convergence tolerance for integration.
+            - min_dx    : float, default=1/128
+                          Minimum allowable subinterval width during refinement.
+            - n_gauss   : int, default=5
+                          Initial number of Gauss–Legendre points per subinterval.
+            - max_gauss : int, default=50
+                          Maximum number of Gauss–Legendre points allowed adaptively.
 
     Returns
     -------
     dict
-        A dictionary with modal coefficient arrays:
-            - 'u_proj'   : list of ∫ u[i]·φₘ dx projections
-            - 'v_proj'   : list of ∫ v[i]·φₘ dx projections
-            - 'diff1_u1' : array of ∫ u₁′·φₘ dx (first derivative via parts)
-            - 'diff1_v1' : array of ∫ v₁′·φₘ dx
-            - 'diff2_u'  : array of ∫ u[i]″·φₘ dx (2D array, shape [len(u), N])
-            - 'diff2_v'  : array of ∫ v[i]″·φₘ dx (same shape)
+        Dictionary containing modal projection arrays:
+            - 'u_proj'   : list of arrays for ∫ u[i](x) φₘ(x) dx
+            - 'v_proj'   : list of arrays for ∫ v[i](x) φₘ(x) dx
+            - 'diff1_u1' : array of ∫ u₁′(x) φₘ(x) dx  via parts
+            - 'diff1_v1' : array of ∫ v₁′(x) φₘ(x) dx
+            - 'diff2_u'  : 2D array of ∫ u[i]″(x) φₘ(x) dx  shape = (len(u), N)
+            - 'diff2_v'  : 2D array of ∫ v[i]″(x) φₘ(x) dx  shape = (len(v), N)
     """
 
     # --- Input validation helpers --- #
@@ -928,7 +1001,6 @@ def compute_initial_integrals(u, v, N, ell, *,
     if not (is_valid_func_list(u) and is_valid_func_list(v)):
         raise ValueError("Inputs 'u' and 'v' must be lists of callable functions.")
 
-    # If derivatives not given, initialize as None-lists
     du = [None] * len(u) if du is None else du
     dv = [None] * len(v) if dv is None else dv
 
@@ -948,48 +1020,42 @@ def compute_initial_integrals(u, v, N, ell, *,
     num_components = len(u)
     u_proj = [np.zeros(N) for _ in range(num_components)]
     v_proj = [np.zeros(N) for _ in range(num_components)]
-    diff1_u1 = np.zeros(N)  # ∫ u₁′·φₘ dx
-    diff1_v1 = np.zeros(N)  # ∫ v₁′·φₘ dx
-    diff2_u = np.zeros((num_components, N))  # ∫ u″·φₘ dx
-    diff2_v = np.zeros((num_components, N))  # ∫ v″·φₘ dx
+    diff1_u1 = np.zeros(N)
+    diff1_v1 = np.zeros(N)
+    diff2_u = np.zeros((num_components, N))
+    diff2_v = np.zeros((num_components, N))
 
     # --- Loop over all modal indices m = 1 to N --- #
     for m in range(N):
-        m_idx = m + 1  # Legendre basis uses 1-based indexing (φ₁, φ₂, ...)
+        m_idx = m + 1  # Legendre basis uses 1-based indexing
 
-        # --- Compute L² projections: ∫ u[i]·φₘ dx and ∫ v[i]·φₘ dx --- #
+        # --- Compute L² projections --- #
         for i in range(num_components):
             u_proj[i][m], _ = integrate_with_phi_m(u[i], ell, m_idx, **quad_kwargs)
             v_proj[i][m], _ = integrate_with_phi_m(v[i], ell, m_idx, **quad_kwargs)
 
-        # --- First derivatives by integration by parts ---
-        #     ∫ u₁′·φₘ dx = -∫ u₁·φₘ′ dx (assuming zero boundary values)
-        diff1_u1[m] = unified_adaptive_quadrature(
+        # --- First derivative projections by parts --- #
+        diff1_u1[m] = adaptive_gauss_legendre_integrator(
             lambda x: -u[1](x) * normalized_shifted_legendre(m_idx, ell, x),
             ell,
             **quad_kwargs
         )[0]
 
-        diff1_v1[m] = unified_adaptive_quadrature(
+        diff1_v1[m] = adaptive_gauss_legendre_integrator(
             lambda x: -v[1](x) * normalized_shifted_legendre(m_idx, ell, x),
             ell,
             **quad_kwargs
         )[0]
 
-        # --- Second derivatives: ∫ u″·φₘ dx = -∫ u′·φₘ′ dx --- #
+        # --- Second derivative projections via f′ or numerical --- #
         for i in range(num_components):
-            # Prepare u[i]′ as df_u if available, else use f_u and compute numerically
             f_u = None if du[i] else (lambda x, i=i: -u[i](x))
             df_u = (lambda x, i=i: -du[i](x)) if du[i] else None
 
             diff2_u[i][m], _ = integrate_derivative_form(
-                f=f_u,
-                df=df_u,
-                ell=ell,
-                m=m_idx,
-                form='legendre',
-                h=h,
-                derivmeth=derivmeth,
+                f=f_u, df=df_u, ell=ell,
+                form='legendre', m=m_idx,
+                h=h, derivmeth=derivmeth,
                 **quad_kwargs
             )
 
@@ -997,25 +1063,22 @@ def compute_initial_integrals(u, v, N, ell, *,
             df_v = (lambda x, i=i: -dv[i](x)) if dv[i] else None
 
             diff2_v[i][m], _ = integrate_derivative_form(
-                f=f_v,
-                df=df_v,
-                ell=ell,
-                m=m_idx,
-                form='legendre',
-                h=h,
-                derivmeth=derivmeth,
+                f=f_v, df=df_v, ell=ell,
+                form='legendre', m=m_idx,
+                h=h, derivmeth=derivmeth,
                 **quad_kwargs
             )
 
-    # --- Return modal coefficient dictionary --- #
+    # --- Return assembled coefficient dictionary --- #
     return {
-        'u_proj': u_proj,
-        'v_proj': v_proj,
-        'diff1_u1': diff1_u1,
-        'diff1_v1': diff1_v1,
-        'diff2_u': diff2_u,
-        'diff2_v': diff2_v
+        'u_proj': u_proj,       # L² projections of u[i]
+        'v_proj': v_proj,       # L² projections of v[i]
+        'diff1_u1': diff1_u1,   # First derivative ⟨u₁′, φₘ⟩
+        'diff1_v1': diff1_v1,   # First derivative ⟨v₁′, φₘ⟩
+        'diff2_u': diff2_u,     # Second derivative (weak) ⟨uᵢ″, φₘ⟩
+        'diff2_v': diff2_v      # Second derivative (weak) ⟨vᵢ″, φₘ⟩
     }
+
 
 # --------------------------------------------------------------------------- #
 """ Construction of operator matrices (stencils)
