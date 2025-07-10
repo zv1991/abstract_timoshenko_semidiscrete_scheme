@@ -1,0 +1,10 @@
+# === Core numerical libraries ===
+numpy>=1.21             # Arrays, linear algebra, quadrature roots
+scipy>=1.7              # Special functions (Legendre), sparse matrices
+
+# === Automatic numerical differentiation ===
+numdifftools>=0.9       # Used for adaptive finite difference derivatives (first-order)
+
+# === (Optional) Dev and plotting tools ===
+# tqdm                  # Progress bar (optional, only if needed)
+# matplotlib            # Plotting utilities (optional for visualization)
