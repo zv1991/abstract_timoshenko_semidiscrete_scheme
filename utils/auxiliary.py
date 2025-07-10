@@ -10,8 +10,6 @@ import numdifftools as nd
 from scipy.sparse import identity, diags, csr_matrix
 # Computes the condition number of a matrix using the 2-norm, indicating sensitivity to numerical errors
 from numpy.linalg import cond
-# Import quad from scipy.integrate and alias it as scipy_quad to avoid naming conflicts
-from scipy.integrate import quad as scipy_quad
 # Import the warnings module to issue runtime alerts without raising exceptions
 import warnings
 # Contains simulation configuration: domain length `ell`, time vector `t`, and step count `n`
@@ -226,376 +224,366 @@ def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarra
 #                            Quadrature Method Suite                          #
 # =========================================================================== #
 
-# --------------------------------------------------------------------------- #
-# Utility: Gauss-Legendre Integration over Arbitrary Interval [a, b]          #
-# --------------------------------------------------------------------------- #
-def gauss_legendre_integral(f, a, b, nodes, weights):
+# ==========================================================
+# Function: gauss_legendre_integral
+# Purpose : Numerically integrate a function over [a, b] using Gauss–Legendre quadrature
+# ==========================================================
+def gauss_legendre_integral(f, a, b, n_gauss):
     """
-    Compute the Gauss-Legendre quadrature of function f over [a, b].
+    Compute the Gauss–Legendre quadrature of function `f` over the interval [a, b].
 
     Parameters:
         f       : callable
-                  Function to integrate.
-        a, b    : float
-                  Interval endpoints.
-        nodes   : ndarray
-                  Gauss-Legendre nodes on [-1, 1].
-        weights : ndarray
-                  Corresponding weights on [-1, 1].
+                  Function to integrate. Should ideally support NumPy vectorized input.
+        a       : float
+                  Lower limit of integration.
+        b       : float
+                  Upper limit of integration.
+        n_gauss : int
+                  Number of Gauss–Legendre nodes to use.
 
     Returns:
-        float : Approximated integral of f over [a, b].
+        float : Approximate integral of f from a to b.
     """
-    mid = 0.5 * (a + b)              # Midpoint of the interval
-    half_len = 0.5 * (b - a)         # Half the interval length
-    x_mapped = mid + half_len * nodes  # Transform nodes to [a, b]
 
+    # --------------------------------------------------
+    # Generate nodes and weights on the canonical interval [-1, 1]
+    # --------------------------------------------------
+    nodes, weights = leggauss(n_gauss)
+
+    # --------------------------------------------------
+    # Transform nodes to the interval [a, b] using affine map
+    # --------------------------------------------------
+    mid = 0.5 * (a + b)              # Midpoint of integration interval
+    half_len = 0.5 * (b - a)         # Half the interval length
+    x_mapped = mid + half_len * nodes  # Transformed nodes for [a, b]
+
+    # --------------------------------------------------
+    # Evaluate function at transformed nodes
+    # --------------------------------------------------
     try:
-        # Attempt fast, vectorized evaluation of f at mapped nodes
+        # Prefer vectorized evaluation
         f_vals = np.asarray(f(x_mapped))
+
+        # Sanity check on output shape
         if f_vals.shape != x_mapped.shape:
             raise ValueError("Function output shape mismatch.")
+
     except Exception:
-        # Fallback: evaluate f pointwise if vectorization fails
+        # Fallback to scalar evaluation (non-vectorized function)
         f_vals = np.array([f(xi) for xi in x_mapped])
 
-    return half_len * np.dot(weights, f_vals)  # Weighted sum approximation
+    # --------------------------------------------------
+    # Return the weighted sum scaled by interval length
+    # --------------------------------------------------
+    return half_len * np.dot(weights, f_vals)
 
-
-# --------------------------------------------------------------------------- #
-# Method 1: Iterative Gauss-Legendre Quadrature ("glq")                       #
-# --------------------------------------------------------------------------- #
-def iter_gauss_legendre_quad(f, ell, tol=1e-6, max_n=1000):
-    """
-    Estimate ∫₀^ℓ f(x) dx by increasing Gauss-Legendre nodes until convergence.
-
-    Parameters:
-        f       : callable
-                  Function to integrate.
-        ell     : float
-                  Upper integration limit (must be ≥ 0).
-        tol     : float
-                  Absolute error tolerance.
-        max_n   : int
-                  Maximum number of quadrature points.
-
-    Returns:
-        integral : float
-                   Final integral estimate.
-        error    : float
-                   Difference between last two estimates.
-        n        : int
-                   Number of nodes used in final iteration.
-    """
-    if ell < 0:
-        raise ValueError("Upper limit 'ell' must be non-negative.")
-    if ell == 0:
-        return 0.0, 0.0, 0
-
-    a, b = 0.0, ell
-    n = 2                      # Start with minimal node count
-    prev_result = None
-
-    while n <= max_n:
-        nodes, weights = leggauss(n)
-        integral = gauss_legendre_integral(f, a, b, nodes, weights)
-
-        if prev_result is not None:
-            error = abs(integral - prev_result)
-            if error < tol:
-                return integral, error, n  # Converged
-
-        prev_result = integral
-        n += 1
-
-    # Reached max_n without satisfying tolerance
-    raise ValueError(
-        f"Did not converge within max_n = {max_n}. "
-        f"Last estimate: {prev_result:.6f}"
-    )
-
-
-# =====================================================================
-# Function: halving_gauss_legendre_quadrature
-# ---------------------------------------------------------------------
-# Purpose:
-#   Perform adaptive Gauss-Legendre quadrature over [0, ell] by 
-#   recursively halving the interval until the estimated integral error 
-#   falls below the specified tolerance.
-# =====================================================================
-def halving_gauss_legendre_quadrature(
+# ==========================================================
+# Function: adaptive_gauss_legendre_integrator
+# Purpose : Perform adaptive integration over [0, ell] using:
+#           1. Increasing Gauss–Legendre node count,
+#           2. Subinterval refinement when needed.
+# ==========================================================
+def adaptive_gauss_legendre_integrator(
     f: callable,
     ell: float,
     tol: float = 1e-6,
-    max_depth: int = 20,
-    n_gauss: int = 10
-) -> tuple[float, float, int]:
+    min_dx: float = 1 / 128.0,
+    n_gauss: int = 5,
+    max_gauss: int = 50
+    ) -> tuple[float, float, int, int]:
     """
-    Adaptive Gauss-Legendre quadrature using recursive interval halving.
+    Approximate the integral of `f` over the interval [0, ell] using adaptive Gauss–Legendre quadrature.
 
-    Parameters
-    ----------
-    f : callable
-        The function to integrate. Must accept a single float x and return float.
-    ell : float
-        Upper bound of the integration interval [0, ell]. Must be ≥ 0.
-    tol : float, optional
-        Absolute error tolerance for convergence (default: 1e-6).
-    max_depth : int, optional
-        Maximum number of interval halving refinements (default: 20).
-    n_gauss : int, optional
-        Number of Gauss-Legendre nodes per subinterval (default: 10).
-
-    Returns
-    -------
-    integral : float
-        Final integral estimate over [0, ell].
-    error : float
-        Final error estimate based on last refinement.
-    depth : int
-        Number of refinements (halving iterations) used.
-    """
-
-    # -----------------------------------------------------
-    # Validate integration domain
-    # -----------------------------------------------------
-    if ell < 0:
-        raise ValueError("Parameter 'ell' must be non-negative.")
-    if ell == 0:
-        return 0.0, 0.0, 0
-
-    # -----------------------------------------------------
-    # Precompute Gauss-Legendre nodes and weights (on [-1, 1])
-    # -----------------------------------------------------
-    nodes, weights = leggauss(n_gauss)
-
-    # -----------------------------------------------------
-    # Compute initial approximation over full interval
-    # -----------------------------------------------------
-    prev_integral = gauss_legendre_integral(f, 0.0, ell, nodes, weights)
-
-    # -----------------------------------------------------
-    # Iteratively halve the interval and refine the estimate
-    # -----------------------------------------------------
-    for k in range(1, max_depth + 1):
-        n_intervals = 2 ** k             # Number of subintervals
-        dx = ell / n_intervals           # Width of each subinterval
-        current_integral = 0.0           # Reset estimate at this level
-
-        # Sum contributions from all subintervals
-        for i in range(n_intervals):
-            a, b = i * dx, (i + 1) * dx
-            current_integral += gauss_legendre_integral(f, a, b, nodes, weights)
-
-        # Compute error and check convergence
-        error = abs(current_integral - prev_integral)
-        if error < tol:
-            return current_integral, error, k
-
-        prev_integral = current_integral  # Update for next iteration
-
-    # -----------------------------------------------------
-    # If we reach this point, convergence failed
-    # -----------------------------------------------------
-    raise RuntimeError(
-        f"Failed to converge within max_depth = {max_depth}. "
-        f"Last error: {error:.3e}"
-    )
-
-
-# --------------------------------------------------------------------------- #
-# Method 3: SciPy Built-in Quadrature ("scipy")                               #
-# --------------------------------------------------------------------------- #
-def scipy_quad_wrapper(f, ell, tol=1e-6):
-    """
-    Estimate ∫₀^ℓ f(x) dx using SciPy's adaptive quadrature.
-
-    Parameters:
-        f    : callable
-               Function to integrate.
-        ell  : float
-               Upper integration limit (must be ≥ 0).
-        tol  : float
-               Absolute error tolerance.
-
-    Returns:
-        integral : float
-                   Estimated integral value.
-        error    : float
-                   Estimated absolute error.
-        None     : Placeholder for compatibility with other methods.
-    """
-    if ell < 0:
-        raise ValueError("Upper limit 'ell' must be non-negative.")
-    if ell == 0:
-        return 0.0, 0.0, None
-
-    result, error = scipy_quad(f, 0.0, ell, epsabs=tol)
-    return result, error, None
-
-# --------------------------------------------------------------------------- #
-# Dispatcher: Unified Adaptive Quadrature Interface                           #
-# --------------------------------------------------------------------------- #
-def unified_adaptive_quadrature(
-    f, ell, tol=1e-6, method="hglq", max_n=1000, max_depth=20, n_points=10
-):
-    """
-    Unified interface for multiple quadrature (numerical integration) schemes.
+    Strategy:
+        - Start with low node count on full interval and try to converge.
+        - If not successful, split the interval into smaller parts.
+        - In each subinterval, adaptively increase node count until convergence or limits are reached.
 
     Parameters:
         f         : callable
-                    The function to integrate.
+                    Function to integrate. Must accept float input.
         ell       : float
-                    The upper limit of the integration interval. Lower limit is assumed to be 0.
-        tol       : float, optional (default=1e-6)
-                    Absolute error tolerance for the integration.
-        method    : str, optional (default='hglq')
-                    Integration method to use: 'glq' (iterative Gauss-Legendre),
-                                               'hglq' (halving Gauss-Legendre),
-                                               'scipy' (SciPy’s quad function).
-        max_n     : int, optional (default=1000)
-                    Maximum number of points for the 'glq' method.
-        max_depth : int, optional (default=20)
-                    Maximum recursion depth for the 'hglq' method.
-        n_points  : int, optional (default=10)
-                    Number of Gauss points per subinterval for the 'hglq' method.
+                    Upper limit of integration interval [0, ell]. Must be ≥ 0.
+        tol       : float, optional
+                    Absolute convergence tolerance. Default is 1e-6.
+        min_dx    : float, optional
+                    Minimum subinterval width before halting refinement. Default is 1/128.
+        n_gauss   : int, optional
+                    Initial number of Gauss nodes to try. Default is 5.
+        max_gauss : int, optional
+                    Maximum allowed Gauss nodes per interval. Default is 50.
 
     Returns:
         tuple:
-            - integral : float
-                         Estimated value of the integral.
-            - metric   : float or int
-                         Method-dependent metric:
-                             - 'glq' returns number of points used.
-                             - 'hglq' returns estimated error.
-                             - 'scipy' returns estimated error.
+            - float : Estimated integral value
+            - float : Estimated absolute error
+            - int   : Number of interval halving iterations
+            - int   : Maximum number of Gauss nodes used
     """
-    # Dispatch integration based on selected method
-    if method == "glq":
-        # Use iterative Gauss-Legendre quadrature
-        return iter_gauss_legendre_quad(f, ell, tol, max_n)
-    
-    elif method == "hglq":
-        # Use adaptive halving with Gauss-Legendre subinterval quadrature
-        return halving_gauss_legendre_quadrature(
-            f, ell, tol=tol, max_depth=max_depth, n_gauss=n_points
-        )
-    
-    elif method == "scipy":
-        # Use SciPy's built-in quad function
-        return scipy_quad_wrapper(f, ell, tol)
-    
-    else:
-        # Raise an error for unsupported methods
-        raise ValueError(
-            f"Invalid method '{method}'. Must be 'glq', 'hglq', or 'scipy'."
-        )
+
+    # ------------------------------------------
+    # Step 1: Validate input domain
+    # ------------------------------------------
+    if ell < 0:
+        raise ValueError("Parameter 'ell' must be non-negative.")
+    if ell == 0:
+        return 0.0, 0.0, 0, 0  # Trivial integral
+
+    # ------------------------------------------
+    # Step 2: Attempt full interval integration with increasing node count
+    # ------------------------------------------
+    initial_n_gauss = n_gauss             # Preserve initial value for subinterval reuse
+    max_nodes_used = n_gauss              # Track max Gauss nodes used overall
+    converged = False                     # Flag for global convergence
+
+    integral_prev = gauss_legendre_integral(f, 0.0, ell, n_gauss)
+
+    while n_gauss + 5 <= max_gauss:
+        n_gauss += 5
+        integral_curr = gauss_legendre_integral(f, 0.0, ell, n_gauss)
+
+        # Track maximum nodes used
+        max_nodes_used = min(max(max_nodes_used, n_gauss), max_gauss)
+
+        # Check convergence based on absolute difference
+        if np.abs(integral_curr - integral_prev) < tol:
+            estimated_error = np.abs(integral_curr - integral_prev)
+            return integral_curr, estimated_error, 0, max_nodes_used
+
+        integral_prev = integral_curr
+
+    # ------------------------------------------
+    # Step 3: Adaptive refinement by interval halving
+    # ------------------------------------------
+    counter = 0            # Number of halving iterations
+    prev_total = None      # Store previous estimate for convergence check
+
+    while not converged:
+        counter += 1
+        n_intervals = 2 ** counter
+        dx = ell / n_intervals
+
+        # Stop refinement if interval width is too small
+        if dx < min_dx:
+            break
+
+        total_integral = 0.0
+        converged = True  # Assume convergence unless proven otherwise
+
+        for i in range(n_intervals):
+            a = i * dx
+            b = (i + 1) * dx
+
+            n_gauss_local = initial_n_gauss
+            integral_prev = gauss_legendre_integral(f, a, b, n_gauss_local)
+            local_converged = False
+
+            # Try to converge in this subinterval
+            while n_gauss_local + 5 <= max_gauss:
+                n_gauss_local += 5
+                integral_curr = gauss_legendre_integral(f, a, b, n_gauss_local)
+
+                if np.abs(integral_curr - integral_prev) < tol:
+                    total_integral += integral_curr
+                    local_converged = True
+                    break
+
+                integral_prev = integral_curr
+
+            if not local_converged:
+                # Accept last estimate even if not converged
+                total_integral += integral_curr
+                converged = False
+
+            max_nodes_used = min(max(max_nodes_used, n_gauss_local), max_gauss)
+
+        # ------------------------------------------
+        # Step 4: Global convergence verification
+        # ------------------------------------------
+        if converged:
+            if prev_total is not None and np.abs(total_integral - prev_total) < tol:
+                estimated_error = np.abs(total_integral - prev_total)
+                return total_integral, estimated_error, counter, max_nodes_used
+
+            # If first converged estimate, store and continue
+            prev_total = total_integral
+
+    # ------------------------------------------
+    # Step 5: Return best estimate if convergence not reached
+    # ------------------------------------------
+    estimated_error = np.abs(total_integral - prev_total) if prev_total is not None else float('inf')
+    return total_integral, estimated_error, counter, max_nodes_used
+
+# ===============================================================
+# Function: integrate_with_phi_m
+# Purpose : Integrate f(x) weighted by φₘ(x) over [0, ell] using
+#           adaptive Gauss–Legendre quadrature with optional tuning.
+# ===============================================================
 
 def integrate_with_phi_m(f, ell, m, *args, **quad_kwargs):
     """
-    Computes the integral ∫₀^ell f(x, *args) · φₘ(x) dx,
-    where φₘ is the m-th Legendre-based basis function, using a unified
-    adaptive quadrature strategy.
+    Computes the weighted integral ∫₀^ell f(x, *args) · φₘ(x) dx,
+    where φₘ is the m-th Legendre-based basis function. This routine
+    uses adaptive Gauss–Legendre quadrature with optional tuning.
 
     Parameters:
         f            : callable
-                       Function to integrate. Must accept 'x' as the first argument, followed by *args.
+                       User-defined function to integrate. It must accept x as its first argument,
+                       followed by additional positional parameters (*args).
+        
         ell          : float
-                       Upper limit of integration. Must be positive. The lower limit is assumed to be 0.
+                       The upper limit of integration (must be > 0). Integration is over [0, ell].
+
         m            : int
-                       Index/order of the basis function φₘ.
+                       Index/order of the Legendre-based basis function φₘ.
+
         *args        : tuple
-                       Additional arguments to pass to 'f' (e.g., parameters like time `t[k+1]`).
+                       Additional positional arguments to be passed to `f`.
+
         **quad_kwargs: dict
-                       Optional keyword arguments passed to `unified_adaptive_quadrature`, such as:
-                           - tol: float         (absolute error tolerance)
-                           - method: str        ("glq", "hglq", or "scipy")
-                           - max_n: int         (for "glq")
-                           - max_depth: int     (for "hglq")
-                           - n_points: int      (for "hglq")
+                       Optional control parameters for `adaptive_gauss_legendre_integrator`:
+                         - tol       : float  (absolute error tolerance)
+                         - min_dx    : float  (minimum subinterval size)
+                         - n_gauss   : int    (initial number of Gauss nodes)
+                         - max_gauss : int    (maximum allowed Gauss nodes)
 
     Returns:
         tuple:
-            - integral_value : float
-                               Estimated value of the integral.
-            - convergence_info: float or int
-                               Method-dependent diagnostic information
-                               (e.g., error estimate or point count).
+            - integral_value   : float
+                                 Final estimated integral value.
+
+            - convergence_info : float
+                                 Estimated absolute error from the last adaptive pass.
     """
 
-    # --- Safety check on integration domain ---
+    # ------------------------------------------
+    # Step 1: Sanity check on integration bounds
+    # ------------------------------------------
     if ell <= 0:
         raise ValueError("The integration upper bound 'ell' must be strictly positive.")
 
-    # --- Construct the integrand ---
-    # Multiply user-defined function f(x, *args) with basis function φₘ(x)
-    # Assumes phi_m is defined globally and vectorized to work on arrays.
+    # ------------------------------------------
+    # Step 2: Construct weighted integrand
+    #         φₘ(x) should be globally defined and vectorized.
+    # ------------------------------------------
     def integrand(x):
+        # Product of the user-defined function and the m-th basis function φₘ(x)
         return f(x, *args) * phi_m(m, ell, x)
 
-    # --- Compute the integral using the selected quadrature method ---
-    # Pass integration control settings via **quad_kwargs
-    result = unified_adaptive_quadrature(
-        integrand,  # The integrand function: f(x) * φₘ(x)
-        ell,        # Integration upper bound
-        **quad_kwargs
+    # ------------------------------------------
+    # Step 3: Prepare valid quadrature options
+    # ------------------------------------------
+    allowed_keys = {'tol', 'min_dx', 'n_gauss', 'max_gauss'}
+
+    # Set default values (used if user provides none)
+    defaults = {
+        'tol': 1e-6,
+        'min_dx': 1 / 128.0,
+        'n_gauss': 5,
+        'max_gauss': 50
+    }
+
+    # Use user-provided values if valid; otherwise use defaults
+    filtered_kwargs = {
+        k: quad_kwargs[k] if k in quad_kwargs else defaults[k]
+        for k in allowed_keys
+    }
+
+    # ------------------------------------------
+    # Step 4: Evaluate the integral using adaptive Gauss–Legendre quadrature
+    # ------------------------------------------
+    value, error_estimate, _, _ = adaptive_gauss_legendre_integrator(
+        integrand,
+        ell,
+        **filtered_kwargs
     )
 
-    # --- Return only the value and diagnostic info ---
-    # Typically returns (value, error)
-    return result[:2]
+    # ------------------------------------------
+    # Step 5: Return result and diagnostic info
+    # ------------------------------------------
+    return value, error_estimate
+
+# ===============================================================
+# Function: compute_time_dependent_integrals
+# Purpose : Compute time-dependent spatial integrals of the form
+#           ∫₀^ell f(x, t[k+1]) · φₘ₊₁(x) dx for each time step k
+#           and each basis function index m, producing a matrix
+#           of integral values used in Galerkin/spectral methods.
+# ===============================================================
 
 def compute_time_dependent_integrals(f, N, ell, t, **quad_kwargs):
     """
-    Computes integrals of the form:
+    Computes a matrix of spatial integrals of the form:
         ∫₀^ell f(x, t_{k+1}) * φₘ(x) dx
-    for each time step `k` and basis function index `m`.
+    where φₘ(x) is the m-th Legendre-based basis function.
+
+    This is evaluated for each time step k and each basis index m,
+    producing a 2D array of shape (n-1, N), where:
+        - Rows correspond to time intervals [t_k, t_{k+1}]
+        - Columns correspond to basis function indices m = 1 to N
 
     Parameters:
         f             : callable
-                        A function of (x, t), representing a time-dependent spatial function.
+                        Function f(x, t) representing a spatial profile
+                        evaluated at a fixed time t = t[k+1].
+
         N             : int
-                        Number of basis functions φₘ(x) used in the decomposition.
+                        Number of spatial basis functions φₘ(x) used
+                        in the Galerkin expansion (index m from 1 to N).
+
         ell           : float
-                        Upper limit of the spatial integration domain.
-        t             : array-like
-                        1D array of time discretization points of length `n`. Must have at least two elements.
-        **quad_kwargs : dict
-                        Optional keyword arguments forwarded to `integrate_with_phi_m`, e.g.:
-                            - tol       : float (absolute tolerance)
-                            - method    : str {"glq", "hglq", "scipy"}
-                            - max_n     : int  (for "glq")
-                            - max_depth : int  (for "hglq")
-                            - n_points  : int  (for "hglq")
+                        Right endpoint of spatial integration domain [0, ell].
+
+        t             : array-like of shape (n,)
+                        Monotonic array of time nodes. Must have n ≥ 2
+                        elements to define n-1 time intervals.
+
+        **quad_kwargs : dict, optional
+                        Optional keyword arguments forwarded to
+                        `integrate_with_phi_m`. May include:
+                            - tol       : float  (integration tolerance)
+                            - min_dx    : float  (minimum subinterval width)
+                            - n_gauss   : int    (initial Gauss–Legendre nodes)
+                            - max_gauss : int    (maximum Gauss–Legendre nodes)
 
     Returns:
-        integrals : np.ndarray, shape (n-1, N)
-                    Array where:
+        integrals : np.ndarray of shape (n-1, N)
+                    Matrix of approximated integrals, where:
                         integrals[k, m] ≈ ∫₀^ell f(x, t[k+1]) * φₘ₊₁(x) dx
     """
 
-    # --- Validate time vector ---
+    # ------------------------------------------
+    # Step 1: Validate input time vector
+    # ------------------------------------------
     n = len(t)
     if n < 2:
         raise ValueError("Time array 't' must contain at least two time points.")
 
-    # --- Preallocate result array ---
-    # Rows: time intervals (from k = 0 to n - 2)
-    # Cols: basis functions m = 1 to N
-    integrals = np.zeros((n - 1, N))
+    # ------------------------------------------
+    # Step 2: Allocate result array
+    # Shape: (n-1, N) for all time intervals and all basis functions
+    # ------------------------------------------
+    integrals = np.zeros((n - 1, N), dtype=float)
 
-    # --- Main computation loop ---
+    # ------------------------------------------
+    # Step 3: Compute integrals over time and basis index
+    # Outer loop: time intervals [t_k, t_{k+1}]
+    # Inner loop: basis indices m = 1 to N (using m+1 internally)
+    # ------------------------------------------
     for k in range(n - 1):
-        t_next = t[k + 1]  # Advance to the next time step
+        t_next = t[k + 1]  # Evaluate f(x, t) at t[k+1]
 
         for m in range(N):
-            # Compute integral ∫ f(x, t_next) * φₘ₊₁(x) dx
-            # Note: basis function index passed to phi_m is m+1
+            # φₘ₊₁(x) is the basis function of index m+1 (1-based)
             value, _ = integrate_with_phi_m(f, ell, m + 1, t_next, **quad_kwargs)
 
-            # Store only the computed integral (ignore diagnostics)
+            # Store only the integral value (omit error estimate)
             integrals[k, m] = value
 
+    # ------------------------------------------
+    # Step 4: Return computed integral matrix
+    # ------------------------------------------
     return integrals
 
 # --------------------------------------------------------------------------- #

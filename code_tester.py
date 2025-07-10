@@ -2,205 +2,214 @@
 # Module Imports
 # ==========================================================
 
-# NumPy is used for efficient numerical computation, particularly with arrays and vectorized operations
+# NumPy: Used for efficient numerical operations and vectorized computations
 import numpy as np
 
-# leggauss returns the Gauss–Legendre nodes and weights on the interval [-1, 1]
-# These are used for approximating integrals using Gauss–Legendre quadrature
+# leggauss: Generates Gauss–Legendre quadrature nodes and weights for interval [-1, 1]
 from numpy.polynomial.legendre import leggauss
 
+# Project-specific utilities and configuration (assumed to support this numerical framework)
 import utils.auxiliary as aux
 import utils.config as cfg
 
 
 # ==========================================================
 # Function: gauss_legendre_integral
-# Purpose: Numerically integrate a function using Gauss–Legendre quadrature
+# Purpose : Numerically integrate a function over [a, b] using Gauss–Legendre quadrature
 # ==========================================================
 def gauss_legendre_integral(f, a, b, n_gauss):
     """
     Compute the Gauss–Legendre quadrature of function `f` over the interval [a, b].
 
-    This method approximates the definite integral of a given function by evaluating it at
-    carefully chosen points (`nodes`) within the interval, weighted by corresponding values
-    (`weights`). These values are derived from Legendre polynomials and provide high accuracy
-    with fewer evaluation points compared to equally spaced methods.
-
     Parameters:
         f       : callable
-                  Function to integrate. Ideally supports NumPy vectorized input.
+                  Function to integrate. Should ideally support NumPy vectorized input.
         a       : float
                   Lower limit of integration.
         b       : float
                   Upper limit of integration.
         n_gauss : int
-                  Number of Gauss–Legendre nodes to use (higher = better accuracy).
+                  Number of Gauss–Legendre nodes to use.
 
     Returns:
-        float
-            Approximate value of the integral ∫ₐᵇ f(x) dx using Gauss–Legendre quadrature.
+        float : Approximate integral of f from a to b.
     """
 
-    # ==========================================================
-    # Step 1: Generate Gauss–Legendre nodes and weights on [-1, 1]
-    # These are roots of the Legendre polynomial of degree `n_gauss`
-    # ==========================================================
+    # --------------------------------------------------
+    # Generate nodes and weights on the canonical interval [-1, 1]
+    # --------------------------------------------------
     nodes, weights = leggauss(n_gauss)
 
-    # ==========================================================
-    # Step 2: Affine Transformation of Nodes to Interval [a, b]
-    # Convert from reference interval [-1, 1] to user-defined interval [a, b]
-    # x = 0.5 * (b - a) * node + 0.5 * (a + b)
-    # ==========================================================
-    mid = 0.5 * (a + b)                # Center point of [a, b]
-    half_len = 0.5 * (b - a)           # Half-length of [a, b]
-    x_mapped = mid + half_len * nodes  # Transformed nodes in [a, b]
+    # --------------------------------------------------
+    # Transform nodes to the interval [a, b] using affine map
+    # --------------------------------------------------
+    mid = 0.5 * (a + b)              # Midpoint of integration interval
+    half_len = 0.5 * (b - a)         # Half the interval length
+    x_mapped = mid + half_len * nodes  # Transformed nodes for [a, b]
 
-    # ==========================================================
-    # Step 3: Evaluate Function at Transformed Nodes
-    # Try vectorized evaluation first; fallback to scalar loop if needed
-    # ==========================================================
+    # --------------------------------------------------
+    # Evaluate function at transformed nodes
+    # --------------------------------------------------
     try:
-        # Attempt vectorized evaluation for performance
+        # Prefer vectorized evaluation
         f_vals = np.asarray(f(x_mapped))
 
-        # Confirm the shape of the returned array matches expectations
+        # Sanity check on output shape
         if f_vals.shape != x_mapped.shape:
-            raise ValueError("Function output shape mismatch. Expected shape: "
-                             f"{x_mapped.shape}, got: {f_vals.shape}")
+            raise ValueError("Function output shape mismatch.")
+
     except Exception:
-        # Graceful fallback for non-vectorized functions
-        # Also useful for debugging evaluation issues
+        # Fallback to scalar evaluation (non-vectorized function)
         f_vals = np.array([f(xi) for xi in x_mapped])
 
-    # ==========================================================
-    # Step 4: Compute Weighted Sum to Approximate Integral
-    # Apply the Gauss–Legendre formula: ∫ f(x) dx ≈ Σ wᵢ·f(xᵢ)·(b−a)/2
-    # ==========================================================
-    result = half_len * np.dot(weights, f_vals)
+    # --------------------------------------------------
+    # Return the weighted sum scaled by interval length
+    # --------------------------------------------------
+    return half_len * np.dot(weights, f_vals)
 
-    return result
 
 # ==========================================================
-# Function: halving_gauss_legendre_quadrature
-# Purpose: Adaptive integration using Gauss–Legendre quadrature
-#          with increasing node count and recursive interval halving
+# Function: adaptive_gauss_legendre_integrator
+# Purpose : Perform adaptive integration over [0, ell] using:
+#           1. Increasing Gauss–Legendre node count,
+#           2. Subinterval refinement when needed.
 # ==========================================================
-def halving_gauss_legendre_quadrature(
+def adaptive_gauss_legendre_integrator(
     f: callable,
     ell: float,
-    tol: float = 1e-6
-) -> tuple[float, float, int]:
+    tol: float = 1e-6,
+    min_dx: float = 1 / 128.0,
+    n_gauss: int = 5,
+    max_gauss: int = 50
+) -> tuple[float, float, int, int]:
     """
-    Approximate the integral of a function `f` over the interval [0, ell]
-    using Gauss–Legendre quadrature with adaptive node refinement and interval halving.
+    Approximate the integral of `f` over the interval [0, ell] using adaptive Gauss–Legendre quadrature.
 
-    The method first attempts to converge over the whole interval by increasing
-    the number of Gauss–Legendre nodes. If convergence fails, the interval is
-    halved recursively and the same process is applied per subinterval.
+    Strategy:
+        - Start with low node count on full interval and try to converge.
+        - If not successful, split the interval into smaller parts.
+        - In each subinterval, adaptively increase node count until convergence or limits are reached.
 
     Parameters:
-        f   : callable
-              Function to integrate. Must accept float input.
-        ell : float
-              Upper bound of the interval [0, ell]; must be non-negative.
-        tol : float, optional
-              Convergence tolerance for absolute error (default: 1e-6).
+        f         : callable
+                    Function to integrate. Must accept float input.
+        ell       : float
+                    Upper limit of integration interval [0, ell]. Must be ≥ 0.
+        tol       : float, optional
+                    Absolute convergence tolerance. Default is 1e-6.
+        min_dx    : float, optional
+                    Minimum subinterval width before halting refinement. Default is 1/128.
+        n_gauss   : int, optional
+                    Initial number of Gauss nodes to try. Default is 5.
+        max_gauss : int, optional
+                    Maximum allowed Gauss nodes per interval. Default is 50.
 
     Returns:
-        tuple[float, float, int]
-            (final integral estimate, estimated error, number of halving iterations)
+        tuple:
+            - float : Estimated integral value
+            - float : Estimated absolute error
+            - int   : Number of interval halving iterations
+            - int   : Maximum number of Gauss nodes used
     """
 
-    # ==========================================================
-    # Step 1: Validate input
-    # ==========================================================
+    # ------------------------------------------
+    # Step 1: Validate input domain
+    # ------------------------------------------
     if ell < 0:
         raise ValueError("Parameter 'ell' must be non-negative.")
     if ell == 0:
-        return 0.0, 0.0, 0
+        return 0.0, 0.0, 0, 0  # Trivial integral
 
-    # ==========================================================
-    # Step 2: Try convergence using increasing n_gauss on [0, ell]
-    # ==========================================================
-    n_gauss = 5
-    max_gauss = 50
-    converged = False
+    # ------------------------------------------
+    # Step 2: Attempt full interval integration with increasing node count
+    # ------------------------------------------
+    initial_n_gauss = n_gauss             # Preserve initial value for subinterval reuse
+    max_nodes_used = n_gauss              # Track max Gauss nodes used overall
+    converged = False                     # Flag for global convergence
 
     integral_prev = gauss_legendre_integral(f, 0.0, ell, n_gauss)
 
-    while n_gauss <= max_gauss:
+    while n_gauss + 5 <= max_gauss:
         n_gauss += 5
         integral_curr = gauss_legendre_integral(f, 0.0, ell, n_gauss)
 
-        if abs(integral_curr - integral_prev) < tol:
-            estimated_error = abs(integral_curr - integral_prev)
-            converged = True
-            return integral_curr, estimated_error, 0  # Converged on full interval
+        # Track maximum nodes used
+        max_nodes_used = min(max(max_nodes_used, n_gauss), max_gauss)
+
+        # Check convergence based on absolute difference
+        if np.abs(integral_curr - integral_prev) < tol:
+            estimated_error = np.abs(integral_curr - integral_prev)
+            return integral_curr, estimated_error, 0, max_nodes_used
 
         integral_prev = integral_curr
 
-    # ==========================================================
-    # Step 3: If not converged, begin interval halving
-    # ==========================================================
-    min_dx = 1 / 128.0
-    counter = 0
-    prev_total = None
+    # ------------------------------------------
+    # Step 3: Adaptive refinement by interval halving
+    # ------------------------------------------
+    counter = 0            # Number of halving iterations
+    prev_total = None      # Store previous estimate for convergence check
 
     while not converged:
         counter += 1
         n_intervals = 2 ** counter
         dx = ell / n_intervals
 
+        # Stop refinement if interval width is too small
         if dx < min_dx:
-            break  # Stop refinement if intervals become too small
+            break
 
         total_integral = 0.0
-        converged = True  # Assume converged unless any subinterval fails
+        converged = True  # Assume convergence unless proven otherwise
 
         for i in range(n_intervals):
             a = i * dx
             b = (i + 1) * dx
 
-            # Gauss–Legendre convergence on each subinterval
-            n_gauss_local = 5
+            n_gauss_local = initial_n_gauss
             integral_prev = gauss_legendre_integral(f, a, b, n_gauss_local)
-
             local_converged = False
 
-            while n_gauss_local <= max_gauss:
+            # Try to converge in this subinterval
+            while n_gauss_local + 5 <= max_gauss:
                 n_gauss_local += 5
                 integral_curr = gauss_legendre_integral(f, a, b, n_gauss_local)
 
-                if abs(integral_curr - integral_prev) < tol:
-                    local_converged = True
+                if np.abs(integral_curr - integral_prev) < tol:
                     total_integral += integral_curr
+                    local_converged = True
                     break
 
                 integral_prev = integral_curr
 
             if not local_converged:
-                # Still accept the last computed value even if not converged
+                # Accept last estimate even if not converged
                 total_integral += integral_curr
-                converged = False  # At least one subinterval failed to converge
+                converged = False
 
-        # Check for convergence on the entire domain
+            max_nodes_used = min(max(max_nodes_used, n_gauss_local), max_gauss)
+
+        # ------------------------------------------
+        # Step 4: Global convergence verification
+        # ------------------------------------------
         if converged:
-            if prev_total is not None and abs(total_integral - prev_total) < tol:
-                estimated_error = abs(total_integral - prev_total)
-                return total_integral, estimated_error, counter
+            if prev_total is not None and np.abs(total_integral - prev_total) < tol:
+                estimated_error = np.abs(total_integral - prev_total)
+                return total_integral, estimated_error, counter, max_nodes_used
 
+            # If first converged estimate, store and continue
             prev_total = total_integral
 
-    # ==========================================================
-    # Step 4: Fallback — return last estimate if min_dx reached
-    # ==========================================================
-    estimated_error = abs(total_integral - prev_total) if prev_total is not None else float('inf')
-    return total_integral, estimated_error, counter
+    # ------------------------------------------
+    # Step 5: Return best estimate if convergence not reached
+    # ------------------------------------------
+    estimated_error = np.abs(total_integral - prev_total) if prev_total is not None else float('inf')
+    return total_integral, estimated_error, counter, max_nodes_used
 
 
-f = lambda x: (55 * np.pi) * np.sin(55 * np.pi * x)
+m = 41
+f = lambda x: (m * np.pi / cfg.ell) * np.sin(m * np.pi * x / cfg.ell)
 
-integral_global = gauss_legendre_integral(f=f, a=0.0, b=1.0, n_gauss=51)
+integral_global = gauss_legendre_integral(f=f, a=0.0, b=cfg.ell, n_gauss=50)
 
-current_estimate, estimated_error, counter = halving_gauss_legendre_quadrature(f=f, ell=1.0)
+result, error, steps, max_nodes = adaptive_gauss_legendre_integrator(f=f, ell=cfg.ell)
+print(f"Result = {result}, Error = {error}, Halving steps = {steps}, Max nodes = {max_nodes}")
