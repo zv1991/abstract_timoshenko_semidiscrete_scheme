@@ -86,6 +86,57 @@ def shifted_legendre(m, ell, x):
     x_mapped = 2 * x / ell - 1  # Transform x from [0, ell] to [-1, 1]
     return legendre(m)(x_mapped)
 
+# def shifted_legendre(m: int, x, ell) -> float | np.ndarray:
+#     """
+#     Computes the shifted Legendre polynomial P̃_m(x) over the interval [0, ell]
+#     using Bonnet's recursion formula. Internally, the domain is mapped to [-1, 1],
+#     the standard domain for Legendre polynomials.
+
+#     Parameters:
+#         m (int): Degree of the shifted Legendre polynomial (non-negative).
+#         x (ndarray, list, float, or int): Input value(s) in the interval [0, ell].
+#                                           Accepts scalars, lists, or NumPy arrays.
+#         ell (float or int): Interval length (must be > 0); cast internally to float64.
+
+#     Returns:
+#         float or np.ndarray: 
+#             - A float if a scalar x was provided.
+#             - A NumPy array if x was vector-like.
+#             Represents P̃_m(x) evaluated at the given x.
+#     """
+
+#     # --- Input Normalization ---
+#     ell = np.float64(ell)                      # Convert ell to float64 for consistency
+#     x = np.asarray(x, dtype=np.float64)        # Ensure x is a float64 NumPy array (handles scalars, lists, arrays)
+#     x = np.clip(x, 0, ell)                     # Ensure all x values lie within [0, ell]
+
+#     is_scalar_input = x.ndim == 0              # Track if input was originally scalar for output formatting
+
+#     # --- Domain Mapping ---
+#     x_mapped = 2 * x / ell - 1                 # Shift x from [0, ell] to standard Legendre domain [-1, 1]
+
+#     # --- Base Cases ---
+#     if m == 0:
+#         result = np.ones_like(x_mapped)        # P̃_0(x) = 1
+#     elif m == 1:
+#         result = x_mapped                      # P̃_1(x) = x_mapped
+#     else:
+#         # --- Initialize Recursion for Bonnet's Formula ---
+#         P_m_minus_1 = np.ones_like(x_mapped)   # P̃_0(x)
+#         P_m_curr = x_mapped                    # P̃_1(x)
+
+#         # --- Bonnet's Recursion ---
+#         # Recursively compute P̃_m(x) for m ≥ 2:
+#         # P̃_{k+1}(x) = ((2k + 1)x P̃_k(x) - k P̃_{k-1}(x)) / (k + 1)
+#         for k in range(1, m):
+#             P_m_next = ((2 * k + 1) * x_mapped * P_m_curr - k * P_m_minus_1) / (k + 1)
+#             P_m_minus_1, P_m_curr = P_m_curr, P_m_next  # Update for next iteration
+
+#         result = P_m_curr  # Final result after m iterations
+
+#     # --- Return Formatting ---
+#     return result.item() if is_scalar_input else result  # Return scalar if input was scalar, else array
+
 # def shifted_legendre(n: int, ell: float, x: np.ndarray) -> np.ndarray:
 #     """
 #     Evaluate the n-th shifted Legendre polynomial on the interval [0, ell].

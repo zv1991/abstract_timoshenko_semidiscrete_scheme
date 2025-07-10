@@ -32,6 +32,8 @@ External dependencies:
 # --------------------------------------------------------------------------- #
 
 import numpy as np  # Core numerical computing (arrays, linear algebra)
+import time         # For timing the computation
+from tqdm import tqdm  # Progress bar
 import utils.auxiliary as aux  # Galerkin operators, Legendre basis, projections
 
 
@@ -45,15 +47,19 @@ class TimoshenkoModelSolver:
     # ----------------------------------------------------------------------- #
     def __init__(
         self,
-        ell, T,
-        alpha, beta, gamma, delta,
-        a1, a2,
-        n, N,
-        f1, f2,
-        u0, u1, v0, v1,
-        du0=None, du1=None, dv0=None, dv1=None,  # Optional input if known
-        h=1e-3, derivmeth='nd',
-        tol=1e-6, min_dx=1/128, n_gauss=5, max_gauss=50
+        ell, T,                     # Domain length and final time
+        alpha, beta, gamma, delta,  # PDE coefficients
+        a1, a2,                     # Coupling constants
+        n, N,           # Time discretization and number of Galerkin basis modes
+        f1, f2,         # External forcing functions
+        u0, u1, v0, v1, # Initial conditions
+        du0=None, du1=None, dv0=None, dv1=None,  # Optional: known spatial derivatives of initial data
+        h=1e-3,             # Finite difference step size (default: 1e-3)
+        derivmeth='nd',     # Differentiation scheme ('nd' = numdifftools, 'sfd' = standard manually implemented)
+        tol=1e-6,           # Integration tolerance for adaptive quadrature
+        min_dx=1/128,       # Minimum interval width in adaptive integration
+        n_gauss=5,          # Initial Gauss–Legendre points per subinterval
+        max_gauss=50        # Maximum Gauss–Legendre nodes per interval
     ):
         # Spatial and temporal domain setup
         self.ell = ell               # Beam length (domain: [0, ell])
@@ -73,20 +79,20 @@ class TimoshenkoModelSolver:
         self.v0, self.v1 = v0, v1                   # Rotation at t = 0 and t = τ
 
         # Optional analytical derivatives of initial conditions
-        self.du0, self.du1 = du0, du1               # First spatial derivatives of displacement
-        self.dv0, self.dv1 = dv0, dv1               # First spatial derivatives of rotation
+        self.du0, self.du1 = du0, du1               # First spatial derivatives of displacement at t=0 and t=τ
+        self.dv0, self.dv1 = dv0, dv1               # First spatial derivatives of rotation at t=0 and t=τ
 
         # Forcing terms (external inputs)
         self.f1 = f1                                # Forcing for displacement equation
         self.f2 = f2                                # Forcing for rotation equation
 
         # Quadrature and differentiation configuration
-        self.h = h                 # Step size for numerical differentiation (default: 1e-3)
+        self.h = h                  # Step size for numerical differentiation (default: 1e-3)
         self.derivmeth = derivmeth  # Method for derivative approximation (default: 'nd' = numdifftools)
-        self.tol = tol             # Absolute tolerance for adaptive quadrature (default: 1e-6)
-        self.min_dx = min_dx       # Minimum allowed subinterval width (default: 1/128)
-        self.n_gauss = n_gauss     # Initial number of Gauss–Legendre nodes (default: 5)
-        self.max_gauss = max_gauss # Max allowed Gauss–Legendre nodes adaptively (default: 50)
+        self.tol = tol              # Absolute tolerance for adaptive quadrature (default: 1e-6)
+        self.min_dx = min_dx        # Minimum allowed subinterval width (default: 1/128)
+        self.n_gauss = n_gauss      # Initial number of Gauss–Legendre nodes (default: 5)
+        self.max_gauss = max_gauss  # Max allowed Gauss–Legendre nodes adaptively (default: 50)
 
         # Solve system and store modal coefficients and diagnostic data
         self.tilde_u, self.tilde_v, self.cond_u, self.cond_v, self.q_integr = self.solve_system()
@@ -105,6 +111,12 @@ class TimoshenkoModelSolver:
             cond_u, cond_v   : condition numbers of system matrices (stability diagnostic)
             q_integr         : nonlinear coefficients α + β ‖u′‖² over time
         """
+        
+        # Record start time
+        start_time = time.time()
+        # Notify user that computation is starting
+        print("Computation has been started")
+        
         # Quadrature configuration passed to integration routines
         quad_kwargs = dict(
             tol=self.tol,
@@ -155,9 +167,9 @@ class TimoshenkoModelSolver:
         # ----------------------------------------------------------
         # Time-stepping loop using leapfrog-type scheme
         # ----------------------------------------------------------
-        for k in range(self.n - 1):
+        
+        for k in tqdm(range(self.n - 1), desc="Solving Timoshenko system", unit="step"):
             # Compute right-hand side (RHS) for linear systems at time step k
-
             if k == 0:
                 # Conducting the first step: uses projected ICs at t=0, t=τ (special handling)
                 b1 = (4 / self.ell**2) * (
@@ -173,7 +185,7 @@ class TimoshenkoModelSolver:
                 )
 
             elif k == 1:
-                # For the second step: uses Galerkin stencils from step the previous step
+                # For the second step: uses Galerkin stencils from the previous step
                 b1 = (4 / self.ell**2) * (
                     self.tau**2 * f1_integr[k]
                     + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_u[k - 1])
@@ -225,10 +237,15 @@ class TimoshenkoModelSolver:
                 tild_u[k] -= tild_u[k - 2]
                 tild_v[k] -= tild_v[k - 2]
 
-            # Update nonlinear coupling coefficient qₖ for next step
+            # Update nonlinear coefficient qₖ for next step
             q_prev = self.alpha + self.beta * np.dot(tild_u[k], tild_u[k])
             q_integr.append(q_prev)
-
+        
+        elapsed_time = time.time() - start_time
+        # Notify when computation is finished
+        print(f"Computation has been completed in {elapsed_time:.2f} seconds.")
+        
+        # Return computed quantities
         return tild_u, tild_v, cond_u, cond_v, q_integr
     
     # ----------------------------------------------------------------------- #

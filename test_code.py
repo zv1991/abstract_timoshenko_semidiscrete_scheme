@@ -12,7 +12,9 @@
 # IMPORT REQUIRED MODULES AND CLASSES
 # ---------------------------------------------------------------
 
-import numpy as np  # Core numerical array operations
+import os                # File and folder utilities
+import numpy as np       # Core numerical array operations
+from joblib import dump  # Efficient object serialization
 
 import utils.auxiliary as aux                      # Utility functions: L2 error, plotting, lambdification
 import utils.config as cfg                         # Configuration constants: parameters, time grid, etc.
@@ -40,7 +42,18 @@ f1, f2, u0, u1, v0, v1, du0, du1, dv0, dv1 = solns.get_initial_data()
 # ---------------------------------------------------------------
 
 if known_solutions:
-
+    
+    # -------------------------------
+    # Step 1: Create the output folder
+    # -------------------------------
+    
+    output_dir = "data"
+    os.makedirs(output_dir, exist_ok=True)  # Create folder if it doesn't exist
+    
+    # -------------------------------
+    # Step 2: Instantiate the solver
+    # -------------------------------
+    
     solver = TimoshenkoModelSolver(
         ell=cfg.ell, T=cfg.T,
         alpha=cfg.alpha, beta=cfg.beta,
@@ -53,6 +66,33 @@ if known_solutions:
         du0=du0, du1=du1,
         dv0=dv0, dv1=dv1
     )
+    
+    # -------------------------------
+    # Step 3: Extract the return values to be saved
+    # -------------------------------
+    
+    tilde_u = solver.tilde_u
+    tilde_v = solver.tilde_v
+    cond_u = solver.cond_u
+    cond_v = solver.cond_v
+    q_integr = solver.q_integr
+    
+    # --- Save each as a separate file or a dictionary ---
+    data = {
+        "tilde_u": tilde_u,
+        "tilde_v": tilde_v,
+        "cond_u": cond_u,
+        "cond_v": cond_v,
+        "q_integr": q_integr
+    }
+    
+    # -------------------------------
+    # Step 4: Save results using joblib
+    # -------------------------------
+    
+    output_path = os.path.join(output_dir, "timoshenko_solver.joblib")
+    dump(data, output_path)
+    print(f"Solver results saved successfully to: {output_path}")
 
     def select_solution_function(solution_type: str) -> callable:
         if solution_type == 'u':
