@@ -18,8 +18,8 @@ Key Features:
 - Support for analytical first derivatives (du₀, du₁, dv₀, dv₁) or numerical approximation
 - Evaluation of second derivatives ⟨uᵢ″, φₘ⟩ and ⟨vᵢ″, φₘ⟩ via integration by parts
 - Flexible quadrature interface for adaptive integration:
-    - Supports 'hglq', 'glq', and SciPy's routines
-- Nonlinear coupling through the squared norm of the spatial derivative ‖uₖ′‖²
+    - Uses adaptive Gauss-Legendre integration with custom tolerance and resolution
+- Nonlinear coupling through the squared norm of the spatial derivative ‖uᵢ′‖²
 - Outputs include:
     - Modal coefficients for displacement and rotation
     - Condition numbers for Galerkin matrices (diagnostic information)
@@ -27,18 +27,11 @@ Key Features:
 
 External dependencies:
 - `utils.auxiliary` (aux): Basis functions, projection routines
-- `utils.solver` (soln): Core time-stepping ODE solver
 
-Usage:
-------
-Instantiate the class with beam parameters, initial and forcing data, then
-use built-in methods to evaluate or reconstruct the solution at desired points.
 """
 # --------------------------------------------------------------------------- #
 
 import numpy as np  # Core numerical computing (arrays, linear algebra)
-
-# Project-specific numerical routines
 import utils.auxiliary as aux  # Galerkin operators, Legendre basis, projections
 
 
@@ -52,84 +45,50 @@ class TimoshenkoModelSolver:
     # ----------------------------------------------------------------------- #
     def __init__(
         self,
-        ell: float, T: float,
-        alpha: float, beta: float, gamma: float, delta: float,
-        a1: float, a2: float,
-        n: int, N: int,
+        ell, T,
+        alpha, beta, gamma, delta,
+        a1, a2,
+        n, N,
         f1, f2,
         u0, u1, v0, v1,
-        # Optional analytical derivatives
-        du0=None, du1=None, dv0=None, dv1=None,
-        # Optional solver parameters
-        h: float = 1e-3, derivmeth: str = 'nd', tol: float = 1e-6, method: str = 'hglq',
-        max_n: int = 50, max_depth: int = 20, n_points: int = 10
+        du0=None, du1=None, dv0=None, dv1=None,  # Optional input if known
+        h=1e-3, derivmeth='nd',
+        tol=1e-6, min_dx=1/128, n_gauss=5, max_gauss=50
     ):
-        """
-        Initialize the problem configuration and solve immediately.
+        # Spatial and temporal domain setup
+        self.ell = ell               # Beam length (domain: [0, ell])
+        self.T = T                   # Final simulation time
+        self.n = n                   # Number of discrete time steps
+        self.N = N                   # Number of Galerkin basis modes
+        self.tau = T / n             # Time step size (τ)
+        self.t = np.linspace(0, T, n + 1)  # Discretized time grid
 
-        Parameters
-        ----------
-        ell : float
-            Length of the beam (domain [0, ell]).
-        T : float
-            Final simulation time.
-        alpha, beta, gamma, delta : float
-            System physical parameters.
-        a1, a2 : float
-            Coupling coefficients for the system.
-        n : int
-            Number of time steps.
-        N : int
-            Number of Galerkin modes.
-        f1, f2 : callable
-            External forcing functions (f₁(x, t), f₂(x, t)).
-        u0, u1, v0, v1 : callable
-            Initial condition functions at t = 0 and t = τ.
-        du0, du1, dv0, dv1 : callable or None
-            Optional analytical derivatives of the initial data.
-        h : float
-            Step size for numerical derivatives (if needed).
-        derivmeth : str
-            Method for numerical differentiation ('nd' or 'sfd').
-        tol, method, max_n, max_depth, n_points : float | int
-            Quadrature control parameters.
-        """
-        
-        # Spatial and temporal setup
-        self.ell = ell                     # Beam length
-        self.T = T                         # Final simulation time
-        self.n = n                         # Number of time steps
-        self.N = N                         # Number of Galerkin basis modes
-        self.tau = T / n                   # Time step size
-        self.t = np.linspace(0, T, n + 1)  # Time discretization grid
+        # Physical system parameters
+        self.alpha, self.beta = alpha, beta         # Nonlinear stiffness and coupling terms
+        self.gamma, self.delta = gamma, delta       # Damping and shear correction parameters
+        self.a1, self.a2 = a1, a2                   # Coupling coefficients between displacement and rotation
 
-        # Model parameters
-        self.alpha, self.beta = alpha, beta
-        self.gamma, self.delta = gamma, delta
-        self.a1, self.a2 = a1, a2
+        # Initial conditions (displacement and rotation)
+        self.u0, self.u1 = u0, u1                   # Displacement at t = 0 and t = τ
+        self.v0, self.v1 = v0, v1                   # Rotation at t = 0 and t = τ
 
-        # Initial data (displacement and rotation)
-        self.u0, self.u1 = u0, u1
-        self.v0, self.v1 = v0, v1
+        # Optional analytical derivatives of initial conditions
+        self.du0, self.du1 = du0, du1               # First spatial derivatives of displacement
+        self.dv0, self.dv1 = dv0, dv1               # First spatial derivatives of rotation
 
-        # Analytical derivatives if available (optional)
-        self.du0, self.du1 = du0, du1
-        self.dv0, self.dv1 = dv0, dv1
+        # Forcing terms (external inputs)
+        self.f1 = f1                                # Forcing for displacement equation
+        self.f2 = f2                                # Forcing for rotation equation
 
-        # Forcing terms
-        self.f1 = f1
-        self.f2 = f2
+        # Quadrature and differentiation configuration
+        self.h = h                 # Step size for numerical differentiation (default: 1e-3)
+        self.derivmeth = derivmeth  # Method for derivative approximation (default: 'nd' = numdifftools)
+        self.tol = tol             # Absolute tolerance for adaptive quadrature (default: 1e-6)
+        self.min_dx = min_dx       # Minimum allowed subinterval width (default: 1/128)
+        self.n_gauss = n_gauss     # Initial number of Gauss–Legendre nodes (default: 5)
+        self.max_gauss = max_gauss # Max allowed Gauss–Legendre nodes adaptively (default: 50)
 
-        # Numerical quadrature and differentiation settings
-        self.h = h
-        self.derivmeth = derivmeth
-        self.tol = tol
-        self.method = method
-        self.max_n = max_n
-        self.max_depth = max_depth
-        self.n_points = n_points
-
-        # Precompute modal solution on initialization
+        # Solve system and store modal coefficients and diagnostic data
         self.tilde_u, self.tilde_v, self.cond_u, self.cond_v, self.q_integr = self.solve_system()
 
     # ----------------------------------------------------------------------- #
@@ -137,70 +96,70 @@ class TimoshenkoModelSolver:
     # ----------------------------------------------------------------------- #
     def solve_system(self):
         """
-        solve_system: Solve the Galerkin-reduced system of ODEs for the Timoshenko model
-        
-        This method performs time integration on a modal ODE system derived from projecting
-        the nonlinear Timoshenko beam PDEs onto a Legendre–Galerkin basis.
-        
-        Returns:
-        --------
-        tuple
-            (tilde_u, tilde_v): Modal coefficients of displacement u(x, t) and rotation v(x, t)
-            (cond_u, cond_v): Condition numbers of the Galerkin system matrices
-        """
+        Solve the Galerkin-reduced system of ODEs for the Timoshenko model.
 
-        # Package quadrature-related parameters
+        Returns
+        -------
+        tuple
+            tilde_u, tilde_v : modal coefficient arrays for u(x,t) and v(x,t)
+            cond_u, cond_v   : condition numbers of system matrices (stability diagnostic)
+            q_integr         : nonlinear coefficients α + β ‖u′‖² over time
+        """
+        # Quadrature configuration passed to integration routines
         quad_kwargs = dict(
             tol=self.tol,
-            method=self.method,
-            max_n=self.max_n,
-            max_depth=self.max_depth,
-            n_points=self.n_points
+            min_dx=self.min_dx,
+            n_gauss=self.n_gauss,
+            max_gauss=self.max_gauss
         )
 
         # Project time-dependent forcing terms onto modal basis
         f1_integr = aux.compute_time_dependent_integrals(self.f1, self.N, self.ell, self.t, **quad_kwargs)
         f2_integr = aux.compute_time_dependent_integrals(self.f2, self.N, self.ell, self.t, **quad_kwargs)
 
-        # Project initial conditions and their (possibly approximate) derivatives
+        # Project initial conditions and their first/second derivatives
         init_data = aux.compute_initial_integrals(
             [self.u0, self.u1], [self.v0, self.v1], self.N, self.ell,
             du=[self.du0, self.du1], dv=[self.dv0, self.dv1],
             h=self.h, derivmeth=self.derivmeth, **quad_kwargs
         )
 
-        # Extract projected initial values and derivatives
+        # Extract modal coefficients and derivative projections
         u0_integr, u1_integr = init_data['u_proj']
         v0_integr, v1_integr = init_data['v_proj']
-        diff1u1 = init_data['diff1_u1']
-        diff1v1 = init_data['diff1_v1']
-        diff2u = init_data['diff2_u']
-        diff2v = init_data['diff2_v']
+        diff1u1 = init_data['diff1_u1']              # ⟨u₁′, φₘ⟩
+        diff1v1 = init_data['diff1_v1']              # ⟨v₁′, φₘ⟩
+        diff2u = init_data['diff2_u']                # ⟨uₖ″, φₘ⟩ over time
+        diff2v = init_data['diff2_v']                # ⟨vₖ″, φₘ⟩ over time
 
-        # Compute initial nonlinear coefficient q₁ = α + β‖u₁′‖²
+        # Compute initial nonlinear coefficient q₁ = α + β * ‖u₁′‖²
         integral, _ = aux.integrate_derivative_form(
             f=self.u1 if self.du1 is None else None,
             df=self.du1 if self.du1 is not None else None,
-            ell=self.ell, m=None, form='squared',
-            h=self.h, derivmeth=self.derivmeth, **quad_kwargs
+            ell=self.ell,
+            form='squared',
+            m=None,
+            h=self.h,
+            derivmeth=self.derivmeth,
+            **quad_kwargs
         )
-        q_prev = self.alpha + self.beta * integral
+        q_prev = self.alpha + self.beta * integral  # Initial nonlinearity coefficient
 
-        # Allocate memory for modal coefficients and matrix condition numbers
-        tild_u = np.zeros((self.n - 1, self.N))
-        tild_v = np.zeros((self.n - 1, self.N))
-        cond_u = np.zeros(self.n - 1)
-        cond_v = np.zeros(self.n - 1)
-        
-        # Store qₖ = α + β * ‖uₖ′‖² nonlinear coefficients
-        q_integr = [None, q_prev]  # Index 0 unused, q₁ known
+        # Allocate arrays for modal coefficients and matrix condition numbers
+        tild_u = np.zeros((self.n - 1, self.N))      # Modal displacement coefficients
+        tild_v = np.zeros((self.n - 1, self.N))      # Modal rotation coefficients
+        cond_u = np.zeros(self.n - 1)                # Condition numbers for u-equation matrix
+        cond_v = np.zeros(self.n - 1)                # Condition numbers for v-equation matrix
+        q_integr = [None, q_prev]                    # Track qₖ = α + β * ‖uₖ′‖² for all steps
 
-        # ---------------- Time integration loop ---------------- #
+        # ----------------------------------------------------------
+        # Time-stepping loop using leapfrog-type scheme
+        # ----------------------------------------------------------
         for k in range(self.n - 1):
-
             # Compute right-hand side (RHS) for linear systems at time step k
+
             if k == 0:
-                # First step: uses projected ICs at t=0, t=τ (special handling)
+                # Conducting the first step: uses projected ICs at t=0, t=τ (special handling)
                 b1 = (4 / self.ell**2) * (
                     self.tau**2 * f1_integr[k] + 2 * u1_integr
                     - self.a1 * self.tau**2 * diff1v1
@@ -214,7 +173,7 @@ class TimoshenkoModelSolver:
                 )
 
             elif k == 1:
-                # Second step: uses Galerkin stencils from step k-1
+                # For the second step: uses Galerkin stencils from step the previous step
                 b1 = (4 / self.ell**2) * (
                     self.tau**2 * f1_integr[k]
                     + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_u[k - 1])
@@ -247,7 +206,7 @@ class TimoshenkoModelSolver:
                       aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order")
                 )
 
-            # Solve linear systems for current modal coefficients
+            # Compute condition numbers for diagnostic purposes
             cond_u[k] = aux.condition_number_associated_matrix(self.N, self.ell, 1, 0.5 * self.tau**2 * q_prev)
             cond_v[k] = aux.condition_number_associated_matrix(
                 self.N, self.ell,
@@ -255,17 +214,18 @@ class TimoshenkoModelSolver:
                 0.5 * self.tau**2 * self.gamma
             )
 
+            # Solve linear systems for modal coefficients
             tild_u[k] = aux.sys_soln(b1, self.N, 1, 0.5 * self.tau**2 * q_prev, self.ell)
             tild_v[k] = aux.sys_soln(b2, self.N,
                                      1 + 0.5 * self.tau**2 * self.delta,
                                      0.5 * self.tau**2 * self.gamma, self.ell)
 
-            # Leapfrog correction for k ≥ 2
+            # Leapfrog update for k ≥ 2: subtract previous solution
             if k >= 2:
                 tild_u[k] -= tild_u[k - 2]
                 tild_v[k] -= tild_v[k - 2]
 
-            # Update qₖ for next step and store
+            # Update nonlinear coupling coefficient qₖ for next step
             q_prev = self.alpha + self.beta * np.dot(tild_u[k], tild_u[k])
             q_integr.append(q_prev)
 

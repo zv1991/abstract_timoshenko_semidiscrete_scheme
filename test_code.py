@@ -51,8 +51,7 @@ if known_solutions:
         u0=u0, u1=u1,
         v0=v0, v1=v1,
         du0=du0, du1=du1,
-        dv0=dv0, dv1=dv1,
-        n_points=cfg.N
+        dv0=dv0, dv1=dv1
     )
 
     def select_solution_function(solution_type: str) -> callable:
@@ -71,7 +70,7 @@ if known_solutions:
             approx_func = solver.callable_compute_ansatz(sol_type)
 
             L2_errors[f"L2_error_{sol_type}"] = aux.compute_L2_error(
-                exact_func, approx_func, solver.ell, n_points=cfg.N
+                exact_func, approx_func, solver.ell
             )
 
         for sol_type in ['u', 'v']:
