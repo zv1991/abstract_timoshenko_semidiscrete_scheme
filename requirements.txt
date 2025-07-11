@@ -3,8 +3,19 @@ numpy>=1.21             # Arrays, linear algebra, quadrature roots
 scipy>=1.7              # Special functions (Legendre), sparse matrices
 
 # === Automatic numerical differentiation ===
-numdifftools>=0.9       # Used for adaptive finite difference derivatives (first-order)
+numdifftools>=0.9       # Adaptive finite difference derivatives (first-order)
 
 # === (Optional) Dev and plotting tools ===
-# tqdm                  # Progress bar (optional, only if needed)
-# matplotlib            # Plotting utilities (optional for visualization)
+tqdm                    # Progress bar (optional, only if needed)
+matplotlib              # Plotting utilities (optional for visualization)
+
+# === (Optional) Serialization and Symbolic Tools ===
+joblib                  # Efficient saving/loading of Python objects
+sympy                   # Symbolic algebra and calculus
+
+# === (Optional) Utilities for file handling and timing ===
+# These are built-in in Python's standard library:
+# - os
+# - time
+# - pathlib
+# - datetime
