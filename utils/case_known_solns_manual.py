@@ -10,7 +10,7 @@ import utils.config as cfg              # Problem-specific configuration with co
 # GLOBAL CONSTANTS
 # ======================================================
 
-lam = 5  # Oscillation frequency (mode index) used in the benchmark solutions
+lam = 17  # Oscillation frequency (mode index) used in the benchmark solutions
 
 # ======================================================
 # MULTIPLIER FUNCTION AND ITS DERIVATIVES

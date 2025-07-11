@@ -21,7 +21,6 @@ import utils.config as cfg                         # Configuration constants: pa
 from utils.class_timoshenko_solns import TimoshenkoSolutions  # Provides benchmark initial/boundary data
 from utils.class_timoshenko import TimoshenkoModelSolver      # Galerkin solver class for Timoshenko equations
 
-
 # ---------------------------------------------------------------
 # CONFIGURATION: Toggle for using exact solutions (if known)
 # ---------------------------------------------------------------
@@ -47,8 +46,8 @@ if known_solutions:
     # Step 1: Create the output folder
     # -------------------------------
     
-    output_dir = "data"
-    os.makedirs(output_dir, exist_ok=True)  # Create folder if it doesn't exist
+    # output_dir = "data"
+    # os.makedirs(output_dir, exist_ok=True)  # Create folder if it doesn't exist
     
     # -------------------------------
     # Step 2: Instantiate the solver
@@ -67,32 +66,32 @@ if known_solutions:
         dv0=dv0, dv1=dv1
     )
     
-    # -------------------------------
-    # Step 3: Extract the return values to be saved
-    # -------------------------------
+    # # -------------------------------
+    # # Step 3: Extract the return values to be saved
+    # # -------------------------------
     
-    tilde_u = solver.tilde_u
-    tilde_v = solver.tilde_v
-    cond_u = solver.cond_u
-    cond_v = solver.cond_v
-    q_integr = solver.q_integr
+    # tilde_u = solver.tilde_u
+    # tilde_v = solver.tilde_v
+    # cond_u = solver.cond_u
+    # cond_v = solver.cond_v
+    # q_integr = solver.q_integr
     
-    # --- Save each as a separate file or a dictionary ---
-    data = {
-        "tilde_u": tilde_u,
-        "tilde_v": tilde_v,
-        "cond_u": cond_u,
-        "cond_v": cond_v,
-        "q_integr": q_integr
-    }
+    # # --- Save each as a separate file or a dictionary ---
+    # data = {
+    #     "tilde_u": tilde_u,
+    #     "tilde_v": tilde_v,
+    #     "cond_u": cond_u,
+    #     "cond_v": cond_v,
+    #     "q_integr": q_integr
+    # }
     
     # -------------------------------
     # Step 4: Save results using joblib
     # -------------------------------
     
-    output_path = os.path.join(output_dir, "timoshenko_solver.joblib")
-    dump(data, output_path)
-    print(f"Solver results saved successfully to: {output_path}")
+    # output_path = os.path.join(output_dir, "timoshenko_solver.joblib")
+    # dump(data, output_path)
+    # print(f"Solver results saved successfully to: {output_path}")
 
     def select_solution_function(solution_type: str) -> callable:
         if solution_type == 'u':
