@@ -149,11 +149,11 @@ def phi_m_sym(m: int, x_sym: sp.Symbol) -> sp.Expr:
 
 def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
     """Define symbolic displacement field: u(x, t) = t · φ₁(x)"""
-    return 16.0 * t_sym * phi_m_sym(1, x_sym)
+    return 64.0 * t_sym * phi_m_sym(5, x_sym)
 
 def v_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
     """Define symbolic rotation field: v(x, t) = t · φ₁(x)"""
-    return 16.0 * t_sym * phi_m_sym(1, x_sym)
+    return 64.0 * t_sym * phi_m_sym(5, x_sym)
 
 
 # ======================================================
