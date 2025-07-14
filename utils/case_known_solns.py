@@ -101,59 +101,59 @@ def phi_m_sym(m: int, x_sym: sp.Symbol) -> sp.Expr:
 
 # def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
 #     """Define symbolic displacement field: u(x, t) = t · φ₁(x)"""
-#     return t_sym * sp.sin(14 * sp.pi * x / ell)
+#     return sp.exp(sp.pi * t_sym) * sp.sin(14 * sp.pi * x / ell)
 
 # def v_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
 #     """Define symbolic rotation field: v(x, t) = t · φ₁(x)"""
-#     return t_sym * sp.sin(14 * sp.pi * x / ell)
-
-def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
-    """
-    Symbolic displacement field u(x, t) for the Timoshenko model.
-
-    Parameters
-    ----------
-    x_sym : sp.Symbol
-        Symbol representing the spatial variable x.
-    t_sym : sp.Symbol
-        Symbol representing the time variable t.
-
-    Returns
-    -------
-    sp.Expr
-        Symbolic expression for u(x, t) = exp(π·t) * φₘ(x)
-    """
-    return sp.exp(sp.pi * t_sym) * phi_m_sym(35, x_sym)  # using mode m=35
-
-
-# ------------------------------------------------------------------
-# Define symbolic rotation field v(x, t)
-# ------------------------------------------------------------------
-def v_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
-    """
-    Symbolic rotation field v(x, t) for the Timoshenko model.
-
-    Parameters
-    ----------
-    x_sym : sp.Symbol
-        Symbol representing the spatial variable x.
-    t_sym : sp.Symbol
-        Symbol representing the time variable t.
-
-    Returns
-    -------
-    sp.Expr
-        Symbolic expression for v(x, t) = exp(π·t) * φₘ(x)
-    """
-    return sp.exp(sp.pi * t_sym) * phi_m_sym(35, x_sym)  # same basis function
+#     return sp.exp(sp.pi * t_sym) * sp.sin(14 * sp.pi * x / ell)
 
 # def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
-#     """Define symbolic displacement field: u(x, t) = t · φ₁(x)"""
-#     return sp.exp(sp.pi * t_sym) * phi_m_sym(20, x_sym)
+#     """
+#     Symbolic displacement field u(x, t) for the Timoshenko model.
 
+#     Parameters
+#     ----------
+#     x_sym : sp.Symbol
+#         Symbol representing the spatial variable x.
+#     t_sym : sp.Symbol
+#         Symbol representing the time variable t.
+
+#     Returns
+#     -------
+#     sp.Expr
+#         Symbolic expression for u(x, t) = exp(π·t) * φₘ(x)
+#     """
+#     return sp.exp(sp.pi * t_sym) * phi_m_sym(35, x_sym)  # using mode m=35
+
+
+# # ------------------------------------------------------------------
+# # Define symbolic rotation field v(x, t)
+# # ------------------------------------------------------------------
 # def v_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
-#     """Define symbolic rotation field: v(x, t) = t · φ₁(x)"""
-#     return sp.exp(sp.pi * t_sym) * phi_m_sym(20, x_sym)
+#     """
+#     Symbolic rotation field v(x, t) for the Timoshenko model.
+
+#     Parameters
+#     ----------
+#     x_sym : sp.Symbol
+#         Symbol representing the spatial variable x.
+#     t_sym : sp.Symbol
+#         Symbol representing the time variable t.
+
+#     Returns
+#     -------
+#     sp.Expr
+#         Symbolic expression for v(x, t) = exp(π·t) * φₘ(x)
+#     """
+#     return sp.exp(sp.pi * t_sym) * phi_m_sym(35, x_sym)  # same basis function
+
+def u_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
+    """Define symbolic displacement field: u(x, t) = t · φ₁(x)"""
+    return 16.0 * t_sym * phi_m_sym(1, x_sym)
+
+def v_sym(x_sym: sp.Symbol, t_sym: sp.Symbol) -> sp.Expr:
+    """Define symbolic rotation field: v(x, t) = t · φ₁(x)"""
+    return 16.0 * t_sym * phi_m_sym(1, x_sym)
 
 
 # ======================================================

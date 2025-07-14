@@ -10,7 +10,7 @@ import utils.config as cfg              # Problem-specific configuration with co
 # GLOBAL CONSTANTS
 # ======================================================
 
-lam = 17  # Oscillation frequency (mode index) used in the benchmark solutions
+lam = 14  # Oscillation frequency (mode index) used in the benchmark solutions
 
 # ======================================================
 # MULTIPLIER FUNCTION AND ITS DERIVATIVES
@@ -21,64 +21,39 @@ lam = 17  # Oscillation frequency (mode index) used in the benchmark solutions
 # Purpose: Time-dependent multiplier function g(t)
 # Used in exact benchmark solutions u(x, t) and v(x, t)
 # ------------------------------------------------------
-def g(t: float) -> float:
-    """
-    Time-dependent multiplier function:
-        g(t) = exp(πt)
-
-    Parameters
-    ----------
-    t : float
-        Time input
-
-    Returns
-    -------
-    float
-        Value of g(t) = exp(πt)
-    """
-    return np.exp(np.pi * t)
+def g_u(t: float) -> float:
+    return np.exp(np.pi * t / 8.0) / 8.0
 
 # ------------------------------------------------------
 # Function: dg
 # Purpose: First time derivative of g(t)
 # ------------------------------------------------------
-def dg(t: float) -> float:
-    """
-    First derivative of g(t) with respect to time:
-        dg(t) = d/dt [exp(πt)] = π * exp(πt)
-
-    Parameters
-    ----------
-    t : float
-        Time input
-
-    Returns
-    -------
-    float
-        First derivative dg(t)
-    """
-    return np.pi * np.exp(np.pi * t)
+def dg_u(t: float) -> float:
+    return np.pi * np.exp(np.pi * t / 8.0) / 64.0
 
 # ------------------------------------------------------
 # Function: d2g
 # Purpose: Second time derivative of g(t)
 # ------------------------------------------------------
-def d2g(t: float) -> float:
-    """
-    Second derivative of g(t) with respect to time:
-        d²g(t)/dt² = d/dt [π * exp(πt)] = π² * exp(πt)
+def d2g_u(t: float) -> float:
+    return np.pi ** 2 * np.exp(np.pi * t / 8.0) / 512.0
 
-    Parameters
-    ----------
-    t : float
-        Time input
+def g_v(t: float) -> float:
+    return np.sin(np.pi * t / 4.0)
 
-    Returns
-    -------
-    float
-        Second derivative d²g(t)/dt²
-    """
-    return np.pi ** 2 * np.exp(np.pi * t)
+# ------------------------------------------------------
+# Function: dg
+# Purpose: First time derivative of g(t)
+# ------------------------------------------------------
+def dg_v(t: float) -> float:
+    return np.pi * np.cos(np.pi * t / 4.0) / 4.0
+
+# ------------------------------------------------------
+# Function: d2g
+# Purpose: Second time derivative of g(t)
+# ------------------------------------------------------
+def d2g_v(t: float) -> float:
+    return -np.pi ** 2 * np.sin(np.pi * t / 4.0) / 16.0
 
 # # ------------------------------------------------------
 # # Function: g
@@ -120,7 +95,7 @@ def u(x: float, t: float) -> float:
     -------
     float : Value of u at point (x, t)
     """
-    return np.sin(lam * np.pi * x / cfg.ell) * g(t)
+    return np.sin(lam * np.pi * x / cfg.ell) * g_u(t)
 
 # ------------------------------------------------------
 # Function: v
@@ -134,7 +109,7 @@ def v(x: float, t: float) -> float:
     -------
     float : Value of v at point (x, t)
     """
-    return np.sin(lam * np.pi * x / cfg.ell) * g(t)
+    return np.sin(lam * np.pi * x / cfg.ell) * g_v(t)
 
 # ======================================================
 # PARTIAL DERIVATIVES OF DISPLACEMENT u(x, t)
@@ -145,28 +120,28 @@ def v(x: float, t: float) -> float:
 # Purpose: ∂u/∂t
 # ------------------------------------------------------
 def diff1t_u(x: float, t: float) -> float:
-    return np.sin(lam * np.pi * x / cfg.ell) * dg(t)
+    return np.sin(lam * np.pi * x / cfg.ell) * dg_u(t)
 
 # ------------------------------------------------------
 # Function: diff2t_u
 # Purpose: ∂²u/∂t²
 # ------------------------------------------------------
 def diff2t_u(x: float, t: float) -> float:
-    return np.sin(lam * np.pi * x / cfg.ell) * d2g(t)
+    return np.sin(lam * np.pi * x / cfg.ell) * d2g_u(t)
 
 # ------------------------------------------------------
 # Function: diff1x_u
 # Purpose: ∂u/∂x
 # ------------------------------------------------------
 def diff1x_u(x: float, t: float) -> float:
-    return (lam * np.pi / cfg.ell) * np.cos(lam * np.pi * x / cfg.ell) * g(t)
+    return (lam * np.pi / cfg.ell) * np.cos(lam * np.pi * x / cfg.ell) * g_u(t)
 
 # ------------------------------------------------------
 # Function: diff2x_u
 # Purpose: ∂²u/∂x²
 # ------------------------------------------------------
 def diff2x_u(x: float, t: float) -> float:
-    return - (lam * np.pi / cfg.ell) ** 2 * np.sin(lam * np.pi * x / cfg.ell) * g(t)
+    return - (lam * np.pi / cfg.ell) ** 2 * np.sin(lam * np.pi * x / cfg.ell) * g_u(t)
 
 # ======================================================
 # PARTIAL DERIVATIVES OF ROTATION v(x, t)
@@ -177,28 +152,28 @@ def diff2x_u(x: float, t: float) -> float:
 # Purpose: ∂v/∂t
 # ------------------------------------------------------
 def diff1t_v(x: float, t: float) -> float:
-    return np.sin(lam * np.pi * x / cfg.ell) * dg(t)
+    return np.sin(lam * np.pi * x / cfg.ell) * dg_v(t)
 
 # ------------------------------------------------------
 # Function: diff2t_v
 # Purpose: ∂²v/∂t²
 # ------------------------------------------------------
 def diff2t_v(x: float, t: float) -> float:
-    return np.sin(lam * np.pi * x / cfg.ell) * d2g(t)
+    return np.sin(lam * np.pi * x / cfg.ell) * d2g_v(t)
 
 # ------------------------------------------------------
 # Function: diff1x_v
 # Purpose: ∂v/∂x
 # ------------------------------------------------------
 def diff1x_v(x: float, t: float) -> float:
-    return (lam * np.pi / cfg.ell) * np.cos(lam * np.pi * x / cfg.ell) * g(t)
+    return (lam * np.pi / cfg.ell) * np.cos(lam * np.pi * x / cfg.ell) * g_v(t)
 
 # ------------------------------------------------------
 # Function: diff2x_v
 # Purpose: ∂²v/∂x²
 # ------------------------------------------------------
 def diff2x_v(x: float, t: float) -> float:
-    return - (lam * np.pi / cfg.ell) ** 2 * np.sin(lam * np.pi * x / cfg.ell) * g(t)
+    return - (lam * np.pi / cfg.ell) ** 2 * np.sin(lam * np.pi * x / cfg.ell) * g_v(t)
 
 # ======================================================
 # NONLINEAR ENERGY-LIKE INTEGRAL TERM
@@ -223,7 +198,7 @@ def integr_term(t: float) -> float:
     float
         Integral value at time t
     """
-    return (lam * np.pi) ** 2 / (2.0 * cfg.ell) * g(t) ** 2
+    return (lam * np.pi) ** 2 / (2.0 * cfg.ell) * g_u(t) ** 2
 
 # ======================================================
 # RIGHT-HAND SIDE (RHS) FUNCTIONS FOR THE PDE SYSTEM

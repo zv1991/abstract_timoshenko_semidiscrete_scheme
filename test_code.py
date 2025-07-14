@@ -18,8 +18,8 @@ from joblib import dump  # Efficient object serialization
 
 import utils.auxiliary as aux                      # Utility functions: L2 error, plotting, lambdification
 import utils.config as cfg                         # Configuration constants: parameters, time grid, etc.
-from utils.class_timoshenko_solns import TimoshenkoSolutions  # Provides benchmark initial/boundary data
-from utils.class_timoshenko import TimoshenkoModelSolver      # Galerkin solver class for Timoshenko equations
+from utils.initial_data import TimoshenkoSolutions  # Provides benchmark initial/boundary data
+from utils.solver import TimoshenkoModelSolver      # Galerkin solver class for Timoshenko equations
 
 # ---------------------------------------------------------------
 # CONFIGURATION: Toggle for using exact solutions (if known)
