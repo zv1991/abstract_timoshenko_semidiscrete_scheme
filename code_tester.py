@@ -254,7 +254,7 @@ def kahan_babushka_neumaier_sum(arr):
     return total + correction
 
 # Example list with large and small numbers
-numbers = [1.0e16, 1, 1.0, 1.0e-10, -1.0e16]
+numbers = [1.0e16, 1.0, 1.0, 1.0e-10, -1.0e16]
 
 # Calculate the sums using all three methods
 standard_result = standard_sum(numbers)
