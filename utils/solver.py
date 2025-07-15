@@ -174,16 +174,20 @@ class TimoshenkoModelSolver:
         # Time-stepping loop using leapfrog-type scheme
         # ----------------------------------------------------------
         
+        # Constant used in the u- and v-equations forming their right-hand sides
+        const_u = 4.0 / self.ell**2
+        const_v = 2.0 * self.a0 / self.ell**2
+        
         for k in tqdm(range(self.n - 1), desc="Solving Timoshenko system", unit="step"):
             # Compute right-hand side (RHS) for linear systems at time step k
             if k == 0:
                 # Conducting the first step: uses projected ICs at t=0, t=τ (special handling)
-                b1 = (4 / self.ell**2) * (
+                b1 = const_u * (
                     self.tau**2 * f1_integr[k] + 2 * u1_integr
                     - self.a1 * self.tau**2 * diff1v1
                     - u0_integr + 0.5 * self.tau**2 * q_prev * diff2u[k]
                 )
-                b2 = (8 / (2 + self.delta * self.tau**2) / self.ell**2) * (
+                b2 = const_v * (
                     self.tau**2 * f2_integr[k] + 2 * v1_integr
                     + self.a2 * self.tau**2 * diff1u1
                     - (1 + 0.5 * self.tau**2 * self.delta) * v0_integr
@@ -199,7 +203,7 @@ class TimoshenkoModelSolver:
                       aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order")
                     - u1_integr + 0.5 * self.tau**2 * q_prev * diff2u[k]
                 )
-                b2 = (8 / (2 + self.delta * self.tau**2) / self.ell**2) * (
+                b2 = (2 * self.a0 / self.ell**2) * (
                     self.tau**2 * f2_integr[k]
                     + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_v[k - 1])
                     + 0.5 * self.a2 * self.tau**2 * self.ell *
@@ -217,7 +221,7 @@ class TimoshenkoModelSolver:
                       aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order")
                 )
                 b2 = (
-                    (8 * self.tau**2 / (2 + self.delta * self.tau**2) / self.ell**2) * f2_integr[k]
+                    (2 * self.a0 * self.tau**2 / self.ell**2) * f2_integr[k]
                     + (4 / (2 + self.delta * self.tau**2)) *
                       aux.galerkin_stencils(self.N, tild_v[k - 1])
                     + (4 * self.a2 * self.tau**2 / (2 + self.delta * self.tau**2) / self.ell) *

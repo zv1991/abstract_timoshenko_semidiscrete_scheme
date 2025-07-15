@@ -221,85 +221,116 @@ def phi_m(m: int, ell: float, x: np.ndarray) -> np.ndarray:
     
     return phi_vals
 
-# --------------------------------------------------------------------------- #
-""" Solver routine for the reduced subsystem derived from the Galerkin 
-    formulation of the linearized PDE system """
-# --------------------------------------------------------------------------- #
+# =============================================================================
+# Function: sys_soln
+# -----------------------------------------------------------------------------
+# Purpose:
+#   Solve a banded linear system arising from a spectral-Galerkin discretization
+#   of a linear PDE system. Uses a specialized forward/backward sweep that 
+#   exploits symmetry and sparsity for computational efficiency.
+# -----------------------------------------------------------------------------
+# Expected External Dependencies:
+#   - numpy as np
+#   - coeff_B(k): user-defined function returning recurrence coefficient B_k
+#   - coeff_C(k): user-defined function returning recurrence coefficient C_k
+# -----------------------------------------------------------------------------
+# Inputs:
+#   - f   : Right-hand side vector (1D array of length N)
+#   - N   : Number of equations (must be ≥ 2)
+#   - a   : Scalar multiplier (usually from Galerkin system)
+#   - b   : Scalar multiplier for second-order operator
+#   - ell : Physical domain scaling factor (e.g., beam length)
+# -----------------------------------------------------------------------------
+# Output:
+#   - w   : Solution vector of shape (N,)
+# =============================================================================
 
 def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarray:
     """
-    Solves a banded system of equations of spectral-Galerkin origin using 
-    a specialized forward elimination and backward substitution scheme.
-    
-    The matrix has a structure that allows optimized traversal and reuse 
-    of recurrence coefficients.
+    Title: Spectral-Galerkin Linear System Solver
+
+    Description:
+        Solves a symmetric banded linear system arising from a spectral-Galerkin 
+        method applied to a PDE. The solver uses a custom forward elimination and 
+        backward substitution method optimized for the structure of the system.
 
     Parameters:
         f (np.ndarray): Right-hand side vector of shape (N,).
-        N (int): Number of equations (must be >= 2).
-        a (float): Scalar coefficient multiplying the identity matrix.
-        b (float): Scalar coefficient multiplying the Laplacian-like operator.
-        ell (float): Scaling parameter related to domain length or physical context.
+        N (int): System size (must be ≥ 2).
+        a (float): Coefficient scaling the identity.
+        b (float): Coefficient scaling the second-derivative term.
+        ell (float): Physical length scale (e.g., beam length).
 
     Returns:
-        np.ndarray: Solution vector `w` of shape (N,).
-    
+        np.ndarray: Solution vector of shape (N,).
+
     Raises:
-        ValueError: If N is less than 2.
+        ValueError: If N < 2 (invalid system size).
     """
     
+    # =========================================================================
+    # INPUT VALIDATION
+    # =========================================================================
     if N < 2:
         raise ValueError("N must be at least 2 for the system to be solvable.")
 
-    # Allocate working arrays
-    d = np.empty(N)  # Diagonal of the modified matrix
-    z = np.empty(N)  # Modified right-hand side
-    w = np.empty(N)  # Solution vector
+    # =========================================================================
+    # MEMORY ALLOCATION
+    # =========================================================================
+    d = np.empty(N)  # Main diagonal of the modified matrix
+    z = np.empty(N)  # Modified RHS vector after forward sweep
+    w = np.empty(N)  # Final solution vector
 
-    # Precompute first two diagonal entries
+    # =========================================================================
+    # INITIALIZATION: First two diagonal entries and RHS values
+    # =========================================================================
     d[0] = coeff_C(1) + (4 * b) / (a * ell ** 2)
     d[1] = coeff_C(2) + (4 * b) / (a * ell ** 2)
-
-    # Copy first two entries from RHS
     z[0] = f[0]
     z[1] = f[1]
 
-    # Compute up to the midpoint (since it's symmetric/stencil-based)
-    half_N = (N + 1) // 2  # Works for odd and even N
+    # =========================================================================
+    # FORWARD ELIMINATION
+    # =========================================================================
+    # Process the matrix in blocks of 2 (even, then odd) exploiting sparsity
+    half_N = (N + 1) // 2  # Half-length of system (covers even/odd N)
 
-    # --- Forward elimination ---
     for j in range(2, half_N + 1):
-        idx = 2 * (j - 1)  # Access even/odd pairs
+        idx = 2 * (j - 1)  # Current even index
 
         if idx < N:
-            # Update even-indexed diagonal and RHS
+            # Update even-indexed diagonal and RHS using recurrence
             d[idx] = (
-                coeff_C(idx + 1) + (4 * b) / (a * ell ** 2) 
+                coeff_C(idx + 1) + (4 * b) / (a * ell ** 2)
                 - (coeff_B(idx) ** 2) / d[idx - 2]
             )
             z[idx] = f[idx] + (coeff_B(idx) * z[idx - 2]) / d[idx - 2]
 
         if idx + 1 < N:
-            # Update odd-indexed diagonal and RHS
+            # Update odd-indexed diagonal and RHS using recurrence
             d[idx + 1] = (
                 coeff_C(idx + 2) + (4 * b) / (a * ell ** 2)
                 - (coeff_B(idx + 1) ** 2) / d[idx - 1]
             )
             z[idx + 1] = f[idx + 1] + (coeff_B(idx + 1) * z[idx - 1]) / d[idx - 1]
 
-    # --- Backward substitution ---
+    # =========================================================================
+    # BACKWARD SUBSTITUTION
+    # =========================================================================
+    # Start from the last two elements
     w[-1] = z[-1] / d[-1]
     w[-2] = z[-2] / d[-2]
 
+    # Recursively solve backward using updated coefficients
     for j in range(half_N - 1, 0, -1):
         idx = 2 * (j - 1)
 
         if idx + 2 < N:
-            # Back-substitute even index
+            # Compute even-indexed solution
             w[idx] = (z[idx] + coeff_B(idx + 2) * w[idx + 2]) / d[idx]
 
         if idx + 3 < N:
-            # Back-substitute odd index
+            # Compute odd-indexed solution
             w[idx + 1] = (z[idx + 1] + coeff_B(idx + 3) * w[idx + 3]) / d[idx + 1]
 
     return w
@@ -2038,21 +2069,23 @@ def compute_L2_error(
 # Function: plot_L2_errors_over_time
 # -----------------------------------------------------------------------------
 # Purpose:
-#   Generate and save two separate LaTeX-styled plots of L2 errors over time
-#   for displacement (u) and rotation (v) in the Timoshenko beam model.
-#   Additionally, export custom-formatted error data to CSV files.
+#   Generate and save two LaTeX-styled plots of L2 errors over time for the
+#   displacement (u) and rotation (v) fields in the Timoshenko beam model.
+#   Also saves formatted CSV logs for errors and condition numbers.
 # -----------------------------------------------------------------------------
 # Inputs:
-#   - time_array : 1D array of simulation time points
+#   - time_array : 1D array of time points
 #   - error_u    : L2 error array for displacement u
 #   - error_v    : L2 error array for rotation v
 #   - config     : object with attributes:
-#                   - config.n: number of time steps
-#                   - config.N: number of Galerkin modes
-#   - output_dir : target directory for saving plots and CSVs
+#                   config.n       : time steps
+#                   config.N       : Galerkin modes
+#                   config.cond_u  : condition numbers for system u
+#                   config.cond_v  : condition numbers for system v
+#   - output_dir : path to directory for PDF/CSV outputs (default="plots")
 # -----------------------------------------------------------------------------
 # Outputs:
-#   - Tuple of two strings with paths to the saved PDF plot files (u and v)
+#   - (pdf_u_path, pdf_v_path) : paths to the saved PDF plots for u and v
 # =============================================================================
 
 def plot_L2_errors_over_time(
@@ -2061,30 +2094,33 @@ def plot_L2_errors_over_time(
     error_v,
     config,
     output_dir: str = "plots"
-) -> tuple[str, str]:
+    ) -> tuple[str, str]:
     """
-    Generate and save separate plots and CSV logs of L2 errors over time
-    for displacement (u) and rotation (v) in the Timoshenko beam model.
+    Title: Plot and Log L2 Error Evolution for Timoshenko Beam Model
 
-    Returns
-    -------
-    tuple[str, str]
-        Paths to the saved PDF plot files for displacement (u) and rotation (v)
+    Description:
+        Generates two LaTeX-rendered plots showing the time evolution of L2 
+        errors for displacement (u) and rotation (v). Also logs these errors 
+        and corresponding condition numbers to CSV files.
+
+    Returns:
+        Tuple of strings with full paths to the saved PDF plots for u and v.
     """
+    
+    # =========================================================================
+    # MODULE IMPORTS (kept local to prevent global namespace pollution)
+    # =========================================================================
+    from pathlib import Path             # For creating output directories and file paths
+    from datetime import datetime        # For timestamping output files
+    import matplotlib.pyplot as plt      # Core plotting library
+    from matplotlib import rcParams      # For customizing LaTeX rendering
 
     # =========================================================================
-    # MODULE IMPORTS (kept local to reduce global namespace clutter)
+    # CONFIGURE MATPLOTLIB FOR LaTeX-STYLED RENDERING
     # =========================================================================
-    from pathlib import Path            # For safe and cross-platform file paths
-    from datetime import datetime       # For generating unique file timestamps
-    import matplotlib.pyplot as plt     # Core plotting library
-    from matplotlib import rcParams     # For fine control of plot appearance
+    rcParams["text.usetex"] = True
+    rcParams["font.family"] = "lmodern"  # Use Latin Modern font (supports full math)
 
-    # =========================================================================
-    # CONFIGURE MATPLOTLIB FOR LATEX-STYLED RENDERING
-    # =========================================================================
-    rcParams["text.usetex"] = True                  # Enable LaTeX rendering
-    rcParams["font.family"] = "lmodern"             # Use LaTeX font
     rcParams["text.latex.preamble"] = r"""
     \usepackage[utf8]{inputenc}
     \usepackage[T1]{fontenc}
@@ -2099,11 +2135,11 @@ def plot_L2_errors_over_time(
     """
 
     # =========================================================================
-    # STYLE CONSTANTS
+    # CONSTANTS: STYLING AND COLORS
     # =========================================================================
-    LINE_WIDTH = 2.0               # Plot line thickness
-    color_u = "#0072B2"            # Okabe-Ito blue for displacement u
-    color_v = "#E69F00"            # Okabe-Ito orange for rotation v
+    LINE_WIDTH = 2.0
+    color_u = "#0072B2"  # Blue - Okabe–Ito palette for 'u'
+    color_v = "#E69F00"  # Orange - Okabe–Ito palette for 'v'
 
     # =========================================================================
     # INPUT VALIDATION
@@ -2111,26 +2147,25 @@ def plot_L2_errors_over_time(
     if not (len(time_array) and len(error_u) and len(error_v)):
         raise ValueError("Inputs 'time_array', 'error_u', and 'error_v' must be non-empty.")
     if not (len(time_array) == len(error_u) == len(error_v)):
-        raise ValueError("Input arrays must be of equal length.")
+        raise ValueError("Input arrays 'time_array', 'error_u', and 'error_v' must be of equal length.")
 
     # =========================================================================
-    # FILE AND DIRECTORY SETUP
+    # CREATE OUTPUT DIRECTORY
     # =========================================================================
     output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)  # Create output directory if missing
+    output_path.mkdir(parents=True, exist_ok=True)  # Create if doesn't exist
 
-    t_min, t_max = float(time_array[0]), float(time_array[-1])  # For axis labeling
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")        # Unique file ID
+    # Time interval and timestamp for filenames
+    t_min, t_max = float(time_array[0]), float(time_array[-1])
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # =========================================================================
-    # PLOT FOR DISPLACEMENT u
+    # PLOT: L2 ERROR FOR DISPLACEMENT u
     # =========================================================================
     plt.figure(figsize=(8, 4))
     plt.plot(
         time_array, error_u,
-        marker='o',
-        linestyle='-',
-        linewidth=LINE_WIDTH,
+        marker='o', linestyle='-', linewidth=LINE_WIDTH,
         color=color_u,
         label=r"$E_{1,k} = \left\| u(\cdot, t_k) - \tilde{u}_{k,N}(\cdot) \right\|$"
     )
@@ -2140,20 +2175,17 @@ def plot_L2_errors_over_time(
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
-
     pdf_u = output_path / f"L2_error_u_n{config.n}_N{config.N}_{timestamp}.pdf"
     plt.savefig(pdf_u)
     plt.close()
 
     # =========================================================================
-    # PLOT FOR ROTATION v
+    # PLOT: L2 ERROR FOR ROTATION v
     # =========================================================================
     plt.figure(figsize=(8, 4))
     plt.plot(
         time_array, error_v,
-        marker='s',
-        linestyle='--',
-        linewidth=LINE_WIDTH,
+        marker='s', linestyle='--', linewidth=LINE_WIDTH,
         color=color_v,
         label=r"$E_{2,k} = \left\| v(\cdot, t_k) - \tilde{v}_{k,N}(\cdot) \right\|$"
     )
@@ -2163,29 +2195,38 @@ def plot_L2_errors_over_time(
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
-
     pdf_v = output_path / f"L2_error_v_n{config.n}_N{config.N}_{timestamp}.pdf"
     plt.savefig(pdf_v)
     plt.close()
 
     # =========================================================================
-    # EXPORT CUSTOM CSV FILES WITH FORMATTED ERROR MESSAGES
+    # CSV EXPORT: ERROR VALUES
     # =========================================================================
-
-    # Write L2 error messages for displacement u
     csv_u = output_path / f"L2_error_u_n{config.n}_N{config.N}_{timestamp}.csv"
     with csv_u.open("w") as f_u:
-        for k, error in enumerate(error_u):
-            f_u.write(f"Time step {k:3d}: L2 error for solution 'u' = {error:.6e}\n")
+        for k, err in enumerate(error_u):
+            f_u.write(f"Time step {k:3d}: L2 error for solution 'u' = {err:.6e}\n")
 
-    # Write L2 error messages for rotation v
     csv_v = output_path / f"L2_error_v_n{config.n}_N{config.N}_{timestamp}.csv"
     with csv_v.open("w") as f_v:
-        for k, error in enumerate(error_v):
-            f_v.write(f"Time step {k:3d}: L2 error for solution 'v' = {error:.6e}\n")
+        for k, err in enumerate(error_v):
+            f_v.write(f"Time step {k:3d}: L2 error for solution 'v' = {err:.6e}\n")
 
     # =========================================================================
-    # RETURN PATHS TO GENERATED PDF PLOTS
+    # CSV EXPORT: CONDITION NUMBERS (OPTIONAL DIAGNOSTICS)
+    # =========================================================================
+    cond_csv_u = output_path / f"cond_numb_u_n{config.n}_N{config.N}_{timestamp}.csv"
+    with cond_csv_u.open("w") as f_cu:
+        for k, val in enumerate(config.cond_u):
+            f_cu.write(f"Time step {k:3d}: conditional number associated with 'u' = {val:.6e}\n")
+
+    cond_csv_v = output_path / f"cond_numb_v_n{config.n}_N{config.N}_{timestamp}.csv"
+    with cond_csv_v.open("w") as f_cv:
+        for k, val in enumerate(config.cond_v):
+            f_cv.write(f"Time step {k:3d}: conditional number associated with 'v' = {val:.6e}\n")
+
+    # =========================================================================
+    # RETURN FILE PATHS TO GENERATED PDF PLOTS
     # =========================================================================
     return str(pdf_u), str(pdf_v)
 
