@@ -1482,6 +1482,72 @@ def callable_exact_solution(
     all_functions = [construct_exact_function_at_k(k_idx) for k_idx in range(cfg.n + 1)]
     return all_functions if x_vals is None else np.array([fn(x_vals) for fn in all_functions])
 
+# =============================================================
+# Kahan–Babuška–Neumaier Summation Algorithm Implementation
+# =============================================================
+# This module provides a highly accurate floating-point summation
+# using the Kahan–Babuška–Neumaier method.
+# It supports both Python lists and NumPy ndarrays and helps mitigate
+# rounding errors common in naive summation, especially when adding
+# numbers with large differences in magnitude.
+# =============================================================
+
+# =============================================================
+# Function: kahan_babuska_neumaier_sum
+# Purpose:  Perform accurate floating-point summation using the
+#           Kahan–Babuška–Neumaier algorithm.
+# =============================================================
+def kahan_babuska_neumaier_sum(numbers):
+    """
+    ------------------------------------------------------------
+    Accurate Summation Using Kahan–Babuška–Neumaier Algorithm
+    ------------------------------------------------------------
+    Computes a numerically stable sum of floating-point numbers
+    by compensating for rounding errors during accumulation.
+
+    Parameters
+    ----------
+    numbers : list or np.ndarray
+        A sequence of floats (1D or multi-D) to be summed.
+
+    Returns
+    -------
+    float
+        The accurately summed result.
+    
+    Raises
+    ------
+    TypeError
+        If an individual element in the sequence is not a scalar.
+    """
+    
+    # Flatten multidimensional arrays into a 1D view for iteration
+    if isinstance(numbers, np.ndarray):
+        numbers = numbers.ravel()
+
+    total = 0.0         # Main accumulator for the sum
+    compensation = 0.0  # Correction term for lost low-order bits
+
+    # Iterate over each number in the sequence
+    for x in numbers:
+        # Prevent nested arrays or invalid types from entering the summation
+        if isinstance(x, np.ndarray):
+            raise TypeError("Each element passed to summation must be a scalar (float or int).")
+
+        # Perform the summation with compensation
+        temp = total + x
+
+        # Error compensation logic based on which term is larger
+        if abs(total) >= abs(x):
+            compensation += (total - temp) + x
+        else:
+            compensation += (x - temp) + total
+
+        total = temp  # Update total with the temporary result
+
+    # Return the final corrected sum
+    return total + compensation
+
 # ===============================================================
 # Function: compute_L2_norm_galerkin_approx
 # Purpose : Compute the L² norm of a Galerkin approximation ũₖ(x)

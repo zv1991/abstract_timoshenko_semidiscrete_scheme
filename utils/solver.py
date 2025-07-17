@@ -31,15 +31,23 @@ External dependencies:
 """
 # --------------------------------------------------------------------------- #
 
-import numpy as np  # Core numerical computing (arrays, linear algebra)
-import time         # For timing the computation
-from tqdm import tqdm  # Progress bar
-import utils.auxiliary as aux  # Galerkin operators, Legendre basis, projections
+# --------------------------------------------------------------------------- #
+#                              Imported Modules                               #
+# --------------------------------------------------------------------------- #
 
+import numpy as np            # Core library for numerical operations and arrays
+import time                   # Used for measuring elapsed computation time
+from tqdm import tqdm         # Provides progress bar during time-stepping loop
+import utils.auxiliary as aux # Custom module: contains Galerkin projection and solver utilities
+
+# --------------------------------------------------------------------------- #
+#                    Timoshenko Nonlinear Beam Solver Class                   #
+# --------------------------------------------------------------------------- #
 
 class TimoshenkoModelSolver:
     """
     Nonlinear PDE solver for the Timoshenko system using a Galerkin framework.
+    Projects PDE system onto a Legendre basis and evolves in time with leapfrog integration.
     """
 
     # ----------------------------------------------------------------------- #
@@ -47,19 +55,19 @@ class TimoshenkoModelSolver:
     # ----------------------------------------------------------------------- #
     def __init__(
         self,
-        ell, T,                     # Domain length and final time
+        ell, T,                     # Spatial domain length and final time
         alpha, beta, gamma, delta,  # PDE coefficients
-        a1, a2,                     # Coupling constants
-        n, N,           # Time discretization and number of Galerkin basis modes
-        f1, f2,         # External forcing functions
-        u0, u1, v0, v1, # Initial conditions
-        du0=None, du1=None, dv0=None, dv1=None,  # Optional: known spatial derivatives of initial data
-        h=1e-3,             # Finite difference step size (default: 1e-3)
-        derivmeth='nd',     # Differentiation scheme ('nd' = numdifftools, 'sfd' = standard manually implemented)
-        tol=1e-6,           # Integration tolerance for adaptive quadrature
-        min_dx=1/128,       # Minimum interval width in adaptive integration
-        n_gauss=5,          # Initial Gauss–Legendre points per subinterval
-        max_gauss=50        # Maximum Gauss–Legendre nodes per interval
+        a1, a2,                     # Coupling constants between u and v
+        n, N,           # Number of time steps, number of basis functions
+        f1, f2,         # Forcing terms (functions of space and time)
+        u0, u1, v0, v1, # Initial displacement and rotation states
+        du0=None, du1=None, dv0=None, dv1=None,  # Optional: known first spatial derivatives
+        h=1e-3,             # Step size for finite difference approximation
+        derivmeth='nd',     # Derivative computation method ('nd' or 'sfd')
+        tol=1e-6,           # Tolerance for adaptive Gauss quadrature
+        min_dx=1/128,       # Minimum subinterval size for adaptive quadrature
+        n_gauss=5,          # Initial Gauss nodes per subinterval
+        max_gauss=50        # Max Gauss nodes allowed in adaptive quadrature
     ):
         # Spatial and temporal domain setup
         self.ell = ell               # Beam length (domain: [0, ell])
@@ -94,7 +102,7 @@ class TimoshenkoModelSolver:
         self.n_gauss = n_gauss      # Initial number of Gauss–Legendre nodes (default: 5)
         self.max_gauss = max_gauss  # Max allowed Gauss–Legendre nodes adaptively (default: 50)
         
-        # Constant used in the v-equation formulation in the Timoshenko system
+        # Precomputed constant used in the v-equation update
         self.a0 = 4.0 / (2.0 + self.delta * self.tau**2)
 
         # Solve system and store modal coefficients and diagnostic data
@@ -105,14 +113,17 @@ class TimoshenkoModelSolver:
     # ----------------------------------------------------------------------- #
     def solve_system(self):
         """
-        Solve the Galerkin-reduced system of ODEs for the Timoshenko model.
+        Solves the Galerkin-projected system of time-dependent ODEs using a
+        leapfrog integrator and returns modal coefficients and diagnostics.
 
-        Returns
-        -------
-        tuple
-            tilde_u, tilde_v : modal coefficient arrays for u(x,t) and v(x,t)
-            cond_u, cond_v   : condition numbers of system matrices (stability diagnostic)
-            q_integr         : nonlinear coefficients α + β ‖u′‖² over time
+        Returns:
+        --------
+        tuple:
+            - tilde_u (ndarray): Modal coefficients of displacement
+            - tilde_v (ndarray): Modal coefficients of rotation
+            - cond_u (ndarray): Condition numbers of u-matrix per time step
+            - cond_v (ndarray): Condition numbers of v-matrix per time step
+            - q_integr (list): Nonlinear coefficients over time steps
         """
         
         # Record start time
@@ -174,58 +185,47 @@ class TimoshenkoModelSolver:
         # Time-stepping loop using leapfrog-type scheme
         # ----------------------------------------------------------
         
-        # Constant used in the u- and v-equations forming their right-hand sides
+        # Precompute time-stepping constants
         const_u = 4.0 / self.ell**2
         const_v = 2.0 * self.a0 / self.ell**2
+        const_rhs = self.tau**2 / self.ell
         
         for k in tqdm(range(self.n - 1), desc="Solving Timoshenko system", unit="step"):
             # Compute right-hand side (RHS) for linear systems at time step k
             if k == 0:
                 # Conducting the first step: uses projected ICs at t=0, t=τ (special handling)
                 b1 = const_u * (
-                    self.tau**2 * f1_integr[k] + 2 * u1_integr
-                    - self.a1 * self.tau**2 * diff1v1
-                    - u0_integr + 0.5 * self.tau**2 * q_prev * diff2u[k]
+                    self.tau**2 * (f1_integr[k] + 0.5 * q_prev * diff2u[k] - self.a1 * diff1v1)
+                    + 2.0 * u1_integr - u0_integr
                 )
                 b2 = const_v * (
-                    self.tau**2 * f2_integr[k] + 2 * v1_integr
-                    + self.a2 * self.tau**2 * diff1u1
-                    - (1 + 0.5 * self.tau**2 * self.delta) * v0_integr
-                    + 0.5 * self.tau**2 * self.gamma * diff2v[k]
+                    self.tau**2 * (f2_integr[k] + self.a2 * diff1u1 + 0.5 * (self.gamma * diff2v[k] - self.delta * v0_integr))
+                    + 2.0 * v1_integr - v0_integr
                 )
-
             elif k == 1:
                 # For the second step: uses Galerkin stencils from the previous step
-                b1 = (4 / self.ell**2) * (
-                    self.tau**2 * f1_integr[k]
-                    + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_u[k - 1])
-                    - 0.5 * self.a1 * self.tau**2 * self.ell *
-                      aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order")
-                    - u1_integr + 0.5 * self.tau**2 * q_prev * diff2u[k]
+                b1 = const_u * (
+                    self.tau**2 * (
+                        f1_integr[k] + 0.5 * (q_prev * diff2u[k] - self.a1 * self.ell * aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order"))
+                    )
+                    + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_u[k - 1]) - u1_integr
                 )
-                b2 = (2 * self.a0 / self.ell**2) * (
-                    self.tau**2 * f2_integr[k]
-                    + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_v[k - 1])
-                    + 0.5 * self.a2 * self.tau**2 * self.ell *
-                      aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order")
-                    - (1 + 0.5 * self.tau**2 * self.delta) * v1_integr
-                    + 0.5 * self.tau**2 * self.gamma * diff2v[k]
+                b2 = const_v * (
+                    self.tau**2 * (
+                        f2_integr[k] + 0.5 * (self.a2 * self.ell * aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order")
+                                              + self.gamma * diff2v[k] - self.delta * v1_integr)
+                    )
+                    + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_v[k - 1]) - v1_integr
                 )
-
             else:
                 # All later steps use fully recursive leapfrog stencils
-                b1 = (
-                    (4 * self.tau**2 / self.ell**2) * f1_integr[k]
-                    + 2 * aux.galerkin_stencils(self.N, tild_u[k - 1])
-                    - (2 * self.a1 * self.tau**2 / self.ell) *
-                      aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order")
+                b1 = 2.0 * (
+                    const_rhs * ((2.0 / self.ell) * f1_integr[k] - self.a1 * aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order"))
+                    + aux.galerkin_stencils(self.N, tild_u[k - 1])
                 )
-                b2 = (
-                    (2 * self.a0 * self.tau**2 / self.ell**2) * f2_integr[k]
-                    + (4 / (2 + self.delta * self.tau**2)) *
-                      aux.galerkin_stencils(self.N, tild_v[k - 1])
-                    + (4 * self.a2 * self.tau**2 / (2 + self.delta * self.tau**2) / self.ell) *
-                      aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order")
+                b2 = self.a0 * (
+                    const_rhs * ((2.0 / self.ell) * f2_integr[k] + self.a2 * aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order"))
+                    + aux.galerkin_stencils(self.N, tild_v[k - 1])
                 )
 
             # Compute condition numbers for diagnostic purposes
@@ -251,9 +251,8 @@ class TimoshenkoModelSolver:
             q_prev = self.alpha + self.beta * np.dot(tild_u[k], tild_u[k])
             q_integr.append(q_prev)
         
-        elapsed_time = time.time() - start_time
         # Notify when computation is finished
-        print(f"Computation has been completed in {elapsed_time:.2f} seconds.")
+        print(f"Computation has been completed in {time.time() - start_time:.2f} seconds.")
         
         # Return computed quantities
         return tild_u, tild_v, cond_u, cond_v, q_integr
@@ -333,31 +332,48 @@ class TimoshenkoModelSolver:
         self,
         solution_type: str,
         k: int = None,
-        x_vals: float | int | list | np.ndarray = None
+        x_vals: float | int | list | np.ndarray = None,
+        use_kahan_sum: bool = False
     ):
         """
-        Return callable or evaluated Galerkin ansatz u(x,t_k) or v(x,t_k)
-
+        ----------------------------------------------------------------
+        Return Callable or Evaluated Galerkin Ansatz u(x, t_k) or v(x, t_k)
+        ----------------------------------------------------------------
+        Generates callable function(s) representing the Galerkin solution
+        for displacement (u) or rotation (v) at a specific time step (k).
+        You may optionally evaluate the function at specified spatial
+        points (x_vals), and choose between standard or compensated summation.
+    
         Parameters
         ----------
         solution_type : str
-            'u' (displacement) or 'v' (rotation)
+            'u' for displacement or 'v' for rotation.
         k : int, optional
-            Time step index
-        x_vals : float | list | np.ndarray, optional
-            Evaluation points (optional)
-
+            Time step index. If None, generates for all time steps.
+        x_vals : float | int | list | np.ndarray, optional
+            Spatial point(s) for evaluation. If None, returns callables.
+        use_kahan_sum : bool, optional
+            If True, uses the Kahan–Babuška–Neumaier summation algorithm
+            for improved numerical precision. Defaults to False.
+    
         Returns
         -------
         Callable or np.ndarray
-            Function u(x) or v(x), or array of values
+            A single callable (u or v at time k), a list of callables (if k is None),
+            or an array of evaluated values at x_vals.
         """
 
+        # ----------------------------------------
+        # Input validation: Ensure solution_type is correct
+        # ----------------------------------------
         if solution_type not in {'u', 'v'}:
             raise ValueError("solution_type must be 'u' or 'v'.")
-
-        # Normalize and validate x input
+    
+        # ----------------------------------------
+        # Helper: Normalize and validate x_vals input
+        # ----------------------------------------
         def validate_and_convert_x_vals(x_input):
+            """Ensure x_vals is converted to float or NumPy array."""
             if isinstance(x_input, (float, int)):
                 return float(x_input)
             elif isinstance(x_input, list):
@@ -368,34 +384,69 @@ class TimoshenkoModelSolver:
                 return None
             else:
                 raise TypeError("x_vals must be float, int, list, or np.ndarray.")
-
+    
         x_vals = validate_and_convert_x_vals(x_vals)
-
-        # Generate Galerkin basis functions φₘ(x)
+    
+        # ----------------------------------------
+        # Helper: Generate Galerkin basis functions φₘ(x)
+        # ----------------------------------------
         def generate_basis():
+            """
+            Returns a list of φₘ(x) basis function callables.
+            Each φₘ(x) depends on index m, the domain length ell, and position x.
+            """
             return [
                 (lambda m: (lambda x: aux.phi_m(m, self.ell, x)))(m + 1)
                 for m in range(self.N)
             ]
-
-        # Construct solution u(x,t_k) or v(x,t_k)
+    
+        # ----------------------------------------
+        # Helper: Construct ansatz u(x,t_k) or v(x,t_k) at time step k
+        # ----------------------------------------
         def construct_function_at_k(k_idx: int):
+            """
+            Returns a callable Galerkin solution at time step k_idx.
+            Applies initial condition for k=0 or k=1, or reconstructs
+            solution from coefficients and basis for k≥2.
+            """
             if k_idx == 0:
                 return self.u0 if solution_type == 'u' else self.v0
             elif k_idx == 1:
                 return self.u1 if solution_type == 'u' else self.v1
-
+    
+            # Select coefficients and generate basis functions
             coeffs = self.tilde_u[k_idx - 2] if solution_type == 'u' else self.tilde_v[k_idx - 2]
             basis = generate_basis()
-            return lambda x: sum(c * phi(x) for c, phi in zip(coeffs, basis))
-
-        # Return callable or evaluation at time k
+    
+            # Construct the ansatz function u(x) or v(x)
+            def ansatz_function(x):
+                # Handle vectorized evaluation
+                if isinstance(x, np.ndarray):
+                    return np.array([
+                        aux.kahan_babuska_neumaier_sum([c * phi(xi) for c, phi in zip(coeffs, basis)])
+                        if use_kahan_sum else
+                        sum(c * phi(xi) for c, phi in zip(coeffs, basis))
+                        for xi in x
+                    ])
+                else:
+                    # Scalar evaluation
+                    terms = [c * phi(x) for c, phi in zip(coeffs, basis)]
+                    return aux.kahan_babuska_neumaier_sum(terms) if use_kahan_sum else sum(terms)
+    
+            return ansatz_function
+    
+        # ----------------------------------------
+        # Main return logic
+        # ----------------------------------------
         if k is not None:
-            if not (0 <= k <= self.n):
-                raise ValueError(f"k = {k} must be in range [0, {self.n}].")
+            # Validate time step k
+            if not isinstance(k, int) or not (0 <= k <= self.n):
+                raise ValueError(f"k = {k} must be an integer in range [0, {self.n}].")
+    
+            # Build and return function or evaluated result at time step k
             fn = construct_function_at_k(k)
             return fn if x_vals is None else fn(x_vals)
-
-        # Return all time steps as callables or evaluated results
+    
+        # If k is None, return functions or evaluated results at all time steps
         functions = [construct_function_at_k(k_idx) for k_idx in range(self.n + 1)]
         return functions if x_vals is None else np.array([fn(x_vals) for fn in functions])
