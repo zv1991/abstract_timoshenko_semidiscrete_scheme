@@ -105,7 +105,7 @@ if known_solutions:
         L2_errors = {}
 
         for sol_type in ['u', 'v']:
-            exact_func = aux.callable_exact_solution(select_solution_function(sol_type))
+            exact_func = aux.callable_exact_solution(select_solution_function(sol_type), solver)
             approx_func = solver.callable_compute_ansatz(sol_type)
 
             L2_errors[f"L2_error_{sol_type}"] = aux.compute_L2_error(
@@ -198,6 +198,7 @@ else:
                 norm_u = aux.compute_L2_difference_norms_from_coeffs(
                     coeff_init=solver_prev.tilde_u,
                     coeff_next=solver.tilde_u,
+                    config=solver_prev,
                     time_layer=k
                 )
                 if norm_u > tol:
@@ -210,6 +211,7 @@ else:
                     norm_v = aux.compute_L2_difference_norms_from_coeffs(
                         coeff_init=solver_prev.tilde_v,
                         coeff_next=solver.tilde_v,
+                        config=solver_prev,
                         time_layer=k
                     )
                     if norm_v > tol:
