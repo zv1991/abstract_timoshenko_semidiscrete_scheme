@@ -410,118 +410,132 @@ def phi_m(m: int, ell: float, x: np.ndarray) -> np.ndarray:
     return phi_vals
 
 # =============================================================================
+# Global Variables (Must be defined externally in the environment)
+# =============================================================================
+
+# coeff_B: np.ndarray
+#   Recurrence coefficients B_k for the second-derivative term (length ≥ N+3)
+# coeff_C: np.ndarray
+#   Recurrence coefficients C_k for the main diagonal entries (length ≥ N+3)
+
+
+# =============================================================================
 # Function: sys_soln
+# =============================================================================
+# Title:
+#   Spectral-Galerkin Linear System Solver
 # -----------------------------------------------------------------------------
 # Purpose:
-#   Solve a banded linear system arising from a spectral-Galerkin discretization
-#   of a linear PDE system. Uses a specialized forward/backward sweep that 
-#   exploits symmetry and sparsity for computational efficiency.
-# -----------------------------------------------------------------------------
-# Expected External Dependencies:
-#   - numpy as np
-#   - coeff_B(k): user-defined function returning recurrence coefficient B_k
-#   - coeff_C(k): user-defined function returning recurrence coefficient C_k
+#   Solves a symmetric, banded linear system arising from the spectral-Galerkin 
+#   discretization of a linear PDE. It uses an efficient custom solver that:
+#     - Exploits symmetry and structure in the banded matrix
+#     - Performs forward elimination to reduce the system
+#     - Uses backward substitution to reconstruct the solution
 # -----------------------------------------------------------------------------
 # Inputs:
-#   - f   : Right-hand side vector (1D array of length N)
-#   - N   : Number of equations (must be ≥ 2)
-#   - a   : Scalar multiplier (usually from Galerkin system)
-#   - b   : Scalar multiplier for second-order operator
-#   - ell : Physical domain scaling factor (e.g., beam length)
+#   f    : np.ndarray, right-hand side vector (length N)
+#   N    : int, number of equations (must be ≥ 2)
+#   a    : float, coefficient for the identity operator
+#   b    : float, coefficient for the second-derivative operator
+#   ell  : float, physical domain scaling factor (e.g., length of domain)
 # -----------------------------------------------------------------------------
-# Output:
-#   - w   : Solution vector of shape (N,)
+# Returns:
+#   w    : np.ndarray, solution vector of shape (N,)
+# -----------------------------------------------------------------------------
+# External Requirements:
+#   - Global arrays: coeff_B, coeff_C (defined with length ≥ N+3)
 # =============================================================================
 
 def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarray:
     """
-    Title: Spectral-Galerkin Linear System Solver
-
-    Description:
-        Solves a symmetric banded linear system arising from a spectral-Galerkin 
-        method applied to a PDE. The solver uses a custom forward elimination and 
-        backward substitution method optimized for the structure of the system.
+    Solves a symmetric banded linear system using a spectral-Galerkin discretization.
 
     Parameters:
-        f (np.ndarray): Right-hand side vector of shape (N,).
-        N (int): System size (must be ≥ 2).
-        a (float): Coefficient scaling the identity.
-        b (float): Coefficient scaling the second-derivative term.
-        ell (float): Physical length scale (e.g., beam length).
+        f (np.ndarray): Right-hand side vector of shape (N,)
+        N (int): Number of equations (must be ≥ 2)
+        a (float): Identity matrix coefficient
+        b (float): Second-derivative operator coefficient
+        ell (float): Physical length scale of the domain
 
     Returns:
-        np.ndarray: Solution vector of shape (N,).
+        np.ndarray: Solution vector of shape (N,)
 
     Raises:
-        ValueError: If N < 2 (invalid system size).
+        ValueError: If N < 2
     """
-    
+
     # =========================================================================
-    # INPUT VALIDATION
+    # STEP 1: Validate Input
     # =========================================================================
     if N < 2:
         raise ValueError("N must be at least 2 for the system to be solvable.")
 
     # =========================================================================
-    # MEMORY ALLOCATION
+    # STEP 2: Allocate Arrays for Diagonal, RHS Transform, and Solution
     # =========================================================================
-    d = np.empty(N)  # Main diagonal of the modified matrix
-    z = np.empty(N)  # Modified RHS vector after forward sweep
+    d = np.empty(N)  # Main diagonal values after transformation
+    z = np.empty(N)  # Transformed RHS vector during forward elimination
     w = np.empty(N)  # Final solution vector
 
     # =========================================================================
-    # INITIALIZATION: First two diagonal entries and RHS values
+    # STEP 3: Initialize Diagonal and RHS Vectors for First Two Entries
     # =========================================================================
-    d[0] = coeff_C[1] + (4 * b) / (a * ell ** 2)
-    d[1] = coeff_C[2] + (4 * b) / (a * ell ** 2)
+    diag_scale = (4 * b) / (a * ell ** 2)  # Common scaling term derived from PDE
+
+    # Initialize the first two diagonal entries using recurrence coefficient C
+    d[0] = coeff_C[1] + diag_scale
+    d[1] = coeff_C[2] + diag_scale
+
+    # Copy the first two RHS entries directly
     z[0] = f[0]
     z[1] = f[1]
 
     # =========================================================================
-    # FORWARD ELIMINATION
+    # STEP 4: Forward Elimination
     # =========================================================================
-    # Process the matrix in blocks of 2 (even, then odd) exploiting sparsity
-    half_N = (N + 1) // 2  # Half-length of system (covers even/odd N)
+    # Recursively reduce the system using recurrence relations
+    # Each step eliminates a lower diagonal component by modifying d and z
+
+    half_N = (N + 1) // 2  # Half length, ensures correct indexing for even/odd N
 
     for j in range(2, half_N + 1):
-        idx = 2 * (j - 1)  # Current even index
+        idx = 2 * (j - 1)  # Even index (0-based): 2, 4, 6, ...
 
         if idx < N:
-            # Update even-indexed diagonal and RHS using recurrence
-            d[idx] = (
-                coeff_C[idx + 1] + (4 * b) / (a * ell ** 2)
-                - (coeff_B[idx] ** 2) / d[idx - 2]
-            )
+            # Update diagonal for even index using recurrence and symmetry
+            d[idx] = coeff_C[idx + 1] + diag_scale - (coeff_B[idx] ** 2) / d[idx - 2]
+            # Update RHS for even index
             z[idx] = f[idx] + (coeff_B[idx] * z[idx - 2]) / d[idx - 2]
 
         if idx + 1 < N:
-            # Update odd-indexed diagonal and RHS using recurrence
-            d[idx + 1] = (
-                coeff_C[idx + 2] + (4 * b) / (a * ell ** 2)
-                - (coeff_B[idx + 1] ** 2) / d[idx - 1]
-            )
+            # Update diagonal for odd index using recurrence and symmetry
+            d[idx + 1] = coeff_C[idx + 2] + diag_scale - (coeff_B[idx + 1] ** 2) / d[idx - 1]
+            # Update RHS for odd index
             z[idx + 1] = f[idx + 1] + (coeff_B[idx + 1] * z[idx - 1]) / d[idx - 1]
 
     # =========================================================================
-    # BACKWARD SUBSTITUTION
+    # STEP 5: Backward Substitution
     # =========================================================================
-    # Start from the last two elements
-    w[-1] = z[-1] / d[-1]
-    w[-2] = z[-2] / d[-2]
+    # Solve system from last to first using recurrence and modified RHS
 
-    # Recursively solve backward using updated coefficients
+    # Initialize last two known values of solution vector
+    w[N - 1] = z[N - 1] / d[N - 1]
+    w[N - 2] = z[N - 2] / d[N - 2]
+
+    # Work backwards in steps of two to exploit sparsity structure
     for j in range(half_N - 1, 0, -1):
-        idx = 2 * (j - 1)
+        idx = 2 * (j - 1)  # Even index in reverse: ..., 4, 2, 0
 
         if idx + 2 < N:
-            # Compute even-indexed solution
+            # Back-substitute to compute even-indexed value
             w[idx] = (z[idx] + coeff_B[idx + 2] * w[idx + 2]) / d[idx]
 
         if idx + 3 < N:
-            # Compute odd-indexed solution
+            # Back-substitute to compute odd-indexed value
             w[idx + 1] = (z[idx + 1] + coeff_B[idx + 3] * w[idx + 3]) / d[idx + 1]
 
     return w
+
 
 # =========================================================================== #
 #                            Quadrature Method Suite                          #
@@ -533,53 +547,60 @@ def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarra
 # ==========================================================
 def gauss_legendre_integral(f, a, b, n_gauss):
     """
-    Compute the Gauss–Legendre quadrature of function `f` over the interval [a, b].
+    Compute the Gauss–Legendre quadrature of a function `f` over the interval [a, b].
+
+    Gauss–Legendre quadrature provides an efficient and highly accurate method for
+    numerical integration by evaluating the function at optimal nodes within the interval.
 
     Parameters:
         f       : callable
                   Function to integrate. Should ideally support NumPy vectorized input.
         a       : float
-                  Lower limit of integration.
+                  Lower bound of the integration interval.
         b       : float
-                  Upper limit of integration.
+                  Upper bound of the integration interval.
         n_gauss : int
-                  Number of Gauss–Legendre nodes to use.
+                  Number of Gauss–Legendre nodes (degree of quadrature).
 
     Returns:
-        float : Approximate integral of f from a to b.
+        float : Approximate integral of `f` over the interval [a, b].
     """
 
     # --------------------------------------------------
-    # Generate nodes and weights on the canonical interval [-1, 1]
+    # STEP 1: Generate Gauss–Legendre nodes and weights
+    #         on the standard interval [-1, 1]
     # --------------------------------------------------
-    nodes, weights = leggauss(n_gauss)
+    nodes, weights = leggauss(n_gauss)  # Nodes: integration points; Weights: associated weights
 
     # --------------------------------------------------
-    # Transform nodes to the interval [a, b] using affine map
+    # STEP 2: Affine transformation from [-1, 1] to [a, b]
     # --------------------------------------------------
-    mid = 0.5 * (a + b)              # Midpoint of integration interval
-    half_len = 0.5 * (b - a)         # Half the interval length
-    x_mapped = mid + half_len * nodes  # Transformed nodes for [a, b]
+    mid = 0.5 * (a + b)                 # Midpoint of the interval [a, b]
+    half_len = 0.5 * (b - a)            # Half the length of interval
+    x_mapped = mid + half_len * nodes   # Transform nodes from [-1, 1] to [a, b]
 
     # --------------------------------------------------
-    # Evaluate function at transformed nodes
+    # STEP 3: Evaluate the function at the transformed nodes
     # --------------------------------------------------
     try:
-        # Prefer vectorized evaluation
+        # Try vectorized evaluation for efficiency
         f_vals = np.asarray(f(x_mapped))
 
-        # Sanity check on output shape
+        # Validate shape to ensure correct mapping
         if f_vals.shape != x_mapped.shape:
-            raise ValueError("Function output shape mismatch.")
+            raise ValueError("Function output shape mismatch. Expected shape: {}".format(x_mapped.shape))
 
     except Exception:
-        # Fallback to scalar evaluation (non-vectorized function)
+        # Fallback for functions that do not support vectorized input
         f_vals = np.array([f(xi) for xi in x_mapped])
 
     # --------------------------------------------------
-    # Return the weighted sum scaled by interval length
+    # STEP 4: Compute the weighted sum and scale it
+    #         to reflect the [a, b] interval
     # --------------------------------------------------
-    return half_len * np.dot(weights, f_vals)
+    integral = half_len * np.dot(weights, f_vals)  # Weighted sum scaled by interval length
+
+    return integral
 
 # ==========================================================
 # Function: adaptive_gauss_legendre_integrator
@@ -1847,112 +1868,107 @@ def compute_L2_norm_galerkin_approx(
     # ----------------------------------------------------------
     return [compute_single_l2_norm(i) for i in range(len(func_list))]
 
-
-# ==============================================================
-# Module: compute_L2_difference_norms
-# --------------------------------------------------------------
-# This module computes the L2 norm of the pointwise difference
-# between two Galerkin-approximated solutions at each time step:
-#
-#     L2_diff_k = sqrt(∫₀^ell [ũ_k^next(x) - ũ_k^init(x)]² dx)
-#
-# It is typically used to assess spatial convergence by comparing
-# solutions from successive Galerkin approximations (e.g., N vs N+ΔN).
-#
-# Requirements:
-#   - solver_init, solver_next must implement callable_compute_ansatz()
-#   - cfg.ell must define the spatial domain length
-#   - compute_L2_norm_galerkin_approx must be available in scope
-# ==============================================================
+# ===============================================================
+# Function: compute_L2_difference_norms
+# Purpose : Compute L² norms of differences between two Galerkin
+#           approximations over [0, ell] for convergence analysis.
+# Method  : Uses compute_L2_norm_galerkin_approx for each timestep
+# Dependencies:
+#   - compute_L2_norm_galerkin_approx (adaptive quadrature routine)
+#   - callable_compute_ansatz() from each solver instance
+# ===============================================================
 
 def compute_L2_difference_norms(
     solver_init,
     solver_next,
     solution_type: str,
-    tol: float = 1e-6,
-    method: str = "hglq"
-    ) -> list[float]:
+    **quad_kwargs
+    ):
     """
-    Compute the L2 norm of the difference between two Galerkin-approximated
+    Compute the L² norm of the difference between two Galerkin-approximated
     solutions over the domain [0, ell] at each time step.
 
-    This is typically used for evaluating spatial convergence by comparing
-    successive solutions (e.g., N vs N+ΔN modes).
+    This function is typically used to analyze spatial convergence
+    by comparing solutions computed with different numbers of Galerkin modes.
 
     Parameters
     ----------
     solver_init : TimoshenkoModelSolver
-        Initial solution computed with a given number of Galerkin modes.
+        Initial solution object computed with a lower number of Galerkin modes.
 
     solver_next : TimoshenkoModelSolver
-        Refined solution obtained by increasing the number of Galerkin modes.
+        Refined solution object computed with more Galerkin modes.
 
     solution_type : str
         Which solution component to compare:
             - 'u' : displacement field
             - 'v' : rotation field
 
-    tol : float, optional
-        Tolerance for the integration method (default = 1e-6).
+    **quad_kwargs : dict, optional
+        Optional keyword arguments forwarded to `compute_L2_norm_galerkin_approx`.
 
-    method : str, optional
-        Integration method to use:
-            - 'hglq'  : Hierarchical Gauss–Legendre Quadrature (default)
-            - 'glq'   : Standard Gauss–Legendre Quadrature
-            - 'scipy' : Adaptive integration via SciPy
+        Supported keys and their default values:
+            - tol       : float = 1e-6
+                → Absolute convergence tolerance.
+            - min_dx    : float = 1 / 128
+                → Minimum subinterval width for refinement.
+            - n_gauss   : int = 5
+                → Initial Gauss–Legendre nodes per subinterval.
+            - max_gauss : int = 50
+                → Maximum Gauss–Legendre points allowed during refinement.
 
     Returns
     -------
     list[float]
-        A list of L2 norms of differences at each time step:
+        A list of L² norms of the difference at each time step:
         ‖u_next(x) − u_init(x)‖_L2 or ‖v_next(x) − v_init(x)‖_L2
 
     Raises
     ------
     ValueError
-        If `solution_type` is not 'u' or 'v', or if solvers use different time steps.
+        If `solution_type` is invalid or solvers do not share the same time grid.
     """
 
     # ----------------------------------------------------------
-    # STEP 1: Validate input type for `solution_type`
+    # STEP 1: Validate input for `solution_type`
     # ----------------------------------------------------------
     if solution_type not in {"u", "v"}:
         raise ValueError(
-            f"Invalid `solution_type`: '{solution_type}'. Must be either 'u' or 'v'."
+            f"Invalid `solution_type`: '{solution_type}'. "
+            "Must be either 'u' (displacement) or 'v' (rotation)."
         )
 
     # ----------------------------------------------------------
-    # STEP 2: Extract callable lists from both solvers
+    # STEP 2: Extract modal-reconstructed callables from solvers
     # ----------------------------------------------------------
-    # These return lists of functions: [f₀(x), f₁(x), ..., fₙ(x)]
+    # These return time-indexed lists of functions: [f₀(x), f₁(x), ..., fₙ(x)]
     funcs_init = solver_init.callable_compute_ansatz(solution_type=solution_type)
     funcs_next = solver_next.callable_compute_ansatz(solution_type=solution_type)
 
     # ----------------------------------------------------------
-    # STEP 3: Ensure both solutions are evaluated over same time grid
+    # STEP 3: Check for time step consistency across solvers
     # ----------------------------------------------------------
     if len(funcs_init) != len(funcs_next):
         raise ValueError(
             "Mismatch in number of time steps between solver_init and solver_next: "
-            f"{len(funcs_init)} vs {len(funcs_next)}."
+            f"{len(funcs_init)} vs {len(funcs_next)}"
         )
 
     # ----------------------------------------------------------
-    # STEP 4: Create difference callables at each time step
+    # STEP 4: Construct list of callables representing differences
     # ----------------------------------------------------------
-    # Safely bind f1 and f2 inside lambda using default argument trick
+    # (λ f1=f1, f2=f2: λ x: f2(x) - f1(x)) ensures proper closure
     diff_funcs = [
         (lambda f1=f1, f2=f2: lambda x: f2(x) - f1(x))()
         for f1, f2 in zip(funcs_init, funcs_next)
     ]
 
     # ----------------------------------------------------------
-    # STEP 5: Compute L2 norm for each difference function over [0, ell]
+    # STEP 5: Evaluate L² norm for each difference function
     # ----------------------------------------------------------
     return compute_L2_norm_galerkin_approx(
         func=diff_funcs,
-        tol=tol,
-        method=method
+        **quad_kwargs  # Pass quadrature options like tol, min_dx, etc.
     )
 
 
