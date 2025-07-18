@@ -12,6 +12,7 @@ matplotlib              # Plotting utilities (optional for visualization)
 # === (Optional) Serialization and Symbolic Tools ===
 joblib                  # Efficient saving/loading of Python objects
 sympy                   # Symbolic algebra and calculus
+mpmath                  # High-precision arithmetic (used alongside sympy)
 
 # === (Optional) Utilities for file handling and timing ===
 # These are built-in in Python's standard library:
@@ -19,3 +20,5 @@ sympy                   # Symbolic algebra and calculus
 # - time
 # - pathlib
 # - datetime
+# - importlib
+# - warnings

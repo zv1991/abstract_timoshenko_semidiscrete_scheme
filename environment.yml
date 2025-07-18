@@ -18,6 +18,7 @@ dependencies:
   # === (Optional) Serialization and Symbolic Tools ===
   - joblib                   # Efficient saving/loading of Python objects
   - sympy                    # Symbolic algebra and calculus
+  - mpmath                   # High-precision arithmetic (used alongside sympy)
 
   # === (Optional) Utilities for file handling and timing ===
   # These are part of Python's standard library:
@@ -25,3 +26,5 @@ dependencies:
   # - time
   # - pathlib
   # - datetime
+  # - importlib
+  # - warnings
