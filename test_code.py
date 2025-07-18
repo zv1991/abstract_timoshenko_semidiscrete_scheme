@@ -17,7 +17,7 @@ import numpy as np       # Core numerical array operations
 from joblib import dump  # Efficient object serialization
 
 import utils.auxiliary as aux                       # Utility functions: L2 error, plotting, lambdification
-import setting.config as cfg                          # Configuration constants: parameters, time grid, etc.
+import setting.config as cfg                        # Configuration constants: parameters, time grid, etc.
 from tests.initial_data import TimoshenkoSolutions  # Provides benchmark initial/boundary data
 from solver.timoshenko_solver import TimoshenkoModelSolver      # Galerkin solver class for Timoshenko equations
 
