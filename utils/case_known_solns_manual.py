@@ -16,68 +16,88 @@ lam = 14  # Oscillation frequency (mode index) used in the benchmark solutions
 # MULTIPLIER FUNCTION AND ITS DERIVATIVES
 # ======================================================
 
+# # ------------------------------------------------------
+# # Function: g
+# # Purpose: Time-dependent multiplier function g(t)
+# # Used in exact benchmark solutions u(x, t) and v(x, t)
+# # ------------------------------------------------------
+# def g_u(t: float) -> float:
+#     return np.exp(np.pi * t / 8.0) / 8.0
+
+# # ------------------------------------------------------
+# # Function: dg
+# # Purpose: First time derivative of g(t)
+# # ------------------------------------------------------
+# def dg_u(t: float) -> float:
+#     return np.pi * np.exp(np.pi * t / 8.0) / 64.0
+
+# # ------------------------------------------------------
+# # Function: d2g
+# # Purpose: Second time derivative of g(t)
+# # ------------------------------------------------------
+# def d2g_u(t: float) -> float:
+#     return np.pi ** 2 * np.exp(np.pi * t / 8.0) / 512.0
+
+# def g_v(t: float) -> float:
+#     return np.sin(np.pi * t / 4.0)
+
+# # ------------------------------------------------------
+# # Function: dg
+# # Purpose: First time derivative of g(t)
+# # ------------------------------------------------------
+# def dg_v(t: float) -> float:
+#     return np.pi * np.cos(np.pi * t / 4.0) / 4.0
+
+# # ------------------------------------------------------
+# # Function: d2g
+# # Purpose: Second time derivative of g(t)
+# # ------------------------------------------------------
+# def d2g_v(t: float) -> float:
+#     return -np.pi ** 2 * np.sin(np.pi * t / 4.0) / 16.0
+
 # ------------------------------------------------------
 # Function: g
-# Purpose: Time-dependent multiplier function g(t)
-# Used in exact benchmark solutions u(x, t) and v(x, t)
+# Purpose: Defines the time-dependent multiplier g(t)
 # ------------------------------------------------------
 def g_u(t: float) -> float:
-    return np.exp(np.pi * t / 8.0) / 8.0
+    """Time-dependent multiplier function for u and v."""
+    return np.sin(0.25 * np.pi * t)
 
 # ------------------------------------------------------
 # Function: dg
 # Purpose: First time derivative of g(t)
 # ------------------------------------------------------
 def dg_u(t: float) -> float:
-    return np.pi * np.exp(np.pi * t / 8.0) / 64.0
+    """First derivative of g(t) with respect to time."""
+    return 0.25 * np.pi * np.cos(0.25 * np.pi * t)
 
 # ------------------------------------------------------
 # Function: d2g
 # Purpose: Second time derivative of g(t)
 # ------------------------------------------------------
 def d2g_u(t: float) -> float:
-    return np.pi ** 2 * np.exp(np.pi * t / 8.0) / 512.0
+    """Second derivative of g(t) with respect to time."""
+    return -0.625 * np.pi**2 * np.sin(0.25 * np.pi * t)
 
 def g_v(t: float) -> float:
-    return np.sin(np.pi * t / 4.0)
+    """Time-dependent multiplier function for u and v."""
+    return np.sin(0.25 * np.pi * t)
 
 # ------------------------------------------------------
 # Function: dg
 # Purpose: First time derivative of g(t)
 # ------------------------------------------------------
 def dg_v(t: float) -> float:
-    return np.pi * np.cos(np.pi * t / 4.0) / 4.0
+    """First derivative of g(t) with respect to time."""
+    return 0.25 * np.pi * np.cos(0.25 * np.pi * t)
 
 # ------------------------------------------------------
 # Function: d2g
 # Purpose: Second time derivative of g(t)
 # ------------------------------------------------------
 def d2g_v(t: float) -> float:
-    return -np.pi ** 2 * np.sin(np.pi * t / 4.0) / 16.0
-
-# # ------------------------------------------------------
-# # Function: g
-# # Purpose: Defines the time-dependent multiplier g(t)
-# # ------------------------------------------------------
-# def g(t: float) -> float:
-#     """Time-dependent multiplier function for u and v."""
-#     return t  # Linear multiplier for simplicity
-
-# # ------------------------------------------------------
-# # Function: dg
-# # Purpose: First time derivative of g(t)
-# # ------------------------------------------------------
-# def dg(t: float) -> float:
-#     """First derivative of g(t) with respect to time."""
-#     return 1.0  # Derivative of t is constant
-
-# # ------------------------------------------------------
-# # Function: d2g
-# # Purpose: Second time derivative of g(t)
-# # ------------------------------------------------------
-# def d2g(t: float) -> float:
-#     """Second derivative of g(t) with respect to time."""
-#     return 0.0  # Second derivative of t is zero
+    """Second derivative of g(t) with respect to time."""
+    return -0.625 * np.pi**2 * np.sin(0.25 * np.pi * t)
 
 # ======================================================
 # EXACT SOLUTIONS (DISPLACEMENT u AND ROTATION v)
