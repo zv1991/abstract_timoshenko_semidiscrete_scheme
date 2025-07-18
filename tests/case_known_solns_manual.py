@@ -3,7 +3,7 @@
 # ======================================================
 
 import numpy as np                      # NumPy: core numerical computation and math
-import utils.config as cfg              # Problem-specific configuration with constants:
+import setting.config as cfg         # Problem-specific configuration with constants:
                                         # e.g., ell (domain length), alpha, beta, a1, a2, etc.
 
 # ======================================================

@@ -13,7 +13,7 @@
 # IMPORTS
 # ===============================================================
 import sympy as sp               # Symbolic computation library (algebra, calculus)
-import utils.config as cfg       # Configuration file with physical model constants
+import setting.config as cfg  # Configuration file with physical model constants
 
 # ===============================================================
 # USER-DEFINED FIXED PARAMETERS

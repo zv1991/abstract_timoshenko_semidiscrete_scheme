@@ -2,7 +2,7 @@
 # MODULE IMPORTS
 # ======================================================
 
-import utils.config as cfg  # Configuration module (contains constants like time step τ, domain length ℓ, material coefficients)
+import setting.config as cfg  # Configuration module (contains constants like time step τ, domain length ℓ, material coefficients)
 from utils.auxiliary import integrate_derivative_form  # Computes integral-based nonlinear correction term for PDE stiffness
 
 
@@ -89,7 +89,7 @@ class TimoshenkoSolutions:
             # --------------------------------------------------
             # USE KNOWN SYMBOLIC SOLUTIONS (EXACT)
             # --------------------------------------------------
-            import utils.case_known_solns as ks
+            import tests.case_known_solns as ks
 
             # Exact solutions for u(x,t), v(x,t)
             self.u = lambda x, t: ks.u(x, t)
@@ -115,7 +115,7 @@ class TimoshenkoSolutions:
             # --------------------------------------------------
             # TAYLOR APPROXIMATIONS BASED ON INITIAL DATA
             # --------------------------------------------------
-            import utils.case_unk_soln as us
+            import tests.case_unk_soln as us
 
             # Initial conditions for displacement and rotation
             self.u0 = lambda x: us.lambdified_derivatives['varphi0'](x)

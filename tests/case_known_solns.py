@@ -2,8 +2,8 @@
 # MODULE IMPORTS
 # ======================================================
 
-import sympy as sp  # Symbolic math engine (algebra, calculus, simplification)
-import utils.config as cfg  # Problem-specific constants: ell, alpha, beta, etc.
+import sympy as sp               # Symbolic math engine (algebra, calculus, simplification)
+import setting.config as cfg  # Problem-specific constants: ell, alpha, beta, etc.
 from utils.auxiliary import integrate_derivative_form  # Numerical quadrature for integrals
 
 

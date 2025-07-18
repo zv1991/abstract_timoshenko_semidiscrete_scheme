@@ -46,7 +46,7 @@ except ImportError:
 # ===============================================================
 # PROJECT-SPECIFIC CONFIGURATION
 # ===============================================================
-import utils.config as cfg
+import setting.config as cfg
 # Loads simulation constants from user-defined config:
 #   cfg.ell : float     → Length of the spatial domain
 #   cfg.t   : np.array  → Time discretization vector
