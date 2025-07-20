@@ -2,190 +2,188 @@
 # MODULE IMPORTS
 # ======================================================
 
-import setting.config as cfg  # Configuration constants, including:
-#   - τ (time step)
-#   - ℓ (beam length)
-#   - Material coefficients (α, β, γ, δ, a₁, a₂)
-
-from utils.auxiliary import integrate_derivative_form  # Computes the integral ∫(∂u/∂x)² dx
-# Used for computing the nonlinear stiffness correction term in the beam equation
+from utils.auxiliary import integrate_derivative_form  # Computes ∫(∂u/∂x)² dx for nonlinear stiffness correction
 
 
 # ======================================================
-# TIMOSHENKO BENCHMARK BASE CLASS
+# TIMOSHENKO BENCHMARK BASE CLASS (CONFIG-INDEPENDENT)
 # ======================================================
 
 class TimoshenkoTesterParent:
     """
-    Base class to manage initial and boundary conditions for the nonlinear Timoshenko beam model.
+    Abstract base class for initializing data in the nonlinear Timoshenko beam model.
 
-    Two supported modes:
-    ---------------------
-    1. Exact symbolic solutions (analytical mode) if `self.known_solutions = True`
-    2. Approximate Taylor-expanded data if `self.known_solutions = False`
+    This class supports:
+    --------------------
+    1. Symbolic (exact) solution benchmarks
+    2. Numerical (Taylor-expanded) initial conditions
     """
 
     # ------------------------------------------------------
-    # CONSTRUCTOR
+    # METHOD: Constructor with configuration injection
     # ------------------------------------------------------
-    def __init__(self):
+    def __init__(self, cfg):
         """
-        Constructor does not initialize data directly.
-        Derived classes must:
-            - Set `self.known_solutions`
-            - Call `_prepare_data()` to populate required fields
+        Initialize with a config object containing material and solver parameters.
+
+        Parameters
+        ----------
+        cfg : object
+            Configuration namespace with fields:
+            - tau, ell: Time step and beam length
+            - alpha, beta, gamma, delta: Physical constants
+            - a1, a2: Coupling coefficients
         """
-        pass
+        self.cfg = cfg  # Store configuration for later access
 
     # ------------------------------------------------------
-    # METHOD: Second-Order Taylor Expansion
+    # METHOD: Second-order Taylor expansion utility
     # ------------------------------------------------------
     def taylor_expansion(self, tau, f0, f1, f2):
         """
-        Constructs a second-order Taylor approximation of a function f(t, x) at time t = τ.
+        Constructs a second-order Taylor approximation for a time-evolved function f(x, t).
 
         Parameters
         ----------
         tau : float
-            Time step size τ
+            Time step τ.
         f0 : callable
-            f(x, t=0)
+            Value of f(x) at t = 0.
         f1 : callable
-            ∂f/∂t(x, t=0)
+            First time derivative ∂f/∂t at t = 0.
         f2 : callable
-            ∂²f/∂t²(x, t=0)
+            Second time derivative ∂²f/∂t² at t = 0.
 
         Returns
         -------
         callable
-            Approximated value f(x, t=τ)
+            Function approximating f(x, t = τ).
         """
         return lambda x: f0(x) + tau * f1(x) + 0.5 * tau**2 * f2(x)
 
     # ------------------------------------------------------
-    # METHOD: Prepare Initial and Time-Shifted Data
+    # METHOD: Prepare u, v, ∂u/∂x, ∂v/∂x at t = 0 and t = τ
     # ------------------------------------------------------
     def _prepare_data(self):
         """
-        Prepares the problem data at t = 0 and t = τ based on availability of exact solutions.
-
-        Behavior splits by mode:
-            - If exact solutions are known: evaluate directly
-            - Otherwise: construct using second-order Taylor expansions
+        Initializes displacement u and rotation v, and their spatial derivatives,
+        at time t = 0 and first time step t = τ.
         """
-        tau = cfg.tau  # Load τ (time step) from config
+        tau = self.cfg.tau  # Time step from configuration
 
         if self.known_solutions:
-            # ==============================================
-            # MODE 1: Use known symbolic solutions
-            # ==============================================
+            # ========================================================
+            # MODE 1: Exact symbolic solution available
+            # ========================================================
 
-            # Source terms (e.g., external forces or body loads)
+            # Source terms must be defined in subclass
             self.f1 = self.f1
             self.f2 = self.f2
 
-            # Displacement (u) and rotation (v) at t = 0 and t = τ
+            # Displacement and rotation at t = 0 and t = τ
             self.u0 = lambda x: self.u(x, 0)
             self.u1 = lambda x: self.u(x, tau)
             self.v0 = lambda x: self.v(x, 0)
             self.v1 = lambda x: self.v(x, tau)
 
-            # First spatial derivatives (∂u/∂x, ∂v/∂x) at t = 0 and t = τ
+            # First spatial derivatives
             self.du0 = lambda x: self.diff1x_u(x, 0)
             self.du1 = lambda x: self.diff1x_u(x, tau)
             self.dv0 = lambda x: self.diff1x_v(x, 0)
             self.dv1 = lambda x: self.diff1x_v(x, tau)
 
         else:
-            # ==============================================
-            # MODE 2: Use Taylor expansion approximations
-            # ==============================================
+            # ========================================================
+            # MODE 2: No symbolic solution — use Taylor expansion
+            # ========================================================
 
-            # Initial conditions (displacement and rotation)
+            # Initial values at t = 0
             self.u0 = lambda x: self.varphi0(x)
             self.v0 = lambda x: self.psi0(x)
 
-            # Source terms (must be functions of both x and t)
+            # Source terms as functions of (x, t)
             self.f1 = lambda x, t: self.f1(x, t)
             self.f2 = lambda x, t: self.f2(x, t)
 
-            # First time derivatives at t = 0
+            # First time derivatives
             varphi1 = lambda x: self.varphi1(x)
             psi1    = lambda x: self.psi1(x)
 
-            # First spatial derivatives at t = 0
+            # Spatial derivatives at t = 0
             self.du0 = lambda x: self.d1varphi0(x)
             self.dv0 = lambda x: self.d1psi0(x)
 
-            # First spatial derivatives of time-derivatives
+            # First spatial derivatives of time derivatives
             dvarphi1 = lambda x: self.d1varphi1(x)
             dpsi1    = lambda x: self.d1psi1(x)
 
-            # Higher-order spatial derivatives at t = 0
+            # Higher spatial derivatives at t = 0
             d2varphi0 = lambda x: self.d2varphi0(x)
             d2psi0    = lambda x: self.d2psi0(x)
             d3varphi0 = lambda x: self.d3varphi0(x)
             d3psi0    = lambda x: self.d3psi0(x)
 
-            # Compute nonlinear stiffness term: ∫ (∂u/∂x)² dx
-            nonlinear_term, *_ = integrate_derivative_form(df=self.du0, ell=cfg.ell)
+            # Compute ∫(∂u/∂x)² dx for nonlinear stiffness contribution
+            nonlinear_term, *_ = integrate_derivative_form(
+                df=self.du0, ell=self.cfg.ell
+            )
 
-            # Compute second time derivatives using the PDE system at t = 0
+            # Compute second time derivatives using the PDE system
             varphi2 = lambda x: (
                 self.f1(x, 0)
-                - cfg.a1 * self.dv0(x)
-                + (cfg.alpha + cfg.beta * nonlinear_term) * d2varphi0(x)
+                - self.cfg.a1 * self.dv0(x)
+                + (self.cfg.alpha + self.cfg.beta * nonlinear_term) * d2varphi0(x)
             )
 
             psi2 = lambda x: (
                 self.f2(x, 0)
-                + cfg.a2 * self.du0(x)
-                + cfg.gamma * d2psi0(x)
-                - cfg.delta * self.v0(x)
+                + self.cfg.a2 * self.du0(x)
+                + self.cfg.gamma * d2psi0(x)
+                - self.cfg.delta * self.v0(x)
             )
 
-            # Use Taylor expansion to compute u and v at t = τ
+            # Taylor expansion for u(x, τ) and v(x, τ)
             self.u1 = self.taylor_expansion(tau, self.u0, varphi1, varphi2)
             self.v1 = self.taylor_expansion(tau, self.v0, psi1, psi2)
 
-            # Derivatives of source terms for computing second-time derivatives of ∂u/∂x, ∂v/∂x
+            # Derivatives of source terms for spatial correction
             d1f1 = lambda x, t: self.d1f1(x, t)
             d1f2 = lambda x, t: self.d1f2(x, t)
 
             # Compute second time derivatives of spatial derivatives
             dvarphi2 = lambda x: (
                 d1f1(x, 0)
-                - cfg.a1 * d2psi0(x)
-                + (cfg.alpha + cfg.beta * nonlinear_term) * d3varphi0(x)
+                - self.cfg.a1 * d2psi0(x)
+                + (self.cfg.alpha + self.cfg.beta * nonlinear_term) * d3varphi0(x)
             )
 
             dpsi2 = lambda x: (
                 d1f2(x, 0)
-                + cfg.a2 * d2varphi0(x)
-                + cfg.gamma * d3psi0(x)
-                - cfg.delta * self.dv0(x)
+                + self.cfg.a2 * d2varphi0(x)
+                + self.cfg.gamma * d3psi0(x)
+                - self.cfg.delta * self.dv0(x)
             )
 
-            # Use Taylor expansion to compute ∂u/∂x and ∂v/∂x at t = τ
+            # Taylor expansion for ∂u/∂x and ∂v/∂x at t = τ
             self.du1 = self.taylor_expansion(tau, self.du0, dvarphi1, dvarphi2)
             self.dv1 = self.taylor_expansion(tau, self.dv0, dpsi1, dpsi2)
 
     # ------------------------------------------------------
-    # METHOD: Retrieve Initialized Data Fields
+    # METHOD: Retrieve prepared data
     # ------------------------------------------------------
     def get_initial_data(self):
         """
-        Accessor method to return initial and first-step data (at t = 0 and t = τ).
+        Collects all required field values and derivatives for use in the solver.
 
         Returns
         -------
-        tuple :
+        tuple
             (
-                f1, f2,       # Source functions
-                u0, u1,       # Displacement at t = 0 and τ
-                v0, v1,       # Rotation at t = 0 and τ
-                du0, du1,     # ∂u/∂x at t = 0 and τ
-                dv0, dv1      # ∂v/∂x at t = 0 and τ
+                f1, f2        : source terms
+                u0, u1        : displacement at t = 0 and τ
+                v0, v1        : rotation at t = 0 and τ
+                du0, du1      : ∂u/∂x at t = 0 and τ
+                dv0, dv1      : ∂v/∂x at t = 0 and τ
             )
         """
         return (
