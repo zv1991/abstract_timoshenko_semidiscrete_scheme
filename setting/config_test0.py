@@ -32,7 +32,7 @@ a2    = 1.0   # Coupling: ∂u/∂x appears in v-equation
 # TEMPORAL DISCRETIZATION
 # ======================================================
 
-n = 5                         # Number of time steps (subintervals of [0, T])
+n = 128                       # Number of time steps (subintervals of [0, T])
 t = np.linspace(0, T, n + 1)  # Discrete time points t₀, t₁, ..., tₙ ∈ [0, T]
 tau = T / n                   # Time step size τ = T / n
 
@@ -41,5 +41,5 @@ tau = T / n                   # Time step size τ = T / n
 # SPECTRAL METHOD CONFIGURATION
 # ======================================================
 
-N = 3  # Number of Legendre basis functions used in Galerkin projection
+N = 10  # Number of Legendre basis functions used in Galerkin projection
        # Controls spatial resolution: higher N = better approximation, more cost

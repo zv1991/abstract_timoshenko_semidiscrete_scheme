@@ -2481,6 +2481,49 @@ def compute_L2_error(
     return [compute_error_at_k(i) for i in range(len(exact_solution_generator))]
 
 # =============================================================================
+# FUNCTION: named
+# -----------------------------------------------------------------------------
+# Purpose:
+#   Dynamically assign a `.name` attribute to any Python object, enabling
+#   identification and traceability (e.g., for logging, plotting, or filenames).
+#
+# Usage Example:
+#   model = named("test1", TimoshenkoModelSolver(...))
+#   print(model.name)  # Output: "test1"
+#
+# Inputs:
+#   - name : str     — the name to assign to the object's `.name` attribute
+#   - obj  : object  — any class instance to which the name will be attached
+#
+# Output:
+#   - The same object with an added `.name` attribute
+# =============================================================================
+
+def named(name: str, obj: object) -> object:
+    """
+    Assigns a `.name` attribute to the given object for labeling purposes.
+
+    Parameters:
+        name (str): The string label to assign to the object.
+        obj (object): The instance to be labeled.
+
+    Returns:
+        object: The same instance, now with a `.name` attribute set to `name`.
+    """
+    # -----------------------------------------------------------
+    # Attach the name attribute dynamically to the object
+    # This allows any object to be later identified or tracked
+    # without modifying its original class definition.
+    # -----------------------------------------------------------
+    setattr(obj, "name", name)
+
+    # -----------------------------------------------------------
+    # Return the same object, now with the .name attribute added.
+    # Useful in method chaining or inline object instantiation.
+    # -----------------------------------------------------------
+    return obj
+
+# =============================================================================
 # Function: plot_L2_errors_over_time
 # -----------------------------------------------------------------------------
 # Purpose:
@@ -2579,6 +2622,7 @@ def plot_L2_errors_over_time(
     # Determine range of time and generate unique timestamp for filenames
     t_min, t_max = float(time_array[0]), float(time_array[-1])
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    config_name = getattr(config, "name", "config")  # Default name if not defined
 
     # =========================================================================
     # PLOT: L2 ERROR FOR DISPLACEMENT u(x, t)
@@ -2596,7 +2640,7 @@ def plot_L2_errors_over_time(
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
-    pdf_u = output_path / f"L2_error_u_n{config.n}_N{config.N}_{timestamp}.pdf"
+    pdf_u = output_path / f"{config_name}_L2_error_u_n{config.n}_N{config.N}_{timestamp}.pdf"
     plt.savefig(pdf_u)
     plt.close()
 
@@ -2616,19 +2660,19 @@ def plot_L2_errors_over_time(
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
-    pdf_v = output_path / f"L2_error_v_n{config.n}_N{config.N}_{timestamp}.pdf"
+    pdf_v = output_path / f"{config_name}_L2_error_v_n{config.n}_N{config.N}_{timestamp}.pdf"
     plt.savefig(pdf_v)
     plt.close()
 
     # =========================================================================
     # CSV EXPORT: LOGGING ERROR VALUES FOR u AND v
     # =========================================================================
-    csv_u = output_path / f"L2_error_u_n{config.n}_N{config.N}_{timestamp}.csv"
+    csv_u = output_path / f"{config_name}_L2_error_u_n{config.n}_N{config.N}_{timestamp}.csv"
     with csv_u.open("w") as f_u:
         for k, err in enumerate(error_u):
             f_u.write(f"Time step {k:3d}: L2 error for solution 'u' = {err:.6e}\n")
 
-    csv_v = output_path / f"L2_error_v_n{config.n}_N{config.N}_{timestamp}.csv"
+    csv_v = output_path / f"{config_name}_L2_error_v_n{config.n}_N{config.N}_{timestamp}.csv"
     with csv_v.open("w") as f_v:
         for k, err in enumerate(error_v):
             f_v.write(f"Time step {k:3d}: L2 error for solution 'v' = {err:.6e}\n")
@@ -2636,12 +2680,12 @@ def plot_L2_errors_over_time(
     # =========================================================================
     # CSV EXPORT: LOGGING CONDITION NUMBERS FOR u AND v (OPTIONAL DIAGNOSTICS)
     # =========================================================================
-    cond_csv_u = output_path / f"cond_numb_u_n{config.n}_N{config.N}_{timestamp}.csv"
+    cond_csv_u = output_path / f"{config_name}_cond_numb_u_n{config.n}_N{config.N}_{timestamp}.csv"
     with cond_csv_u.open("w") as f_cu:
         for k, val in enumerate(config.cond_u):
             f_cu.write(f"Time step {k:3d}: condition number for 'u' = {val:.6e}\n")
 
-    cond_csv_v = output_path / f"cond_numb_v_n{config.n}_N{config.N}_{timestamp}.csv"
+    cond_csv_v = output_path / f"{config_name}_cond_numb_v_n{config.n}_N{config.N}_{timestamp}.csv"
     with cond_csv_v.open("w") as f_cv:
         for k, val in enumerate(config.cond_v):
             f_cv.write(f"Time step {k:3d}: condition number for 'v' = {val:.6e}\n")
@@ -2804,7 +2848,8 @@ def plot_exact_vs_approx_solution_at_time_k(
     # GENERATE TIMESTAMPED FILE NAME AND SAVE FIGURE
     # =========================================================================
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g. "20250720_132100"
-    filename = output_path / f"solution_{solution_type}_t{time_layer}_N{config.N}_{timestamp}.pdf"
+    config_name = getattr(config, "name", "config")  # Use config.name if available
+    filename = output_path / f"{config_name}_solution_{solution_type}_t{time_layer}_N{config.N}_{timestamp}.pdf"
 
     plt.savefig(filename)  # Save to PDF format for high-quality output
     plt.close()            # Close figure to release memory
