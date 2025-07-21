@@ -48,34 +48,81 @@ class Testcase1(TimoshenkoTesterParent):
     # ==================================================
     def derivative_norm_shifted_legendre(self, m: int, ell: float, x: float | np.ndarray) -> float | np.ndarray:
         """
-        Computes the first derivative of normalized shifted Legendre polynomial 𝑃̂ₘ(x),
-        shifted to [0, ell] from standard [-1, 1].
-
-        d/dx 𝑃̂ₘ(x) = (2 / (ell * Aₘ * sqrt(ell))) * dPₘ/dz, where z = (2x / ell) - 1
-
+        Computes the first derivative of the normalized shifted Legendre polynomial 𝑃̂ₘ(x),
+        where the standard domain [-1, 1] is mapped to [0, ell].
+    
+        The derivative is computed as:
+            d/dx 𝑃̂ₘ(x) = (2 / (ell * Aₘ * sqrt(ell))) * dPₘ/dz
+    
+        where:
+            - z = (2x / ell) - 1 maps x ∈ [0, ell] → z ∈ [-1, 1]
+            - Aₘ is the normalization coefficient from aux.coeff_A
+            - Pₘ(z) is the standard Legendre polynomial of degree m
+    
         Parameters
         ----------
         m : int
-            Degree of Legendre polynomial
+            Degree of the Legendre polynomial (must be ≥ 0)
         ell : float
-            Length of spatial domain
+            Domain length for shifting (must be > 0)
         x : float or np.ndarray
-            Evaluation points in [0, ell]
-
+            Evaluation point(s) in [0, ell]
+    
         Returns
         -------
         float or np.ndarray
-            Derivative evaluated at x
+            Derivative d/dx of 𝑃̂ₘ(x) evaluated at x
         """
-        z = (2 * x / ell) - 1  # Map x from [0, ell] to z ∈ [-1, 1]
+    
+        # --------------------------------------------------
+        # Validate input arguments
+        # --------------------------------------------------
+        if not isinstance(m, int) or m < 0:
+            raise ValueError("Degree 'm' must be a non-negative integer.")
+        if not isinstance(ell, (int, float)) or ell <= 0:
+            raise ValueError("Domain length 'ell' must be a positive number.")
+    
+        # --------------------------------------------------
+        # Detect if x is scalar and convert to float64 array
+        # --------------------------------------------------
+        is_scalar = np.isscalar(x)                 # Preserve scalar status for final output
+        x = np.asarray(x, dtype=np.float64)        # Convert to float64 array for consistent computation
+    
+        # --------------------------------------------------
+        # Map x ∈ [0, ell] to z ∈ [-1, 1]
+        # --------------------------------------------------
+        z = (2.0 * x / ell) - 1.0                  # Transform x-domain to standard Legendre domain
+    
+        # --------------------------------------------------
+        # Construct Legendre polynomial Pₘ(z)
+        # --------------------------------------------------
         coeffs = np.zeros(m + 1)
-        coeffs[m] = 1  # Construct Pₘ(z) as basis
-
-        dcoeffs = legder(coeffs)           # Get coefficients of Pₘ'(z)
-        Pm_prime_z = legval(z, dcoeffs)    # Evaluate derivative at z
-
-        A_m = aux.coeff_A[m]  # Normalization factor for orthonormality
-        return (2 / (ell * A_m * np.sqrt(ell))) * Pm_prime_z
+        coeffs[m] = 1.0                            # Coefficients for Pₘ(z) with degree-m term set
+    
+        # --------------------------------------------------
+        # Compute derivative dPₘ/dz
+        # --------------------------------------------------
+        dcoeffs = legder(coeffs)                  # Derivative coefficients of Pₘ(z)
+        Pm_prime_z = legval(z, dcoeffs)           # Evaluate dPₘ/dz at points z
+    
+        # --------------------------------------------------
+        # Compute normalization factor for orthonormal 𝑃̂ₘ(x)
+        # --------------------------------------------------
+        try:
+            norm_factor = 1.0 / (aux.coeff_A[m] * np.sqrt(ell))  # Scale for normalized 𝑃̂ₘ(x)
+        except (NameError, AttributeError, IndexError):
+            raise RuntimeError("Normalization constant aux.coeff_A[m] is missing or invalid.")
+    
+        # --------------------------------------------------
+        # Apply chain rule: dz/dx = 2 / ell
+        # Final derivative: d/dx of 𝑃̂ₘ(x)
+        # --------------------------------------------------
+        result = (2.0 * norm_factor / ell) * Pm_prime_z
+    
+        # --------------------------------------------------
+        # Return scalar if input was scalar; else return array
+        # --------------------------------------------------
+        return result.item() if is_scalar else result
 
     # ==================================================
     # METHOD: Spatial Basis for Displacement u(x)
