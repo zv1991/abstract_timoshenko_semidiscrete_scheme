@@ -43,7 +43,7 @@ class Testcase1(TimoshenkoTesterParent):
     # ==================================================
     # METHOD: Derivative of Normalized Shifted Legendre Polynomial
     # ==================================================
-    def derivative_norm_shifted_legendre(self, m, ell, x):
+    def derivative_norm_shifted_legendre(self, m: int, ell: float, x: float | np.ndarray) -> float | np.ndarray:
         """
         Computes the first derivative of the normalized shifted Legendre polynomial P̂_m(x):
 
@@ -79,32 +79,32 @@ class Testcase1(TimoshenkoTesterParent):
     # ==================================================
     # BASIS FUNCTION DEGREE CONFIGURATION
     # ==================================================
-    m1 = 1  # Degree of polynomial for displacement
-    m2 = 1  # Degree of polynomial for rotation
+    m_u = 2  # Degree of polynomial for displacement
+    m_v = 2  # Degree of polynomial for rotation
 
     # ==================================================
     # SPATIAL BASIS FUNCTIONS FOR DISPLACEMENT u(x)
     # ==================================================
     def h_u(self, x): 
-        return aux.phi_m(self.m1, self.cfg.ell, x)
+        return aux.phi_m(self.m_u, self.cfg.ell, x)
 
     def d1h_u(self, x): 
-        return aux.normalized_shifted_legendre(self.m1, self.cfg.ell, x)
+        return aux.normalized_shifted_legendre(self.m_u, self.cfg.ell, x)
 
     def d2h_u(self, x): 
-        return self.derivative_norm_shifted_legendre(self.m1, self.cfg.ell, x)
+        return self.derivative_norm_shifted_legendre(self.m_u, self.cfg.ell, x)
 
     # ==================================================
     # SPATIAL BASIS FUNCTIONS FOR ROTATION v(x)
     # ==================================================
     def h_v(self, x): 
-        return aux.phi_m(self.m2, self.cfg.ell, x)
+        return aux.phi_m(self.m_v, self.cfg.ell, x)
 
     def d1h_v(self, x): 
-        return aux.normalized_shifted_legendre(self.m2, self.cfg.ell, x)
+        return aux.normalized_shifted_legendre(self.m_v, self.cfg.ell, x)
 
     def d2h_v(self, x): 
-        return self.derivative_norm_shifted_legendre(self.m2, self.cfg.ell, x)
+        return self.derivative_norm_shifted_legendre(self.m_v, self.cfg.ell, x)
 
     # ==================================================
     # TEMPORAL BASIS FUNCTIONS FOR u(t) AND v(t)

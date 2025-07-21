@@ -28,7 +28,7 @@ test_selector = {
 # ======================================================
 
 # Select a test case by its key
-test_name = "test0"
+test_name = "test1"
 
 # Validate test name and retrieve configuration and test case instance
 if test_name not in test_selector:

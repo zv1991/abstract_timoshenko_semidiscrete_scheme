@@ -41,5 +41,5 @@ tau = T / n                   # Time step size τ = T / n
 # SPECTRAL METHOD CONFIGURATION
 # ======================================================
 
-N = 3  # Number of Legendre basis functions used in Galerkin projection
+N = 2  # Number of Legendre basis functions used in Galerkin projection
        # Controls spatial resolution: higher N = better approximation, more cost
