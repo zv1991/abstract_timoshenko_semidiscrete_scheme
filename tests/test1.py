@@ -31,6 +31,7 @@ class Testcase1(TimoshenkoTesterParent):
         ----------
         cfg : object
             Configuration object containing model and numerical parameters.
+            tau, ell, alpha, beta, gamma, delta, a1, a2, m_u, m_v
         """
         self.cfg = cfg
         self.name = "test1"             # Identifier used in filenames or logs
