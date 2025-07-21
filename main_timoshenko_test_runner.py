@@ -5,8 +5,10 @@
 import utils.auxiliary as aux        # Utility functions for lambdification, L2 error computation, and plotting
 import setting.config_test0 as cfg0  # Configuration parameters for Testcase 0
 import setting.config_test1 as cfg1  # Configuration parameters for Testcase 1
+import setting.config_test2 as cfg2  # Configuration parameters for Testcase 2
 from tests.test0 import Testcase0    # Predefined test case with known analytic solutions: test0
 from tests.test1 import Testcase1    # Predefined test case with known analytic solutions: test1
+from tests.test2 import Testcase2    # Predefined test case with known analytic solutions: test2
 from solver.timoshenko_solver import TimoshenkoModelSolver  # Galerkin solver for Timoshenko beam PDE system
 
 
@@ -18,6 +20,7 @@ from solver.timoshenko_solver import TimoshenkoModelSolver  # Galerkin solver fo
 test_selector = {
     "test0": lambda: (cfg0, Testcase0(cfg0)),
     "test1": lambda: (cfg1, Testcase1(cfg1)),
+    "test2": lambda: (cfg2, Testcase2(cfg2)),
     # Extend with additional test cases as needed
     # e.g., "test2": lambda: (cfg2, Testcase2(cfg2)),
 }
@@ -28,7 +31,7 @@ test_selector = {
 # ======================================================
 
 # Select a test case by its key
-test_name = "test1"
+test_name = "test2"
 
 # Validate test name and retrieve configuration and test case instance
 if test_name not in test_selector:
