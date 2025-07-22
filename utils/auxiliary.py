@@ -835,6 +835,122 @@ def integrate_with_phi_m(f, ell, m, *args, **quad_kwargs):
     # ------------------------------------------
     return value, error_estimate
 
+# =============================================================================
+# compute_product_integral
+# =============================================================================
+# Computes the weighted integral over the interval [0, ell] of the form:
+#
+#     ∫₀^ell f(x, *args) · φₘ(x) dx      if multiplier = "galerkin_basis"
+#     ∫₀^ell f(x, *args) · P̂ₘ(x) dx      if multiplier = "norm_leg_poly"
+#
+# where:
+#     - φₘ(x) is a Galerkin-style basis function
+#     - P̂ₘ(x) is the normalized shifted Legendre polynomial of order m
+#
+# The integration is performed using an adaptive Gauss–Legendre quadrature routine.
+# =============================================================================
+
+def compute_product_integral(f, ell, m, *args, multiplier="galerkin_basis", **quad_kwargs):
+    """
+    Numerically evaluates a weighted integral involving a user-defined function
+    and a basis function over the interval [0, ell].
+
+    Parameters:
+        f : callable
+            The function to integrate. Must accept x as its first parameter,
+            followed by any additional positional arguments (*args).
+        
+        ell : float
+            The upper limit of integration (integration domain is [0, ell]).
+            Must be strictly positive.
+        
+        m : int
+            Index/order of the basis function used for weighting.
+        
+        *args : tuple
+            Additional arguments to be passed directly to f(x, *args).
+        
+        multiplier : str, default = "galerkin_basis"
+            Determines the choice of weighting function:
+                - "galerkin_basis"     → use φₘ(x) = phi_m(m, ell, x)
+                - "norm_leg_poly"      → use P̂ₘ(x) = normalized_shifted_legendre(m, ell, x)
+        
+        **quad_kwargs : dict
+            Optional keyword arguments for the adaptive Gauss–Legendre integrator.
+            Recognized keys:
+                - tol       : float  (absolute error tolerance)
+                - min_dx    : float  (minimum subinterval size)
+                - n_gauss   : int    (initial number of Gauss nodes)
+                - max_gauss : int    (maximum allowed Gauss nodes)
+
+    Returns:
+        tuple:
+            integral_value : float
+                Final estimated value of the integral.
+            convergence_info : float
+                Estimated absolute error from the quadrature process.
+    """
+
+    # -------------------------------------------------------------------------
+    # Step 1: Check that the integration bound is valid
+    # -------------------------------------------------------------------------
+    if ell <= 0:
+        raise ValueError("The integration upper bound 'ell' must be strictly positive.")
+
+    # -------------------------------------------------------------------------
+    # Step 2: Validate the multiplier argument
+    # -------------------------------------------------------------------------
+    valid_multipliers = {"galerkin_basis", "norm_leg_poly"}
+    if multiplier not in valid_multipliers:
+        raise ValueError(
+            f"Invalid 'multiplier' value: {multiplier!r}. "
+            "Expected one of: 'galerkin_basis', 'norm_leg_poly'."
+        )
+
+    # -------------------------------------------------------------------------
+    # Step 3: Define the integrand to pass to the quadrature routine
+    # -------------------------------------------------------------------------
+    def integrand(x):
+        """
+        Weighted integrand to be integrated over [0, ell].
+        It multiplies f(x, *args) by the selected basis function φₘ(x) or P̂ₘ(x).
+        """
+        if multiplier == "galerkin_basis":
+            return f(x, *args) * phi_m(m, ell, x)  # Galerkin basis φₘ(x)
+        else:
+            return f(x, *args) * normalized_shifted_legendre(m, ell, x)  # Normalized Legendre P̂ₘ(x)
+
+    # -------------------------------------------------------------------------
+    # Step 4: Handle optional quadrature parameters and set defaults
+    # -------------------------------------------------------------------------
+    default_quadrature_options = {
+        'tol'      : 1e-6,         # Tolerance for integration error
+        'min_dx'   : 1 / 128.0,    # Minimum allowed subinterval size
+        'n_gauss'  : 5,            # Initial number of Gauss nodes
+        'max_gauss': 50            # Maximum Gauss nodes per subinterval
+    }
+
+    # Fill in missing quadrature parameters with defaults
+    filtered_kwargs = {
+        key: quad_kwargs.get(key, default_quadrature_options[key])
+        for key in default_quadrature_options
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 5: Perform adaptive Gauss–Legendre integration
+    # -------------------------------------------------------------------------
+    value, error_estimate, _, _ = adaptive_gauss_legendre_integrator(
+        integrand,   # Callable integrand
+        ell,         # Integration domain: [0, ell]
+        **filtered_kwargs  # Quadrature parameters
+    )
+
+    # -------------------------------------------------------------------------
+    # Step 6: Return the result and estimated error
+    # -------------------------------------------------------------------------
+    return value, error_estimate
+
+
 # ===============================================================
 # Function: compute_time_dependent_integrals
 # Purpose : Compute time-dependent spatial integrals of the form
