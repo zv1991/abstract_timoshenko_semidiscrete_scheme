@@ -2,57 +2,63 @@
 # MODULE IMPORTS
 # ======================================================
 
-import numpy as np  # NumPy is used for numerical operations like array creation and time discretization
+import numpy as np  # NumPy is used for efficient numerical computations including
+                    # array operations, time discretization, and function evaluations.
 
 
 # ======================================================
 # DOMAIN PARAMETERS
 # ======================================================
+# These parameters define the simulation's spatial and temporal domains.
 
-T = 1.0     # Total simulation time — defines the time interval [0, T]
-ell = 2.0   # Length of the beam — defines the spatial domain [0, ell]
+T = 1.0     # Total simulation duration — defines time interval [0, T]
+ell = 2.0   # Length of the beam — defines spatial domain [0, ell]
 
 
 # ======================================================
 # EQUATION COEFFICIENTS
 # ======================================================
+# Constants defining the material behavior and damping characteristics
+# of the nonlinear Timoshenko beam model.
 
-# These constants define the physical and material properties
-# used in the nonlinear Timoshenko beam equations.
-
-alpha = 1.0   # Stiffness factor for displacement u (related to damping/memory effect)
-beta  = 1.0   # Nonlinear damping coefficient in the u-equation
-gamma = 1.0   # Linear stiffness for the rotation equation (v component)
-delta = 1.0   # Damping coefficient in the v-equation (controls rotational energy dissipation)
-a1    = 1.0   # Coupling term: gradient of v contributes to the u-equation
-a2    = 1.0   # Coupling term: gradient of u contributes to the v-equation
+alpha = 1.0   # Memory-type damping in the displacement (u) equation
+beta  = 1.0   # Nonlinear damping for the displacement field (u)
+gamma = 1.0   # Stiffness coefficient in the rotation equation (v)
+delta = 1.0   # Linear damping in the rotation (v) equation
+a1    = 1.0   # Coupling term in u-equation involving ∂v/∂x
+a2    = 1.0   # Coupling term in v-equation involving ∂u/∂x
 
 
 # ======================================================
 # LEGENDRE POLYNOMIAL CONFIGURATION FOR BENCHMARK SOLUTION
 # ======================================================
+# These values are used to construct a known analytical solution (manufactured solution)
+# via shifted Legendre polynomials of specified degrees.
 
-# These represent the degree of Legendre polynomials used to construct
-# analytical benchmark solutions for u(x, t) and v(x, t), respectively.
+m_u = 2  # Degree of Legendre polynomial for displacement u(x, t)
+m_v = 2  # Degree of Legendre polynomial for rotation    v(x, t)
 
-m_u = 2  # Degree of shifted Legendre polynomial used for the displacement field u(x, t)
-m_v = 2  # Degree of shifted Legendre polynomial used for the rotation field v(x, t)
+# Use the maximum degree to determine minimum necessary spectral resolution
+degree_max = max(m_u, m_v)  # Ensures enough basis functions to resolve both fields
 
 
 # ======================================================
 # TEMPORAL DISCRETIZATION
 # ======================================================
+# Discretize the time domain [0, T] using uniform intervals.
 
-n = 5                          # Number of uniform time steps in [0, T]
-t = np.linspace(0, T, n + 1)   # Array of time points: [t₀, t₁, ..., tₙ]
-tau = T / n                    # Time step size τ = T / n
+n = 5                          # Number of time steps; affects time resolution
+t = np.linspace(0, T, n + 1)   # Time grid points array: t₀, t₁, ..., tₙ
+tau = T / n                    # Uniform time step size τ
 
 
 # ======================================================
 # SPECTRAL METHOD CONFIGURATION
 # ======================================================
+# Configure the spatial discretization using a Legendre-Galerkin method.
 
-# Number of spectral basis functions (Legendre polynomials) used in the Galerkin method.
-# A higher value improves spatial accuracy at the cost of computational complexity.
+# If degree_max is 1 (minimal), use N=2 to avoid poor resolution
+N_default = 2 if degree_max == 1 else degree_max
 
-N = 2  # Number of Legendre basis functions for Galerkin projection
+N = N_default  # Number of Legendre polynomial basis functions for spatial discretization;
+               # higher N increases spatial accuracy but also computational load
