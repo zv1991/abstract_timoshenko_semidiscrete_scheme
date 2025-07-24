@@ -746,175 +746,222 @@ def adaptive_gauss_legendre_integrator(
     estimated_error = np.abs(total_integral - prev_total) if prev_total is not None else float('inf')
     return total_integral, estimated_error, counter, max_nodes_used
 
-# ===============================================================
-# Function: integrate_with_phi_m
-# Purpose : Integrate f(x) weighted by φₘ(x) over [0, ell] using
-#           adaptive Gauss–Legendre quadrature with optional tuning.
-# ===============================================================
+# =============================================================================
+# Module: compute_product_integral
+# =============================================================================
+# Purpose:
+#   Compute a weighted integral over the interval [0, ell] of the form:
+#
+#       ∫₀^ell f(x, *args) × φₘ(x) dx      if multiplier = "galerkin_basis"
+#       ∫₀^ell f(x, *args) × P̂ₘ(x) dx      if multiplier = "norm_leg_poly"
+#
+#   - φₘ(x): Galerkin-style shape function
+#   - P̂ₘ(x): Normalized shifted Legendre polynomial
+#
+#   The integrand is constructed using the user-defined function `f` and a
+#   selected basis function. Integration is carried out using adaptive 
+#   Gauss–Legendre quadrature with tunable precision and node control.
+# =============================================================================
 
-def integrate_with_phi_m(f, ell, m, *args, **quad_kwargs):
+def compute_product_integral(f, ell, m, *args, multiplier="galerkin_basis", **quad_kwargs):
     """
-    Computes the weighted integral ∫₀^ell f(x, *args) · φₘ(x) dx,
-    where φₘ is the m-th Legendre-based basis function. This routine
-    uses adaptive Gauss–Legendre quadrature with optional tuning.
+    -----------------------------------------------------------------------------
+    Function: compute_product_integral
+    -----------------------------------------------------------------------------
+    Numerically computes a weighted integral of the form:
+
+        ∫₀^ell f(x, *args) × φₘ(x) dx    or    ∫₀^ell f(x, *args) × P̂ₘ(x) dx
+
+    depending on the basis function selected via the `multiplier` keyword.
 
     Parameters:
-        f            : callable
-                       User-defined function to integrate. It must accept x as its first argument,
-                       followed by additional positional parameters (*args).
-        
-        ell          : float
-                       The upper limit of integration (must be > 0). Integration is over [0, ell].
+    -----------
+    f : callable
+        User-defined integrand. Must take `x` as first argument, followed by *args.
 
-        m            : int
-                       Index/order of the Legendre-based basis function φₘ.
+    ell : float
+        Upper limit of the integration interval. Must be strictly positive.
 
-        *args        : tuple
-                       Additional positional arguments to be passed to `f`.
+    m : int
+        Basis function index or order (used to generate φₘ or P̂ₘ).
 
-        **quad_kwargs: dict
-                       Optional control parameters for `adaptive_gauss_legendre_integrator`:
-                         - tol       : float  (absolute error tolerance)
-                         - min_dx    : float  (minimum subinterval size)
-                         - n_gauss   : int    (initial number of Gauss nodes)
-                         - max_gauss : int    (maximum allowed Gauss nodes)
+    *args : tuple
+        Additional positional arguments passed to `f`.
+
+    multiplier : str, optional
+        Determines which basis function is used in the product:
+            - "galerkin_basis" → Galerkin-style shape function φₘ(x)
+            - "norm_leg_poly"  → Normalized shifted Legendre polynomial P̂ₘ(x)
+
+    **quad_kwargs : dict
+        Optional quadrature control parameters:
+            - tol       : Absolute error tolerance (default 1e-6)
+            - min_dx    : Minimum subinterval width (default 1/128)
+            - n_gauss   : Initial number of Gauss–Legendre nodes (default 5)
+            - max_gauss : Maximum Gauss nodes allowed (default 50)
 
     Returns:
-        tuple:
-            - integral_value   : float
-                                 Final estimated integral value.
-
-            - convergence_info : float
-                                 Estimated absolute error from the last adaptive pass.
+    --------
+    tuple
+        - integral_value   : float, result of the integral
+        - convergence_info : float, estimated error from quadrature
     """
 
-    # ------------------------------------------
-    # Step 1: Sanity check on integration bounds
-    # ------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 1: Input validation for the integration bound
+    # -------------------------------------------------------------------------
     if ell <= 0:
         raise ValueError("The integration upper bound 'ell' must be strictly positive.")
 
-    # ------------------------------------------
-    # Step 2: Construct weighted integrand
-    #         φₘ(x) should be globally defined and vectorized.
-    # ------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 2: Basis function selection via dispatch dictionary
+    # -------------------------------------------------------------------------
+    # Each basis function is a callable that accepts a scalar x.
+    basis_dispatch = {
+        "galerkin_basis": lambda x: phi_m(m, ell, x),              # Galerkin shape φₘ(x)
+        "norm_leg_poly" : lambda x: normalized_shifted_legendre(m, ell, x)  # Normalized P̂ₘ(x)
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 3: Validate basis function key and retrieve corresponding function
+    # -------------------------------------------------------------------------
+    if multiplier not in basis_dispatch:
+        raise ValueError(
+            f"Invalid 'multiplier' value: {multiplier!r}. "
+            f"Expected one of: {list(basis_dispatch.keys())}."
+        )
+
+    basis_function = basis_dispatch[multiplier]  # Extract basis function generator
+
+    # -------------------------------------------------------------------------
+    # Step 4: Define the integrand used in quadrature
+    # -------------------------------------------------------------------------
     def integrand(x):
-        # Product of the user-defined function and the m-th basis function φₘ(x)
-        return f(x, *args) * phi_m(m, ell, x)
+        """
+        Combined integrand: product of user-defined function and basis function.
+        """
+        return f(x, *args) * basis_function(x)
 
-    # ------------------------------------------
-    # Step 3: Prepare valid quadrature options
-    # ------------------------------------------
-    allowed_keys = {'tol', 'min_dx', 'n_gauss', 'max_gauss'}
-
-    # Set default values (used if user provides none)
-    defaults = {
-        'tol': 1e-6,
-        'min_dx': 1 / 128.0,
-        'n_gauss': 5,
-        'max_gauss': 50
+    # -------------------------------------------------------------------------
+    # Step 5: Set quadrature defaults and override using user-supplied values
+    # -------------------------------------------------------------------------
+    default_quadrature_options = {
+        'tol': 1e-6,           # Absolute integration tolerance
+        'min_dx': 1 / 128.0,   # Minimum step size for subdivision
+        'n_gauss': 5,          # Initial number of Gauss nodes per interval
+        'max_gauss': 50        # Max nodes allowed for adaptive refinement
     }
 
-    # Use user-provided values if valid; otherwise use defaults
+    # Merge user-supplied and default quadrature options
     filtered_kwargs = {
-        k: quad_kwargs[k] if k in quad_kwargs else defaults[k]
-        for k in allowed_keys
+        key: quad_kwargs.get(key, default_quadrature_options[key])
+        for key in default_quadrature_options
     }
 
-    # ------------------------------------------
-    # Step 4: Evaluate the integral using adaptive Gauss–Legendre quadrature
-    # ------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 6: Call the adaptive Gauss–Legendre integrator
+    # -------------------------------------------------------------------------
     value, error_estimate, _, _ = adaptive_gauss_legendre_integrator(
         integrand,
         ell,
         **filtered_kwargs
     )
 
-    # ------------------------------------------
-    # Step 5: Return result and diagnostic info
-    # ------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 7: Return the result and quadrature error estimate
+    # -------------------------------------------------------------------------
     return value, error_estimate
 
-# ===============================================================
+# =============================================================================
 # Function: compute_time_dependent_integrals
-# Purpose : Compute time-dependent spatial integrals of the form
-#           ∫₀^ell f(x, t[k+1]) · φₘ₊₁(x) dx for each time step k
-#           and each basis function index m, producing a matrix
-#           of integral values used in Galerkin/spectral methods.
-# ===============================================================
+# =============================================================================
+# Purpose:
+#   Compute a matrix of spatial integrals over time, where each entry is:
+#
+#       ∫₀^ell f(x, t[k+1]) × φₘ₊₁(x) dx   or   ∫₀^ell f(x, t[k+1]) × P̂ₘ₊₁(x) dx
+#
+#   for each time step k and basis index m. Commonly used in time-dependent
+#   Galerkin or spectral discretizations to project source terms onto basis.
+# =============================================================================
 
-def compute_time_dependent_integrals(f, N, ell, t, **quad_kwargs):
+def compute_time_dependent_integrals(f, N, ell, t, multiplier="galerkin_basis", **quad_kwargs):
     """
-    Computes a matrix of spatial integrals of the form:
-        ∫₀^ell f(x, t_{k+1}) * φₘ(x) dx
-    where φₘ(x) is the m-th Legendre-based basis function.
+    -----------------------------------------------------------------------------
+    Function: compute_time_dependent_integrals
+    -----------------------------------------------------------------------------
+    Compute weighted spatial integrals across time steps for a function f(x, t),
+    using either Galerkin basis functions or normalized shifted Legendre polynomials.
 
-    This is evaluated for each time step k and each basis index m,
-    producing a 2D array of shape (n-1, N), where:
-        - Rows correspond to time intervals [t_k, t_{k+1}]
-        - Columns correspond to basis function indices m = 1 to N
+    Parameters
+    ----------
+    f : callable
+        Function of two variables, f(x, t), evaluated at fixed time t[k+1]
+        and integrated over spatial variable x ∈ [0, ell].
 
-    Parameters:
-        f             : callable
-                        Function f(x, t) representing a spatial profile
-                        evaluated at a fixed time t = t[k+1].
+    N : int
+        Number of spatial basis functions to use (1-based indexing from m=1 to m=N).
 
-        N             : int
-                        Number of spatial basis functions φₘ(x) used
-                        in the Galerkin expansion (index m from 1 to N).
+    ell : float
+        Upper bound of the spatial interval [0, ell].
 
-        ell           : float
-                        Right endpoint of spatial integration domain [0, ell].
+    t : array-like of shape (n,)
+        Array of time nodes, where each time interval [t[k], t[k+1]] corresponds
+        to a step in the output matrix. Must contain at least two values.
 
-        t             : array-like of shape (n,)
-                        Monotonic array of time nodes. Must have n ≥ 2
-                        elements to define n-1 time intervals.
+    multiplier : str, optional
+        Basis function selection method:
+            - "galerkin_basis" → φₘ(x)
+            - "norm_leg_poly"  → P̂ₘ(x)
 
-        **quad_kwargs : dict, optional
-                        Optional keyword arguments forwarded to
-                        `integrate_with_phi_m`. May include:
-                            - tol       : float  (integration tolerance)
-                            - min_dx    : float  (minimum subinterval width)
-                            - n_gauss   : int    (initial Gauss–Legendre nodes)
-                            - max_gauss : int    (maximum Gauss–Legendre nodes)
+    **quad_kwargs : dict
+        Additional arguments passed to `compute_product_integral`, such as:
+            - tol, min_dx, n_gauss, max_gauss
 
-    Returns:
-        integrals : np.ndarray of shape (n-1, N)
-                    Matrix of approximated integrals, where:
-                        integrals[k, m] ≈ ∫₀^ell f(x, t[k+1]) * φₘ₊₁(x) dx
+    Returns
+    -------
+    integrals : np.ndarray of shape (n-1, N)
+        Matrix of integral values:
+            integrals[k, m] ≈ ∫₀^ell f(x, t[k+1]) × φₘ₊₁(x) dx
     """
 
-    # ------------------------------------------
-    # Step 1: Validate input time vector
-    # ------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 1: Validate time vector length
+    # -------------------------------------------------------------------------
     n = len(t)
     if n < 2:
         raise ValueError("Time array 't' must contain at least two time points.")
 
-    # ------------------------------------------
-    # Step 2: Allocate result array
-    # Shape: (n-1, N) for all time intervals and all basis functions
-    # ------------------------------------------
-    integrals = np.zeros((n - 1, N), dtype=float)
+    # -------------------------------------------------------------------------
+    # Step 2: Allocate output matrix to store results
+    # Shape: (n-1 time steps) × (N basis functions)
+    # Use float64 for numerical precision
+    # -------------------------------------------------------------------------
+    integrals = np.zeros((n - 1, N), dtype=np.float64)
 
-    # ------------------------------------------
-    # Step 3: Compute integrals over time and basis index
-    # Outer loop: time intervals [t_k, t_{k+1}]
-    # Inner loop: basis indices m = 1 to N (using m+1 internally)
-    # ------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 3: Compute integrals for each time step and basis function
+    # Loop over each time interval [t_k, t_{k+1}] and each spatial basis function
+    # -------------------------------------------------------------------------
     for k in range(n - 1):
-        t_next = t[k + 1]  # Evaluate f(x, t) at t[k+1]
+        t_next = t[k + 1]  # Use time at t_{k+1} for projection
 
         for m in range(N):
-            # φₘ₊₁(x) is the basis function of index m+1 (1-based)
-            value, _ = integrate_with_phi_m(f, ell, m + 1, t_next, **quad_kwargs)
+            # Compute integral at time t_{k+1} with φ_{m+1}(x) or P̂_{m+1}(x)
+            value, _ = compute_product_integral(
+                f,                      # Function to integrate
+                ell,                    # Upper limit of spatial domain
+                m + 1,                  # Use 1-based indexing for basis function
+                t_next,                 # Pass t[k+1] as argument to f(x, t)
+                multiplier=multiplier,  # Select basis function type
+                **quad_kwargs           # Forward any optional quadrature controls
+            )
 
-            # Store only the integral value (omit error estimate)
+            # Store result in the integral matrix (error estimate discarded)
             integrals[k, m] = value
 
-    # ------------------------------------------
-    # Step 4: Return computed integral matrix
-    # ------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 4: Return the computed matrix of integrals
+    # -------------------------------------------------------------------------
     return integrals
 
 # ===============================================================
@@ -1097,12 +1144,12 @@ def first_order_derivative_unified(f, x, ell, derivmeth='nd', h_init=1e-3):
     else:
         raise ValueError("Invalid method. Use 'nd' (numdifftools) or 'sfd' (standard finite difference).")
 
-# ===============================================================
-# Function: integrate_derivative_form
-# Purpose : Evaluate integrals involving the first derivative f′(x) over [0, ell], using:
+# ==============================================================================
+# FUNCTION: integrate_derivative_form
+# PURPOSE : Evaluate integrals involving the first derivative f′(x) over [0, ell], using:
 #           - 'squared'  → ∫₀^ell [f′(x)]² dx
 #           - 'legendre' → ∫₀^ell f′(x) · P̃ₘ(x) dx
-# ===============================================================
+# ==============================================================================
 
 def integrate_derivative_form(
     f=None,
@@ -1113,93 +1160,107 @@ def integrate_derivative_form(
     h=1e-3,
     derivmeth='nd',
     **quad_kwargs
-    ):
+):
     """
-    Computes integrals involving f′(x) over the domain [0, ell] using adaptive Gauss–Legendre quadrature.
-
-    The integrals supported are:
-        - Squared gradient:     ∫₀^ell [f′(x)]² dx
-        - Legendre projection:  ∫₀^ell f′(x) · P̃ₘ(x) dx
+    Numerically computes integrals involving the first derivative f′(x) over the interval [0, ell].
+    
+    Supported integral forms:
+        - 'squared'  : ∫₀^ell [f′(x)]² dx
+        - 'legendre' : ∫₀^ell f′(x) · P̃ₘ(x) dx, where P̃ₘ is the normalized shifted Legendre polynomial
 
     Parameters
     ----------
     f : callable, optional
-        Function f(x). Required if analytical derivative df is not provided.
+        Function f(x). Required if df is not provided.
 
     df : callable, optional
-        Analytical derivative f′(x). If provided, it will be used directly.
+        Analytical derivative function f′(x). If provided, it takes precedence over numerical methods.
 
     ell : float
-        Upper bound of the integration domain [0, ell]. Must be positive.
+        Upper bound of the integration domain [0, ell]. Must be a positive number.
 
     form : {'squared', 'legendre'}, default='squared'
-        Integral form to evaluate:
-            - 'squared'  → ∫ [f′(x)]² dx
-            - 'legendre' → ∫ f′(x) · P̃ₘ(x) dx
+        Type of integral to compute:
+            - 'squared'  → squared gradient norm
+            - 'legendre' → projection against Legendre polynomial
 
     m : int, optional
-        Degree of normalized shifted Legendre polynomial P̃ₘ(x). Required only for form='legendre'.
+        Degree of the Legendre polynomial P̃ₘ(x). Required only if form='legendre'.
 
     h : float, default=1e-3
-        Initial step size used for numerical differentiation if df is not given.
+        Initial step size for numerical differentiation (used if df is not given).
 
     derivmeth : {'nd', 'sfd'}, default='nd'
-        Differentiation method used when df is not provided:
+        Method for computing numerical derivatives:
             - 'nd'  → Use numdifftools
-            - 'sfd' → Use 4th-order finite differences
+            - 'sfd' → Use 4th-order centered finite difference
 
     **quad_kwargs : dict, optional
-        Additional keyword arguments forwarded to `adaptive_gauss_legendre_integrator`, such as:
-            - tol       : float  (convergence tolerance)
-            - min_dx    : float  (minimum subinterval width)
-            - n_gauss   : int    (initial Gauss–Legendre nodes)
-            - max_gauss : int    (maximum Gauss–Legendre nodes)
+        Additional keyword arguments passed to adaptive_gauss_legendre_integrator. Example keys:
+            - tol: desired tolerance
+            - n_gauss: number of Gauss–Legendre nodes
+            - max_gauss: maximum refinement level
+            - min_dx: minimum subinterval length
 
     Returns
     -------
     integral : float
-        Numerical result of the integral.
+        Computed result of the integral over [0, ell].
 
-    metric : float
-        Estimated error from the quadrature process.
+    error_estimate : float
+        Estimated numerical error of the computed integral.
     """
 
-    # ------------------ Input validation ------------------ #
-
+    # ==========================================================================
+    # VALIDATION: Ensure parameters are consistent and meaningful
+    # ==========================================================================
     if ell is None or ell <= 0:
-        raise ValueError("The upper integration limit 'ell' must be a positive number.")
+        raise ValueError("Parameter 'ell' must be a positive float.")
 
     if (f is None and df is None) or (f is not None and df is not None):
-        raise ValueError("Specify exactly one of 'f' or 'df', not both.")
+        raise ValueError("Exactly one of 'f' or 'df' must be provided, not both or neither.")
 
     if form not in ('squared', 'legendre'):
         raise ValueError("Parameter 'form' must be either 'squared' or 'legendre'.")
 
     if form == 'legendre':
         if m is None:
-            raise ValueError("Parameter 'm' is required when form='legendre'.")
-    elif form == 'squared' and m is not None:
+            raise ValueError("Parameter 'm' must be specified when form='legendre'.")
+    elif m is not None:
         warnings.warn("Parameter 'm' is ignored when form='squared'.", stacklevel=2)
 
-    # ------------------ Adjust finite difference step size ------------------ #
-
+    # ==========================================================================
+    # STEP SIZE ADJUSTMENT: Ensure h is reasonably small for numerical accuracy
+    # ==========================================================================
     if f is not None:
-        # Make sure h is sufficiently small relative to the domain size
         while h >= ell / 4:
-            h /= 2
+            h /= 2  # Reduce h to avoid poor finite difference accuracy near boundaries
 
-    # ------------------ Define the integrand function ------------------ #
-
+    # ==========================================================================
+    # INNER FUNCTION: integrand(x)
+    # Purpose: Evaluate the integrand of the integral at given x values.
+    # ==========================================================================
     def integrand(x):
         """
-        Compute integrand: either [f′(x)]² or f′(x)·P̃ₘ(x) for each x.
-        Supports scalar or vector inputs.
+        Compute the integrand at specified points:
+        - [f′(x)]² for 'squared'
+        - f′(x) · P̃ₘ(x) for 'legendre'
+
+        Parameters
+        ----------
+        x : float or array-like
+            Input point(s) in domain [0, ell].
+
+        Returns
+        -------
+        result : float or ndarray
+            Value(s) of the integrand at the given x location(s).
         """
-        x = np.atleast_1d(x)               # Ensure array input
-        result = np.empty_like(x)          # Preallocate output array
+        x = np.atleast_1d(x)              # Ensure input is array-like
+        result = np.empty_like(x)         # Preallocate result array
 
         for i, xi in enumerate(x):
-            # Compute the derivative f′(x)
+            # Compute f′(xi) using analytic or numerical derivative
             if df is not None:
                 f_prime = df(xi)
             else:
@@ -1207,7 +1268,7 @@ def integrate_derivative_form(
                     f, xi, ell=ell, h_init=h, derivmeth=derivmeth
                 )
 
-            # Form-dependent expression
+            # Compute integrand value based on form
             if form == 'squared':
                 result[i] = f_prime ** 2
             else:  # form == 'legendre'
@@ -1216,86 +1277,86 @@ def integrate_derivative_form(
 
         return result[0] if result.size == 1 else result
 
-    # ------------------ Numerical integration ------------------ #
-
+    # ==========================================================================
+    # INTEGRATION: Adaptive Gauss–Legendre Quadrature
+    # ==========================================================================
     integral, error_estimate, *_ = adaptive_gauss_legendre_integrator(
         integrand, ell, **quad_kwargs
     )
 
     return integral, error_estimate
 
-# ===============================================================
+# =============================================================================
 # Function: compute_initial_integrals
-# Purpose : Compute modal Legendre–Galerkin coefficients for u(x), v(x),
-#           and their derivatives using projection over shifted Legendre basis.
-# ===============================================================
+# -----------------------------------------------------------------------------
+# Purpose:
+#   Compute modal Galerkin coefficients for initial data functions u(x), v(x),
+#   and their first and second derivatives over the spatial domain [0, ell],
+#   using projections onto normalized shifted Legendre polynomials φₘ(x).
+#
+#   Supports both analytic and numerical differentiation.
+# =============================================================================
 
 def compute_initial_integrals(
     u, v, N, ell, *,
     du=None, dv=None,
     h=1e-3, derivmeth='nd', **quad_kwargs
-    ):
+):
     """
-    Computes Legendre–Galerkin modal coefficients of initial conditions u(x), v(x),
-    including projections of their L² form, first derivatives, and second derivatives,
-    using normalized shifted Legendre polynomials over the interval [0, ell].
+    --------------------------------------------------------------------------
+    Method: compute_initial_integrals
+    --------------------------------------------------------------------------
+    Computes Legendre–Galerkin modal coefficients for u(x), v(x), and their
+    first/second derivatives using weighted L² projections.
 
     Parameters
     ----------
     u, v : list of callable
-        Initial condition functions. Each list must include callable functions:
+        Initial condition functions:
             u = [u₀(x), u₁(x)], v = [v₀(x), v₁(x)]
 
-    du, dv : list of callable or None, optional
-        Optional list of analytical first derivatives:
-            du = [du₀(x), du₁(x)], dv = [dv₀(x), dv₁(x)]
-            If not provided or individual entries are None, numerical differentiation is used.
+    du, dv : list of callables or None
+        Analytic first derivatives. If not provided or partially missing,
+        numerical differentiation is used for missing entries.
 
     N : int
-        Number of Legendre basis functions φ₁, ..., φ_N used in the projection.
+        Number of basis functions used (φ₁ to φ_N)
 
     ell : float
-        Length of the spatial domain; the integration interval is [0, ell].
+        Spatial domain length; integral domain is [0, ell]
 
     h : float, default=1e-3
-        Initial step size for numerical differentiation.
+        Step size for numerical differentiation (when used)
 
     derivmeth : {'nd', 'sfd'}, default='nd'
-        Differentiation method when `du`/`dv` are not available:
-            - 'nd'  → use numdifftools
-            - 'sfd' → use manually-coded 4th-order finite difference
+        Numerical differentiation method:
+            - 'nd'  → Use `numdifftools`
+            - 'sfd' → Use custom 4th-order finite difference
 
-    **quad_kwargs : dict, optional
-        Optional keyword arguments forwarded to `adaptive_gauss_legendre_integrator`. Defaults:
-            - tol       : float, default=1e-6
-                          Absolute convergence tolerance for integration.
-            - min_dx    : float, default=1/128
-                          Minimum allowable subinterval width during refinement.
-            - n_gauss   : int, default=5
-                          Initial number of Gauss–Legendre points per subinterval.
-            - max_gauss : int, default=50
-                          Maximum number of Gauss–Legendre points allowed adaptively.
+    **quad_kwargs : dict
+        Passed directly to quadrature methods for integration control
 
     Returns
     -------
     dict
-        Dictionary containing modal projection arrays:
-            - 'u_proj'   : list of arrays for ∫ u[i](x) φₘ(x) dx
-            - 'v_proj'   : list of arrays for ∫ v[i](x) φₘ(x) dx
-            - 'diff1_u1' : array of ∫ u₁′(x) φₘ(x) dx  via parts
-            - 'diff1_v1' : array of ∫ v₁′(x) φₘ(x) dx
-            - 'diff2_u'  : 2D array of ∫ u[i]″(x) φₘ(x) dx  shape = (len(u), N)
-            - 'diff2_v'  : 2D array of ∫ v[i]″(x) φₘ(x) dx  shape = (len(v), N)
+        Dictionary with arrays of modal coefficients:
+            'u_proj', 'v_proj'   : L² projections
+            'diff1_u1', 'diff1_v1': First derivative (by parts)
+            'diff2_u', 'diff2_v' : Second derivative (numerical or analytic)
     """
 
-    # --- Input validation helpers --- #
+    # -------------------------------------------------------------------------
+    # Step 1: Helper functions for input validation
+    # -------------------------------------------------------------------------
     def is_valid_func_list(lst):
         return isinstance(lst, list) and all(callable(f) for f in lst)
 
     def is_valid_deriv_list(lst):
         return isinstance(lst, list) and all(callable(f) or f is None for f in lst)
 
-    # --- Validate inputs --- #
+    # -------------------------------------------------------------------------
+    # Step 2: Validate input lists and parameter types
+    # -------------------------------------------------------------------------
     if not (is_valid_func_list(u) and is_valid_func_list(v)):
         raise ValueError("Inputs 'u' and 'v' must be lists of callable functions.")
 
@@ -1314,67 +1375,87 @@ def compute_initial_integrals(
     if not isinstance(ell, (int, float)) or ell <= 0:
         raise ValueError("Parameter 'ell' must be a positive float.")
 
-    # --- Allocate modal coefficient arrays --- #
-    num_components = len(u)
-    u_proj = [np.zeros(N) for _ in range(num_components)]
-    v_proj = [np.zeros(N) for _ in range(num_components)]
-    diff1_u1 = np.zeros(N)
-    diff1_v1 = np.zeros(N)
-    diff2_u = np.zeros((num_components, N))
-    diff2_v = np.zeros((num_components, N))
+    # -------------------------------------------------------------------------
+    # Step 3: Allocate arrays to hold modal coefficients
+    # -------------------------------------------------------------------------
+    num_components = len(u)  # Typically 2 (e.g., [u₀, u₁])
+    u_proj = [np.zeros(N) for _ in range(num_components)]  # Modal ⟨uᵢ, φₘ⟩
+    v_proj = [np.zeros(N) for _ in range(num_components)]  # Modal ⟨vᵢ, φₘ⟩
+    diff1_u1 = np.zeros(N)  # ⟨u₁′, φₘ⟩ via integration by parts
+    diff1_v1 = np.zeros(N)  # ⟨v₁′, φₘ⟩ via integration by parts
+    diff2_u = np.zeros((num_components, N))  # ⟨uᵢ″, φₘ⟩
+    diff2_v = np.zeros((num_components, N))  # ⟨vᵢ″, φₘ⟩
 
-    # --- Loop over all modal indices m = 1 to N --- #
+    # -------------------------------------------------------------------------
+    # Step 4: Loop over basis indices m = 1 to N
+    # -------------------------------------------------------------------------
     for m in range(N):
-        m_idx = m + 1  # Legendre basis uses 1-based indexing
+        m_idx = m + 1  # 1-based indexing for Legendre modes
 
-        # --- Compute L² projections --- #
+        # ---------------------------------------------------------------------
+        # Step 4.1: Compute L² projection coefficients ⟨uᵢ, φₘ⟩ and ⟨vᵢ, φₘ⟩
+        # ---------------------------------------------------------------------
         for i in range(num_components):
-            u_proj[i][m], _ = integrate_with_phi_m(u[i], ell, m_idx, **quad_kwargs)
-            v_proj[i][m], _ = integrate_with_phi_m(v[i], ell, m_idx, **quad_kwargs)
-
-        # --- First derivative projections by parts --- #
-        diff1_u1[m] = adaptive_gauss_legendre_integrator(
-            lambda x: -u[1](x) * normalized_shifted_legendre(m_idx, ell, x),
-            ell,
-            **quad_kwargs
-        )[0]
-
-        diff1_v1[m] = adaptive_gauss_legendre_integrator(
-            lambda x: -v[1](x) * normalized_shifted_legendre(m_idx, ell, x),
-            ell,
-            **quad_kwargs
-        )[0]
-
-        # --- Second derivative projections via f′ or numerical --- #
-        for i in range(num_components):
-            f_u = None if du[i] else (lambda x, i=i: -u[i](x))
-            df_u = (lambda x, i=i: -du[i](x)) if du[i] else None
-
-            diff2_u[i][m], _ = integrate_derivative_form(
-                f=f_u, df=df_u, ell=ell,
-                form='legendre', m=m_idx,
-                h=h, derivmeth=derivmeth,
+            u_proj[i][m], _ = compute_product_integral(
+                u[i], ell, m_idx,
+                multiplier="galerkin_basis",  # Use Galerkin basis φₘ
+                **quad_kwargs
+            )
+            v_proj[i][m], _ = compute_product_integral(
+                v[i], ell, m_idx,
+                multiplier="galerkin_basis",
                 **quad_kwargs
             )
 
+        # ---------------------------------------------------------------------
+        # Step 4.2: First derivative projections ⟨u₁′, φₘ⟩ and ⟨v₁′, φₘ⟩
+        # Done using integration by parts: ⟨f′, φₘ⟩ = -⟨f, φₘ′⟩
+        # ---------------------------------------------------------------------
+        diff1_u1[m] = compute_product_integral(
+            lambda x: -u[1](x), ell, m_idx,
+            multiplier="norm_leg_poly",  # φₘ′ is handled via norm_leg_poly
+            **quad_kwargs
+        )[0]
+
+        diff1_v1[m] = compute_product_integral(
+            lambda x: -v[1](x), ell, m_idx,
+            multiplier="norm_leg_poly",
+            **quad_kwargs
+        )[0]
+
+        # ---------------------------------------------------------------------
+        # Step 4.3: Second derivative projections ⟨uᵢ″, φₘ⟩ and ⟨vᵢ″, φₘ⟩
+        # Use either analytic first derivative (df), or original f for numeric
+        # ---------------------------------------------------------------------
+        for i in range(num_components):
+            # Handle uᵢ″ projection
+            f_u = None if du[i] else (lambda x, i=i: -u[i](x))         # For numerical diff
+            df_u = (lambda x, i=i: -du[i](x)) if du[i] else None       # For analytic diff
+
+            diff2_u[i][m], _ = integrate_derivative_form(
+                f=f_u, df=df_u, ell=ell, form='legendre', m=m_idx,
+                h=h, derivmeth=derivmeth, **quad_kwargs
+            )
+
+            # Handle vᵢ″ projection
             f_v = None if dv[i] else (lambda x, i=i: -v[i](x))
             df_v = (lambda x, i=i: -dv[i](x)) if dv[i] else None
 
             diff2_v[i][m], _ = integrate_derivative_form(
-                f=f_v, df=df_v, ell=ell,
-                form='legendre', m=m_idx,
-                h=h, derivmeth=derivmeth,
-                **quad_kwargs
+                f=f_v, df=df_v, ell=ell, form='legendre', m=m_idx,
+                h=h, derivmeth=derivmeth, **quad_kwargs
             )
 
-    # --- Return assembled coefficient dictionary --- #
+    # -------------------------------------------------------------------------
+    # Step 5: Package and return all computed modal coefficients
+    # -------------------------------------------------------------------------
     return {
-        'u_proj': u_proj,       # L² projections of u[i]
-        'v_proj': v_proj,       # L² projections of v[i]
-        'diff1_u1': diff1_u1,   # First derivative ⟨u₁′, φₘ⟩
-        'diff1_v1': diff1_v1,   # First derivative ⟨v₁′, φₘ⟩
-        'diff2_u': diff2_u,     # Second derivative (weak) ⟨uᵢ″, φₘ⟩
-        'diff2_v': diff2_v      # Second derivative (weak) ⟨vᵢ″, φₘ⟩
+        'u_proj': u_proj,       # ⟨uᵢ, φₘ⟩
+        'v_proj': v_proj,       # ⟨vᵢ, φₘ⟩
+        'diff1_u1': diff1_u1,   # ⟨u₁′, φₘ⟩
+        'diff1_v1': diff1_v1,   # ⟨v₁′, φₘ⟩
+        'diff2_u': diff2_u,     # ⟨uᵢ″, φₘ⟩
+        'diff2_v': diff2_v      # ⟨vᵢ″, φₘ⟩
     }
 
 # --------------------------------------------------------------------------- #
