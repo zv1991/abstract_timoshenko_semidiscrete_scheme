@@ -33,8 +33,8 @@ a2    = 1.0  # Coupling: ∂u/∂x contribution in v-equation
 # Defines degrees of manufactured polynomial solutions for u(x) and v(x)
 # used in method validation (e.g., convergence tests).
 
-m1_u, m2_u = 2, 1  # u(x) ~ x^m1_u * (ℓ - x)^m2_u
-m1_v, m2_v = 1, 2  # v(x) ~ x^m1_v * (ℓ - x)^m2_v
+m1_u, m2_u = 10, 5  # u(x) ~ x^m1_u * (ℓ - x)^m2_u
+m1_v, m2_v = 5, 10  # v(x) ~ x^m1_v * (ℓ - x)^m2_v
 
 # Determine the maximum total polynomial degree
 degree_max = max(m1_u + m2_u, m1_v + m2_v)  # Ensures sufficient resolution for basis functions
