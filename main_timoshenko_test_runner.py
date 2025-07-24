@@ -46,7 +46,7 @@ cfg, test = test_selector[test_name]()  # This will load cfg0 and Testcase0(cfg0
 # ======================================================
 
 # Symbolic source terms, initial and boundary conditions
-f1, f2, u0, u1, v0, v1, du0, du1, dv0, dv1 = test.get_initial_data()
+f1_integr, f2_integr, u0, u1, v0, v1, du0, du1, dv0, dv1 = test.get_initial_data()
 
 
 # ======================================================
@@ -73,7 +73,8 @@ if test.known_solutions:
             a2=cfg.a2,           # Coupling coefficient from u to v
             n=cfg.n,             # Number of time steps
             N=cfg.N,             # Number of spatial basis functions
-            f1=f1, f2=f2,        # Load/source terms
+            f1_integr=f1_integr, # Load/source terms
+            f2_integr=f2_integr, # Load/source terms
             u0=u0, u1=u1,        # Initial displacement at t=0 and t=τ
             v0=v0, v1=v1,        # Initial rotation at t=0 and t=τ
             du0=du0, du1=du1,    # Derivative of u (∂u/∂x) at t=0 and t=τ (initial condition)

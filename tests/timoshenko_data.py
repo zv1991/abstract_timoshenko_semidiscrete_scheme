@@ -76,9 +76,9 @@ class TimoshenkoTesterParent:
             # MODE 1: Exact symbolic solution available
             # ========================================================
 
-            # Source terms must be defined in subclass
-            self.f1 = self.f1
-            self.f2 = self.f2
+            # Projected integrals must be precomputed in child (subclass)
+            self.f1_integr = self.f1_integr
+            self.f2_integr = self.f2_integr
 
             # Displacement and rotation at t = 0 and t = τ
             self.u0 = lambda x: self.u(x, 0)
@@ -187,7 +187,7 @@ class TimoshenkoTesterParent:
             )
         """
         return (
-            self.f1, self.f2,
+            self.f1_integr, self.f2_integr,
             self.u0, self.u1,
             self.v0, self.v1,
             self.du0, self.du1,

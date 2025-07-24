@@ -59,7 +59,7 @@ class TimoshenkoModelSolver:
         alpha, beta, gamma, delta,  # PDE coefficients
         a1, a2,                     # Coupling constants between u and v
         n, N,           # Number of time steps, number of basis functions
-        f1, f2,         # Forcing terms (functions of space and time)
+        f1_integr, f2_integr,         # Forcing terms (functions of space and time)
         u0, u1, v0, v1, # Initial displacement and rotation states
         du0=None, du1=None, dv0=None, dv1=None,  # Optional: known first spatial derivatives
         h=1e-3,             # Step size for finite difference approximation
@@ -91,8 +91,8 @@ class TimoshenkoModelSolver:
         self.dv0, self.dv1 = dv0, dv1               # First spatial derivatives of rotation at t=0 and t=τ
 
         # Forcing terms (external inputs)
-        self.f1 = f1                                # Forcing for displacement equation
-        self.f2 = f2                                # Forcing for rotation equation
+        self.f1_integr = f1_integr                                # Forcing for displacement equation
+        self.f2_integr = f2_integr                                # Forcing for rotation equation
 
         # Quadrature and differentiation configuration
         self.h = h                  # Step size for numerical differentiation (default: 1e-3)
@@ -139,10 +139,16 @@ class TimoshenkoModelSolver:
             max_gauss=self.max_gauss
         )
 
-        # Project time-dependent forcing terms onto modal basis
-        print("Projecting time-dependent forcing terms onto the modal basis.")
-        f1_integr = aux.compute_time_dependent_integrals(self.f1, self.N, self.ell, self.t, **quad_kwargs)
-        f2_integr = aux.compute_time_dependent_integrals(self.f2, self.N, self.ell, self.t, **quad_kwargs)
+        # # Project time-dependent forcing terms onto modal basis
+        # print("Projecting time-dependent forcing terms onto the modal basis.")
+        # f1_integr = aux.compute_time_dependent_integrals(
+        #     self.f1, self.N, self.ell,
+        #     self.t, multiplier="galerkin_basis", **quad_kwargs
+        #     )
+        # f2_integr = aux.compute_time_dependent_integrals(
+        #     self.f2, self.N, self.ell,
+        #     self.t, multiplier="galerkin_basis", **quad_kwargs
+        #     )
 
         # Project initial conditions and their first/second derivatives
         print("Projecting initial conditions and computing their first and second derivatives.")
@@ -195,24 +201,24 @@ class TimoshenkoModelSolver:
             if k == 0:
                 # Conducting the first step: uses projected ICs at t=0, t=τ (special handling)
                 b1 = const_u * (
-                    self.tau**2 * (f1_integr[k] + 0.5 * q_prev * diff2u[k] - self.a1 * diff1v1)
+                    self.tau**2 * (self.f1_integr[k] + 0.5 * q_prev * diff2u[k] - self.a1 * diff1v1)
                     + 2.0 * u1_integr - u0_integr
                 )
                 b2 = const_v * (
-                    self.tau**2 * (f2_integr[k] + self.a2 * diff1u1 + 0.5 * (self.gamma * diff2v[k] - self.delta * v0_integr))
+                    self.tau**2 * (self.f2_integr[k] + self.a2 * diff1u1 + 0.5 * (self.gamma * diff2v[k] - self.delta * v0_integr))
                     + 2.0 * v1_integr - v0_integr
                 )
             elif k == 1:
                 # For the second step: uses Galerkin stencils from the previous step
                 b1 = const_u * (
                     self.tau**2 * (
-                        f1_integr[k] + 0.5 * (q_prev * diff2u[k] - self.a1 * self.ell * aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order"))
+                        self.f1_integr[k] + 0.5 * (q_prev * diff2u[k] - self.a1 * self.ell * aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order"))
                     )
                     + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_u[k - 1]) - u1_integr
                 )
                 b2 = const_v * (
                     self.tau**2 * (
-                        f2_integr[k] + 0.5 * (self.a2 * self.ell * aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order")
+                        self.f2_integr[k] + 0.5 * (self.a2 * self.ell * aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order")
                                               + self.gamma * diff2v[k] - self.delta * v1_integr)
                     )
                     + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_v[k - 1]) - v1_integr
@@ -220,11 +226,11 @@ class TimoshenkoModelSolver:
             else:
                 # All later steps use fully recursive leapfrog stencils
                 b1 = 2.0 * (
-                    const_rhs * ((2.0 / self.ell) * f1_integr[k] - self.a1 * aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order"))
+                    const_rhs * ((2.0 / self.ell) * self.f1_integr[k] - self.a1 * aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order"))
                     + aux.galerkin_stencils(self.N, tild_u[k - 1])
                 )
                 b2 = self.a0 * (
-                    const_rhs * ((2.0 / self.ell) * f2_integr[k] + self.a2 * aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order"))
+                    const_rhs * ((2.0 / self.ell) * self.f2_integr[k] + self.a2 * aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order"))
                     + aux.galerkin_stencils(self.N, tild_v[k - 1])
                 )
 
