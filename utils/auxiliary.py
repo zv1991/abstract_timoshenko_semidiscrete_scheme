@@ -1147,8 +1147,8 @@ def first_order_derivative_unified(f, x, ell, derivmeth='nd', h_init=1e-3):
 # ==============================================================================
 # FUNCTION: integrate_derivative_form
 # PURPOSE : Evaluate integrals involving the first derivative f′(x) over [0, ell], using:
-#           - 'squared'  → ∫₀^ell [f′(x)]² dx
-#           - 'legendre' → ∫₀^ell f′(x) · P̃ₘ(x) dx
+#           - 'squared'       → ∫₀^ell [f′(x)]² dx  (energy norm)
+#           - 'norm_leg_poly' → ∫₀^ell f′(x) · P̂ₘ(x) dx (Legendre projection)
 # ==============================================================================
 
 def integrate_derivative_form(
@@ -1162,105 +1162,101 @@ def integrate_derivative_form(
     **quad_kwargs
 ):
     """
-    Numerically computes integrals involving the first derivative f′(x) over the interval [0, ell].
-    
-    Supported integral forms:
-        - 'squared'  : ∫₀^ell [f′(x)]² dx
-        - 'legendre' : ∫₀^ell f′(x) · P̃ₘ(x) dx, where P̃ₘ is the normalized shifted Legendre polynomial
+    Numerically compute gradient-based integrals over [0, ell] using adaptive quadrature.
+
+    Supported forms:
+        - 'squared'       → ∫₀^ell [f′(x)]² dx
+        - 'norm_leg_poly' → ∫₀^ell f′(x) · P̂ₘ(x) dx (projection onto Legendre polynomial)
 
     Parameters
     ----------
     f : callable, optional
-        Function f(x). Required if df is not provided.
+        Function f(x). Required unless `df` is provided.
 
     df : callable, optional
-        Analytical derivative function f′(x). If provided, it takes precedence over numerical methods.
+        Analytical derivative function f′(x). Used if available; overrides numerical differentiation.
 
     ell : float
-        Upper bound of the integration domain [0, ell]. Must be a positive number.
+        Length of the interval domain [0, ell]. Must be a positive number.
 
-    form : {'squared', 'legendre'}, default='squared'
-        Type of integral to compute:
-            - 'squared'  → squared gradient norm
-            - 'legendre' → projection against Legendre polynomial
+    form : {'squared', 'norm_leg_poly'}, default='squared'
+        Specifies which integral to compute.
 
     m : int, optional
-        Degree of the Legendre polynomial P̃ₘ(x). Required only if form='legendre'.
+        Degree of normalized shifted Legendre polynomial P̂ₘ(x). Required for 'norm_leg_poly'.
 
     h : float, default=1e-3
-        Initial step size for numerical differentiation (used if df is not given).
+        Initial step size for numerical differentiation (only if df is not provided).
 
     derivmeth : {'nd', 'sfd'}, default='nd'
-        Method for computing numerical derivatives:
-            - 'nd'  → Use numdifftools
-            - 'sfd' → Use 4th-order centered finite difference
+        Method for numerical differentiation:
+            - 'nd'  → external library like `numdifftools`
+            - 'sfd' → fourth-order symmetric finite difference
 
     **quad_kwargs : dict, optional
-        Additional keyword arguments passed to adaptive_gauss_legendre_integrator. Example keys:
-            - tol: desired tolerance
-            - n_gauss: number of Gauss–Legendre nodes
-            - max_gauss: maximum refinement level
-            - min_dx: minimum subinterval length
+        Passed to `adaptive_gauss_legendre_integrator`. May include:
+            - tol      : float, integration tolerance
+            - n_gauss  : int, number of initial Gauss–Legendre points
+            - min_dx   : float, minimum subinterval width
+            - max_gauss: int, max number of Gauss nodes allowed
 
     Returns
     -------
     integral : float
-        Computed result of the integral over [0, ell].
+        Result of the integral over [0, ell].
 
     error_estimate : float
-        Estimated numerical error of the computed integral.
+        Estimated integration error from the quadrature routine.
     """
 
     # ==========================================================================
-    # VALIDATION: Ensure parameters are consistent and meaningful
+    # INPUT VALIDATION
     # ==========================================================================
     if ell is None or ell <= 0:
         raise ValueError("Parameter 'ell' must be a positive float.")
 
     if (f is None and df is None) or (f is not None and df is not None):
-        raise ValueError("Exactly one of 'f' or 'df' must be provided, not both or neither.")
+        raise ValueError("Specify exactly one of 'f' or 'df', not both or neither.")
 
-    if form not in ('squared', 'legendre'):
-        raise ValueError("Parameter 'form' must be either 'squared' or 'legendre'.")
+    if form not in ('squared', 'norm_leg_poly'):
+        raise ValueError("Parameter 'form' must be 'squared' or 'norm_leg_poly'.")
 
-    if form == 'legendre':
-        if m is None:
-            raise ValueError("Parameter 'm' must be specified when form='legendre'.")
-    elif m is not None:
+    if form == 'norm_leg_poly' and m is None:
+        raise ValueError("Parameter 'm' must be specified for 'norm_leg_poly' integrals.")
+
+    if form == 'squared' and m is not None:
         warnings.warn("Parameter 'm' is ignored when form='squared'.", stacklevel=2)
 
     # ==========================================================================
-    # STEP SIZE ADJUSTMENT: Ensure h is reasonably small for numerical accuracy
+    # STEP SIZE ADJUSTMENT FOR NUMERICAL DIFFERENTIATION
     # ==========================================================================
     if f is not None:
         while h >= ell / 4:
-            h /= 2  # Reduce h to avoid poor finite difference accuracy near boundaries
+            h /= 2  # Reduce h if too large relative to the domain (for stability)
 
-    # ==========================================================================
+    # ==============================================================================
     # INNER FUNCTION: integrand(x)
-    # Purpose: Evaluate the integrand of the integral at given x values.
-    # ==========================================================================
+    # Purpose: Evaluates the integrand [f′(x)]² or f′(x)·P̂ₘ(x)
+    # ==============================================================================
     def integrand(x):
         """
-        Compute the integrand at specified points:
-        - [f′(x)]² for 'squared'
-        - f′(x) · P̃ₘ(x) for 'legendre'
+        Evaluate integrand at point(s) x for use in adaptive quadrature.
 
         Parameters
         ----------
         x : float or array-like
-            Input point(s) in domain [0, ell].
+            Point(s) in the interval [0, ell] where the integrand is evaluated.
 
         Returns
         -------
         result : float or ndarray
-            Value(s) of the integrand at the given x location(s).
+            Value(s) of the integrand corresponding to each x.
         """
-        x = np.atleast_1d(x)              # Ensure input is array-like
-        result = np.empty_like(x)         # Preallocate result array
+        x = np.atleast_1d(x)              # Convert scalar input to array, if necessary
+        result = np.empty_like(x)         # Preallocate output array
 
         for i, xi in enumerate(x):
-            # Compute f′(xi) using analytic or numerical derivative
+            # Compute derivative (analytical or numerical fallback)
             if df is not None:
                 f_prime = df(xi)
             else:
@@ -1268,18 +1264,18 @@ def integrate_derivative_form(
                     f, xi, ell=ell, h_init=h, derivmeth=derivmeth
                 )
 
-            # Compute integrand value based on form
+            # Evaluate integrand based on selected form
             if form == 'squared':
                 result[i] = f_prime ** 2
-            else:  # form == 'legendre'
-                Pm_val = normalized_shifted_legendre(m, ell, xi)
+            else:  # form == 'norm_leg_poly'
+                Pm_val = normalized_shifted_legendre(m, ell, xi)  # Evaluate P̂ₘ(xi)
                 result[i] = f_prime * Pm_val
 
-        return result[0] if result.size == 1 else result
+        return result[0] if result.size == 1 else result  # Handle scalar output if needed
 
-    # ==========================================================================
-    # INTEGRATION: Adaptive Gauss–Legendre Quadrature
-    # ==========================================================================
+    # ==============================================================================
+    # NUMERICAL INTEGRATION: Use adaptive Gauss–Legendre integration routine
+    # ==============================================================================
     integral, error_estimate, *_ = adaptive_gauss_legendre_integrator(
         integrand, ell, **quad_kwargs
     )
@@ -1433,7 +1429,7 @@ def compute_initial_integrals(
             df_u = (lambda x, i=i: -du[i](x)) if du[i] else None       # For analytic diff
 
             diff2_u[i][m], _ = integrate_derivative_form(
-                f=f_u, df=df_u, ell=ell, form='legendre', m=m_idx,
+                f=f_u, df=df_u, ell=ell, form='norm_leg_poly', m=m_idx,
                 h=h, derivmeth=derivmeth, **quad_kwargs
             )
 
@@ -1442,7 +1438,7 @@ def compute_initial_integrals(
             df_v = (lambda x, i=i: -dv[i](x)) if dv[i] else None
 
             diff2_v[i][m], _ = integrate_derivative_form(
-                f=f_v, df=df_v, ell=ell, form='legendre', m=m_idx,
+                f=f_v, df=df_v, ell=ell, form='norm_leg_poly', m=m_idx,
                 h=h, derivmeth=derivmeth, **quad_kwargs
             )
 
