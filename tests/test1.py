@@ -139,11 +139,21 @@ class Testcase1(TimoshenkoTesterParent):
     # ------------------------------------------------------
     def nonlinear_term(self, t):
         """
-        Nonlinear term α + β ∫(∂u/∂x)² dx used in u-equation.
+        Nonlinear stiffness term in the displacement equation:
 
-        For normalized Legendre basis, ∫(∂u/∂x)² dx = t².
+            q(t) = α + β ∫ (∂u/∂x)² dx
+
+        Since u(x, t) = h_u(x) · g_u(t), and ∂u/∂x = P̂ₘ(x) · g_u(t),
+        we have:
+
+            ∫ (∂u/∂x)² dx = g_u(t)² · ∫ P̂ₘ(x)² dx
+
+        The basis P̂ₘ(x) is orthonormal over [0, ℓ], so the integral evaluates to 1.
+        Therefore:
+
+            q(t) = α + β · g_u(t)²
         """
-        return self.cfg.alpha + self.cfg.beta * t**2
+        return self.cfg.alpha + self.cfg.beta * self.g_u(t)**2
 
     # ------------------------------------------------------
     # SOURCE TERMS FOR WEAK FORMULATIONS OF u AND v
