@@ -59,15 +59,17 @@ class TimoshenkoModelSolver:
         alpha, beta, gamma, delta,  # PDE coefficients
         a1, a2,                     # Coupling constants between u and v
         n, N,           # Number of time steps, number of basis functions
-        f1_integr, f2_integr,         # Forcing terms (functions of space and time)
+        f1, f2,         # Forcing terms (functions of space and time)
         u0, u1, v0, v1, # Initial displacement and rotation states
         du0=None, du1=None, dv0=None, dv1=None,  # Optional: known first spatial derivatives
-        h=1e-3,             # Step size for finite difference approximation
-        derivmeth='nd',     # Derivative computation method ('nd' or 'sfd')
-        tol=1e-6,           # Tolerance for adaptive Gauss quadrature
-        min_dx=1/128,       # Minimum subinterval size for adaptive quadrature
-        n_gauss=5,          # Initial Gauss nodes per subinterval
-        max_gauss=50        # Max Gauss nodes allowed in adaptive quadrature
+        h=1e-3,                # Step size for finite difference approximation
+        derivmeth='nd',        # Derivative computation method ('nd' or 'sfd')
+        tol=1e-6,              # Tolerance for adaptive Gauss quadrature
+        min_dx=1/128.0,        # Minimum subinterval size for adaptive quadrature
+        n_gauss=5,             # Initial Gauss nodes per subinterval
+        max_gauss=50,          # Max Gauss nodes allowed in adaptive quadrature
+        # Boolean flag indicating whether analytical solutions are known (True) or not provided (False)
+        known_solutions=False  # Default: analytical solutions are not provided
     ):
         # Spatial and temporal domain setup
         self.ell = ell               # Beam length (domain: [0, ell])
@@ -91,8 +93,8 @@ class TimoshenkoModelSolver:
         self.dv0, self.dv1 = dv0, dv1               # First spatial derivatives of rotation at t=0 and t=τ
 
         # Forcing terms (external inputs)
-        self.f1_integr = f1_integr                                # Forcing for displacement equation
-        self.f2_integr = f2_integr                                # Forcing for rotation equation
+        self.f1 = f1                                # Forcing for displacement equation
+        self.f2 = f2                                # Forcing for rotation equation
 
         # Quadrature and differentiation configuration
         self.h = h                  # Step size for numerical differentiation (default: 1e-3)
@@ -101,6 +103,9 @@ class TimoshenkoModelSolver:
         self.min_dx = min_dx        # Minimum allowed subinterval width (default: 1/128)
         self.n_gauss = n_gauss      # Initial number of Gauss–Legendre nodes (default: 5)
         self.max_gauss = max_gauss  # Max allowed Gauss–Legendre nodes adaptively (default: 50)
+        
+        # Flag indicating availability of analytical solutions
+        self.known_solutions = known_solutions  # Boolean flag indicating whether analytical solutions are known (True) or not provided (False)
         
         # Precomputed constant used in the v-equation update
         self.a0 = 4.0 / (2.0 + self.delta * self.tau**2)
@@ -139,17 +144,105 @@ class TimoshenkoModelSolver:
             max_gauss=self.max_gauss
         )
 
-        # # Project time-dependent forcing terms onto modal basis
-        # print("Projecting time-dependent forcing terms onto the modal basis.")
-        # f1_integr = aux.compute_time_dependent_integrals(
-        #     self.f1, self.N, self.ell,
-        #     self.t, multiplier="galerkin_basis", **quad_kwargs
-        #     )
-        # f2_integr = aux.compute_time_dependent_integrals(
-        #     self.f2, self.N, self.ell,
-        #     self.t, multiplier="galerkin_basis", **quad_kwargs
-        #     )
-
+        # Project time-dependent forcing terms onto the modal basis
+        print("Projecting time-dependent forcing terms onto the modal basis.")
+        
+        if self.known_solutions:
+            print("Analytical solutions are provided; computing the right-hand side projections via integration by parts.")
+            # -------------- Projection: RHS for u-equation (f₁) --------------
+            """
+            Given the strong form:
+                f₁(x, t) = ∂²u/∂t² - (α + β ∫(∂u/∂x)² dx) ∂²u/∂x² + a₁ ∂v/∂x
+        
+            The weak form (after integration by parts) becomes:
+                (f₁, φₘ) = (∂²u/∂t², φₘ)
+                         + ((α + β ∫(∂u/∂x)² dx) ∂u/∂x - a₁ v, P̂ₘ)
+        
+            Let us define the following terms:
+                1. self.f1[0] represents ∂²u/∂t²                    — acceleration term, projected against φₘ
+                2. self.f1[1] represents (α + β ∫(∂u/∂x)² dx) ∂u/∂x — nonlinear term, projected against P̂ₘ
+                3. self.f1[2] represents a₁ v                       — coupling term, projected against P̂ₘ
+        
+            Consequently, the combined nonlinear and coupling term is:
+                nonlinear_and_coupling = (α + β ∫(∂u/∂x)² dx) ∂u/∂x - a₁ v
+            """
+            
+            nonlinear_and_coupling = lambda x, t_val: (
+                self.f1[1](x, t_val) - self.f1[2](x, t_val)
+            )
+            f1_integr = (
+                aux.compute_time_dependent_integrals(
+                    self.f1[0],  # ∂²u/∂t²
+                    self.N,
+                    self.ell,
+                    self.t,
+                    multiplier="galerkin_basis",
+                    **quad_kwargs
+                )
+                +
+                aux.compute_time_dependent_integrals(
+                    nonlinear_and_coupling,  # Combined nonlinear and -a₁ v term
+                    self.N,
+                    self.ell,
+                    self.t,
+                    multiplier="norm_leg_poly",
+                    **quad_kwargs
+                )
+            )
+        
+            # -------------- Projection: RHS for v-equation (f₂) --------------
+            """
+            Given the strong form:
+                f₂(x, t) = ∂²v/∂t² - γ ∂²v/∂x² + δ v - a₂ ∂u/∂x
+        
+            The weak form (after integration by parts) becomes:
+                (f₂, φₘ) = (∂²v/∂t² + δ v, φₘ) + (γ ∂v/∂x + a₂ u, P̂ₘ)
+        
+            We define the terms as follows:
+                1. self.f2[0] represents ∂²v/∂t²    — acceleration term, projected against φₘ
+                2. self.f2[1] represents γ ∂v/∂x    — stiffness term, projected against P̂ₘ
+                3. self.f2[2] represents δ v(x, t)  — mass-like term, projected against φₘ
+                4. self.f2[3] represents a₂ u(x, t) — coupling term, projected against P̂ₘ
+            """
+            
+            f2_integr = aux.compute_time_dependent_integrals(
+                lambda x, t: self.f2[0](x, t) + self.f2[2](x, t),  # ∂²v/∂t² + δ v
+                self.N,
+                self.ell,
+                self.t,
+                multiplier="galerkin_basis",
+                **quad_kwargs
+            )
+        
+            f2_integr += aux.compute_time_dependent_integrals(
+                lambda x, t: self.f2[1](x, t) + self.f2[3](x, t),  # γ ∂v/∂x + a₂ u
+                self.N,
+                self.ell,
+                self.t,
+                multiplier="norm_leg_poly",
+                **quad_kwargs
+            )
+        else:
+            print("Analytical solutions are unavailable; computing the right-hand side projections directly from the given source terms.")
+            """
+            For f₁(x, t) and f₂(x, t), the following expressions are assumed:
+        
+                1. f₁(x, t) = ∂²u/∂t² - (α + β ∫(∂u/∂x)² dx) ∂²u/∂x² + a₁ ∂v/∂x
+                2. f₂(x, t) = ∂²v/∂t² - γ ∂²v/∂x² + δ v - a₂ ∂u/∂x
+        
+            We compute the corresponding weak form projections:
+                1. (f₁, φₘ) = (∂²u/∂t² - (α + β ∫(∂u/∂x)² dx) ∂²u/∂x² + a₁ ∂v/∂x, φₘ)
+                2. (f₂, φₘ) = (∂²v/∂t² - γ ∂²v/∂x² + δ v - a₂ ∂u/∂x, φₘ)
+            """
+            f1_integr = aux.compute_time_dependent_integrals(
+                self.f1, self.N, self.ell,
+                self.t, multiplier="galerkin_basis", **quad_kwargs
+            )
+            f2_integr = aux.compute_time_dependent_integrals(
+                self.f2, self.N, self.ell,
+                self.t, multiplier="galerkin_basis", **quad_kwargs
+            )
+        
         # Project initial conditions and their first/second derivatives
         print("Projecting initial conditions and computing their first and second derivatives.")
         init_data = aux.compute_initial_integrals(
@@ -201,24 +294,24 @@ class TimoshenkoModelSolver:
             if k == 0:
                 # Conducting the first step: uses projected ICs at t=0, t=τ (special handling)
                 b1 = const_u * (
-                    self.tau**2 * (self.f1_integr[k] + 0.5 * q_prev * diff2u[k] - self.a1 * diff1v1)
+                    self.tau**2 * (f1_integr[k] + 0.5 * q_prev * diff2u[k] - self.a1 * diff1v1)
                     + 2.0 * u1_integr - u0_integr
                 )
                 b2 = const_v * (
-                    self.tau**2 * (self.f2_integr[k] + self.a2 * diff1u1 + 0.5 * (self.gamma * diff2v[k] - self.delta * v0_integr))
+                    self.tau**2 * (f2_integr[k] + self.a2 * diff1u1 + 0.5 * (self.gamma * diff2v[k] - self.delta * v0_integr))
                     + 2.0 * v1_integr - v0_integr
                 )
             elif k == 1:
                 # For the second step: uses Galerkin stencils from the previous step
                 b1 = const_u * (
                     self.tau**2 * (
-                        self.f1_integr[k] + 0.5 * (q_prev * diff2u[k] - self.a1 * self.ell * aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order"))
+                        f1_integr[k] + 0.5 * (q_prev * diff2u[k] - self.a1 * self.ell * aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order"))
                     )
                     + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_u[k - 1]) - u1_integr
                 )
                 b2 = const_v * (
                     self.tau**2 * (
-                        self.f2_integr[k] + 0.5 * (self.a2 * self.ell * aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order")
+                        f2_integr[k] + 0.5 * (self.a2 * self.ell * aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order")
                                               + self.gamma * diff2v[k] - self.delta * v1_integr)
                     )
                     + 0.5 * self.ell**2 * aux.galerkin_stencils(self.N, tild_v[k - 1]) - v1_integr
@@ -226,11 +319,11 @@ class TimoshenkoModelSolver:
             else:
                 # All later steps use fully recursive leapfrog stencils
                 b1 = 2.0 * (
-                    const_rhs * ((2.0 / self.ell) * self.f1_integr[k] - self.a1 * aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order"))
+                    const_rhs * ((2.0 / self.ell) * f1_integr[k] - self.a1 * aux.galerkin_stencils(self.N, tild_v[k - 1], operator="first-order"))
                     + aux.galerkin_stencils(self.N, tild_u[k - 1])
                 )
                 b2 = self.a0 * (
-                    const_rhs * ((2.0 / self.ell) * self.f2_integr[k] + self.a2 * aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order"))
+                    const_rhs * ((2.0 / self.ell) * f2_integr[k] + self.a2 * aux.galerkin_stencils(self.N, tild_u[k - 1], operator="first-order"))
                     + aux.galerkin_stencils(self.N, tild_v[k - 1])
                 )
 
