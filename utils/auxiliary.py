@@ -269,17 +269,56 @@ coeff_A, coeff_B, coeff_C = safe_load_coefficients(numb_coeffs=500)
 # print("First 5 Coefficients from C:", coeff_C[:5])
 
 # --------------------------------------------------------------------------- #
-""" Functions related to Legendre polynomials, including their
-    differences as employed in spectral basis constructions """
+# LEGENDRE POLYNOMIAL UTILITIES
 # --------------------------------------------------------------------------- #
+"""
+Functions related to Legendre polynomials, including their
+differences as employed in spectral basis constructions.
+"""
 
-def shifted_legendre(m, ell, x):
+# --------------------------------------------------------------------------- #
+# Shifted Legendre Polynomial Function
+# --------------------------------------------------------------------------- #
+def shifted_legendre(m: int, ell: float, x: float | np.ndarray) -> np.float64 | np.ndarray:
     """
-    Compute the shifted Legendre polynomial P_m(x) in [0, ell].
+    Compute the shifted Legendre polynomial P_m(x) defined over the interval [0, ell].
+
+    This function maps the input x from [0, ell] to [-1, 1], evaluates the standard
+    Legendre polynomial P_m at the mapped value, and returns the result in np.float64 format.
+
+    Parameters:
+    ----------
+    m : int
+        Degree of the Legendre polynomial (must be >= 0).
+    ell : float
+        Upper bound of the evaluation domain [0, ell] (must be > 0).
+    x : float or np.ndarray
+        Input value(s) at which to evaluate the shifted Legendre polynomial. Values
+        outside [0, ell] are clipped to this interval.
+
+    Returns:
+    -------
+    np.float64 or np.ndarray
+        Evaluated polynomial value(s), returned as:
+        - np.float64 scalar if x is a scalar
+        - np.ndarray of dtype np.float64 if x is an array
     """
-    x = np.clip(np.asarray(x), 0, ell)  # Ensure x is within valid range
-    x_mapped = 2 * x / ell - 1  # Transform x from [0, ell] to [-1, 1]
-    return legendre(m)(x_mapped)
+    # --- Input Preparation ---
+    # Convert input to NumPy array if not already and ensure all values fall within [0, ell]
+    x = np.clip(np.asarray(x), 0, ell)
+
+    # --- Domain Mapping ---
+    # Map input x from [0, ell] to [-1, 1] for standard Legendre polynomial domain
+    x_mapped = 2 * x / ell - 1
+
+    # --- Polynomial Evaluation ---
+    # Evaluate the standard Legendre polynomial P_m at the transformed input
+    result = legendre(m)(x_mapped)
+
+    # --- Output Handling ---
+    # Return a scalar np.float64 if input was scalar; otherwise, return a float64 array
+    return np.array(result, dtype=np.float64).item() if np.isscalar(x) else np.array(result, dtype=np.float64)
+
 
 # def shifted_legendre(m: int, x, ell) -> float | np.ndarray:
 #     """
@@ -361,30 +400,61 @@ def shifted_legendre(m, ell, x):
 #     #   coeffs[0] * x^n + coeffs[1] * x^(n-1) + ... + coeffs[n-1] * x + coeffs[n]
 #     return np.polyval(coeffs, x_mapped)  # Return the evaluated polynomial at the mapped points x
 
-def normalized_shifted_legendre(m, ell, x):
+# --------------------------------------------------------------------------- #
+# NORMALIZED SHIFTED LEGENDRE POLYNOMIAL FUNCTION
+# --------------------------------------------------------------------------- #
+def normalized_shifted_legendre(m: int, ell: float, x: float | np.ndarray) -> np.float64 | np.ndarray:
     """
-    Computes the normalized shifted Legendre polynomial:
-    
+    Compute the normalized shifted Legendre polynomial P_m^*(x) over the interval [0, ell].
+
+    The normalization is defined as:
         P_m^*(x) = shifted_legendre(m, ell, x) / (A_m * sqrt(ell))
-    
-    where A_m is a normalization coefficient.
+
+    where:
+        - A_m is a normalization coefficient
+        - ell is the interval length
+        - shifted_legendre is the unnormalized Legendre polynomial over [0, ell]
 
     Parameters:
-        m   : Degree of the polynomial
-        ell : Scaling factor
-        x   : Input value (or array of values)
+    ----------
+    m : int
+        Degree of the polynomial (must be non-negative).
+    ell : float
+        Length of the interval [0, ell]; must be positive.
+    x : float or np.ndarray
+        Value or values at which the polynomial is evaluated.
 
     Returns:
-        Normalized shifted Legendre polynomial evaluated at x
+    -------
+    np.float64 or np.ndarray
+        Evaluated value(s) of the normalized shifted Legendre polynomial.
+        - Returns `np.float64` if x is scalar
+        - Returns `np.ndarray` of dtype `np.float64` if x is array-like
+
+    Raises:
+    ------
+    ValueError
+        If the normalization coefficient A_m is not available for the specified degree m.
     """
-    # Compute the normalization coefficient A_m
-    A_m = coeff_A[m]
-    
-    # Compute the standard shifted Legendre polynomial
+
+    # --- Validate and retrieve normalization coefficient A_m ---
+    # coeff_A must be defined externally as a list, array, or dictionary of constants
+    try:
+        A_m = coeff_A[m]  # Attempt to retrieve the normalization constant
+    except (IndexError, KeyError):
+        raise ValueError(f"Normalization coefficient A_m is not defined for m = {m}")
+
+    # --- Evaluate base shifted Legendre polynomial on [0, ell] ---
+    # This function maps x to [-1, 1], evaluates P_m(x), and returns np.float64 output
     P_m_x = shifted_legendre(m, ell, x)
-    
-    # Compute the normalized polynomial
-    return P_m_x / (A_m * np.sqrt(ell))
+
+    # --- Compute normalized result ---
+    # Divide by A_m * sqrt(ell) to normalize the polynomial
+    normalized = P_m_x / (A_m * np.sqrt(ell))
+
+    # --- Return with consistent data type ---
+    # Return np.float64 scalar if input x was scalar, else return float64 array
+    return np.array(normalized, dtype=np.float64).item() if np.isscalar(x) else np.array(normalized, dtype=np.float64)
 
 def phi_m(m: int, ell: float, x: np.ndarray) -> np.ndarray:
     """
