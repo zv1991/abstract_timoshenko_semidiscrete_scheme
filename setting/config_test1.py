@@ -22,11 +22,11 @@ ell = 2.0   # Length of the beam — defines spatial domain [0, ell]
 # of the nonlinear Timoshenko beam model.
 
 alpha = 1.0   # Memory-type damping in the displacement (u) equation
-beta  = 1.0   # Nonlinear damping for the displacement field (u)
+beta  = 1.0   # Nonlinear stiffness factor for the displacement field (u)
 gamma = 1.0   # Stiffness coefficient in the rotation equation (v)
 delta = 1.0   # Linear damping in the rotation (v) equation
-a1    = 1.0   # Coupling term in u-equation involving ∂v/∂x
-a2    = 1.0   # Coupling term in v-equation involving ∂u/∂x
+a1    = 1.0   # Coupling coefficient: ∂v/∂x term in u-equation
+a2    = 1.0   # Coupling coefficient: ∂u/∂x term in v-equation
 
 
 # ======================================================
@@ -53,12 +53,53 @@ tau = T / n                    # Uniform time step size τ
 
 
 # ======================================================
-# SPECTRAL METHOD CONFIGURATION
+# GALERKIN SPECTRAL METHOD CONFIGURATION
 # ======================================================
-# Configure the spatial discretization using a Legendre-Galerkin method.
+# Selects number of Legendre basis functions used in Galerkin projection.
 
-# If degree_max is 1 (minimal), use N=2 to avoid poor resolution
-N_default = 2 if degree_max == 1 else degree_max
+def set_N(input_N: int = None) -> int:
+    """
+    Determine number of Legendre basis functions for Galerkin approximation.
 
-N = N_default  # Number of Legendre polynomial basis functions for spatial discretization;
-               # higher N increases spatial accuracy but also computational load
+    Parameters
+    ----------
+    input_N : int, optional
+        User-specified override for number of basis functions.
+
+    Returns
+    -------
+    int
+        Final number of basis functions to use.
+
+    Raises
+    ------
+    TypeError
+        If input_N is provided and not an integer.
+    ValueError
+        If input_N is non-positive.
+    """
+    if input_N is not None:
+        if not isinstance(input_N, int):
+            raise TypeError("input_N must be an integer.")
+        if input_N <= 0:
+            raise ValueError("input_N must be a positive integer.")
+        return input_N
+
+    # Default: use enough modes to capture highest polynomial degree in benchmark
+    return 2 if degree_max == 1 else degree_max
+
+# Assign basis function count
+N = set_N()  # Spatial resolution parameter for Legendre basis
+
+
+# ======================================================
+# QUADRATURE CONFIGURATION
+# ======================================================
+# Controls settings for adaptive Gauss–Legendre integration used in projections.
+
+quad_kwargs = {
+    'tol': 1e-6,           # Absolute integration tolerance (controls convergence)
+    'min_dx': 1 / 128.0,   # Minimum subinterval width (prevents oversubdivision)
+    'n_gauss': 5,          # Starting number of Gauss nodes per subinterval
+    'max_gauss': 50        # Maximum Gauss nodes allowed during adaptive refinement
+}

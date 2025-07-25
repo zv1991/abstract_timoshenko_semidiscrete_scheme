@@ -2,252 +2,232 @@
 # MODULE IMPORTS
 # ======================================================
 
-import numpy as np  # Provides numerical array and floating-point operations
-from numpy.polynomial.legendre import legval, legder  # For evaluating and differentiating Legendre polynomials
-import utils.auxiliary as aux  # Custom utility module: basis functions, integrators, normalizations, etc.
-from tests.timoshenko_data import TimoshenkoTesterParent  # Abstract base class for symbolic test cases
+import numpy as np  # Core scientific computing library: provides vectorization and numerical tools
+
+import utils.auxiliary as aux
+# Custom utility module: basis functions, Legendre polynomials, normalization, and projection support
+
+from tests.timoshenko_data import TimoshenkoTesterParent  
+# Parent class that provides symbolic/numerical hooks for testing Timoshenko beam models
 
 
 # ======================================================
-# CLASS: Testcase1 – Analytical Benchmark for Timoshenko System
+# TEST CASE 1: ANALYTICAL SOLUTION FOR TIMOSHENKO SYSTEM
 # ======================================================
 
 class Testcase1(TimoshenkoTesterParent):
     """
-    Symbolic benchmark solution for the nonlinear Timoshenko beam model.
+    Symbolic benchmark test case for validating the nonlinear Timoshenko beam model.
 
-    Provides exact functions u(x, t) and v(x, t) and their derivatives,
-    along with PDE right-hand sides f₁ and f₂ used to validate solvers.
+    Defines separable analytical solutions for:
+        - Displacement field u(x, t)
+        - Rotation field v(x, t)
+    using polynomial Galerkin basis functions in space and linear time.
     """
 
-    # ==================================================
-    # CONSTRUCTOR: Initialize benchmark configuration
-    # ==================================================
+    # ------------------------------------------------------
+    # CONSTRUCTOR: INITIALIZE WITH CONFIGURATION OBJECT
+    # ------------------------------------------------------
     def __init__(self, cfg):
         """
-        Initializes the benchmark case with configuration parameters.
+        Constructor that sets up model parameters and initializes base class.
 
         Parameters
         ----------
         cfg : object
-            Configuration object containing model and numerical parameters.
-            tau, ell, alpha, beta, gamma, delta, a1, a2, m_u, m_v
+            Contains beam parameters and polynomial exponents:
+            (tau, ell, alpha, beta, gamma, delta, a1, a2, m_u, m_v)
         """
         self.cfg = cfg
-        self.name = "test1"             # Identifier used in filenames or logs
-        self.known_solutions = True     # This case provides analytical solutions
-        super().__init__(cfg)           # Call parent class constructor
-        self._prepare_data()            # Optional setup logic (inherited or overridden)
+        self.name = "test1"          # Name used for test selection/logging
+        self.known_solutions = True  # Flag indicating exact solution availability
+        
+        super().__init__(cfg)        # Inherit symbolic utilities from parent class
+        self._prepare_data()         # Precompute symbolic expressions (source terms, BCs, etc.)
 
-        # Store polynomial degrees for u(x) and v(x) basis functions
-        self.m_u = cfg.m_u
-        self.m_v = cfg.m_v
+        self.m_u = cfg.m_u           # Degree of spatial basis for u(x)
+        self.m_v = cfg.m_v           # Degree of spatial basis for v(x)
 
-    # ==================================================
-    # METHOD: Derivative of Normalized Shifted Legendre Polynomial
-    # ==================================================
-    def derivative_norm_shifted_legendre(self, m: int, ell: float, x: float | np.ndarray) -> float | np.ndarray:
+    # ------------------------------------------------------
+    # SPATIAL BASIS FUNCTION φₘ(x) FOR u(x)
+    # ------------------------------------------------------
+    def h_u(self, x):
         """
-        Computes the first derivative of the normalized shifted Legendre polynomial 𝑃̂ₘ(x),
-        where the standard domain [-1, 1] is mapped to [0, ell].
-    
-        The derivative is computed as:
-            d/dx 𝑃̂ₘ(x) = (2 / (ell * Aₘ * sqrt(ell))) * dPₘ/dz
-    
-        where:
-            - z = (2x / ell) - 1 maps x ∈ [0, ell] → z ∈ [-1, 1]
-            - Aₘ is the normalization coefficient from aux.coeff_A
-            - Pₘ(z) is the standard Legendre polynomial of degree m
-    
-        Parameters
-        ----------
-        m : int
-            Degree of the Legendre polynomial (must be ≥ 0)
-        ell : float
-            Domain length for shifting (must be > 0)
-        x : float or np.ndarray
-            Evaluation point(s) in [0, ell]
-    
-        Returns
-        -------
-        float or np.ndarray
-            Derivative d/dx of 𝑃̂ₘ(x) evaluated at x
+        Spatial shape function for displacement field u(x, t).
+        φₘ(x) = (√ℓ / 2) * Aₘ * [Pₘ₊₁(x) - Pₘ₋₁(x)]
         """
-    
-        # --------------------------------------------------
-        # Validate input arguments
-        # --------------------------------------------------
-        if not isinstance(m, int) or m < 0:
-            raise ValueError("Degree 'm' must be a non-negative integer.")
-        if not isinstance(ell, (int, float)) or ell <= 0:
-            raise ValueError("Domain length 'ell' must be a positive number.")
-    
-        # --------------------------------------------------
-        # Detect if x is scalar and convert to float64 array
-        # --------------------------------------------------
-        is_scalar = np.isscalar(x)                 # Preserve scalar status for final output
-        x = np.asarray(x, dtype=np.float64)        # Convert to float64 array for consistent computation
-    
-        # --------------------------------------------------
-        # Map x ∈ [0, ell] to z ∈ [-1, 1]
-        # --------------------------------------------------
-        z = (2.0 * x / ell) - 1.0                  # Transform x-domain to standard Legendre domain
-    
-        # --------------------------------------------------
-        # Construct Legendre polynomial Pₘ(z)
-        # --------------------------------------------------
-        coeffs = np.zeros(m + 1)
-        coeffs[m] = 1.0                            # Coefficients for Pₘ(z) with degree-m term set
-    
-        # --------------------------------------------------
-        # Compute derivative dPₘ/dz
-        # --------------------------------------------------
-        dcoeffs = legder(coeffs)                  # Derivative coefficients of Pₘ(z)
-        Pm_prime_z = legval(z, dcoeffs)           # Evaluate dPₘ/dz at points z
-    
-        # --------------------------------------------------
-        # Compute normalization factor for orthonormal 𝑃̂ₘ(x)
-        # --------------------------------------------------
-        try:
-            norm_factor = 1.0 / (aux.coeff_A[m] * np.sqrt(ell))  # Scale for normalized 𝑃̂ₘ(x)
-        except (NameError, AttributeError, IndexError):
-            raise RuntimeError("Normalization constant aux.coeff_A[m] is missing or invalid.")
-    
-        # --------------------------------------------------
-        # Apply chain rule: dz/dx = 2 / ell
-        # Final derivative: d/dx of 𝑃̂ₘ(x)
-        # --------------------------------------------------
-        result = (2.0 * norm_factor / ell) * Pm_prime_z
-    
-        # --------------------------------------------------
-        # Return scalar if input was scalar; else return array
-        # --------------------------------------------------
-        return result.item() if is_scalar else result
+        return aux.phi_m(self.m_u, self.cfg.ell, x)
 
-    # ==================================================
-    # METHOD: Spatial Basis for Displacement u(x)
-    # ==================================================
-    def h_u(self, x): return aux.phi_m(self.m_u, self.cfg.ell, x)
-    def d1h_u(self, x): return aux.normalized_shifted_legendre(self.m_u, self.cfg.ell, x)
-    def d2h_u(self, x): return self.derivative_norm_shifted_legendre(self.m_u, self.cfg.ell, x)
-
-    # ==================================================
-    # METHOD: Spatial Basis for Rotation v(x)
-    # ==================================================
-    def h_v(self, x): return aux.phi_m(self.m_v, self.cfg.ell, x)
-    def d1h_v(self, x): return aux.normalized_shifted_legendre(self.m_v, self.cfg.ell, x)
-    def d2h_v(self, x): return self.derivative_norm_shifted_legendre(self.m_v, self.cfg.ell, x)
-
-    # ==================================================
-    # METHOD: Temporal Basis for u(t) and v(t)
-    # ==================================================
-    def g_u(self, t): return t                      # Linear in time
-    def d1g_u(self, t): return np.float64(0.0)      # Time-derivative of t is constant (used in weak form)
-    def d2g_u(self, t): return np.float64(0.0)      # Second time-derivative of t is zero
-
-    def g_v(self, t): return t
-    def d1g_v(self, t): return np.float64(0.0)
-    def d2g_v(self, t): return np.float64(0.0)
-
-    # ==================================================
-    # METHOD: Exact Solutions u(x, t) and v(x, t)
-    # ==================================================
-    def u(self, x, t): return self.h_u(x) * self.g_u(t)
-    def v(self, x, t): return self.h_v(x) * self.g_v(t)
-
-    # ==================================================
-    # METHOD: Derivatives of u(x, t)
-    # ==================================================
-    def diff1t_u(self, x, t): return self.h_u(x) * self.d1g_u(t)
-    def diff2t_u(self, x, t): return self.h_u(x) * self.d2g_u(t)
-    def diff1x_u(self, x, t): return self.d1h_u(x) * self.g_u(t)
-    def diff2x_u(self, x, t): return self.d2h_u(x) * self.g_u(t)
-
-    # ==================================================
-    # METHOD: Derivatives of v(x, t)
-    # ==================================================
-    def diff1t_v(self, x, t): return self.h_v(x) * self.d1g_v(t)
-    def diff2t_v(self, x, t): return self.h_v(x) * self.d2g_v(t)
-    def diff1x_v(self, x, t): return self.d1h_v(x) * self.g_v(t)
-    def diff2x_v(self, x, t): return self.d2h_v(x) * self.g_v(t)
-
-    # ==================================================
-    # METHOD: Nonlinear Term ∫(∂u/∂x)² dx
-    # ==================================================
-    def integr_term(self, t):
+    def d1h_u(self, x):
         """
-        Computes ∫(∂u/∂x)² dx — used in the nonlinear coefficient of the u-equation.
-
-        Parameters
-        ----------
-        t : float
-            Time instance
-
-        Returns
-        -------
-        float
-            Spatial integral value
+        First derivative ∂φₘ/∂x for u(x).
+        This is the normalized shifted Legendre polynomial: P̂ₘ(x)
         """
-        integrand = lambda x: self.diff1x_u(x, t)
-        result, *_ = aux.integrate_derivative_form(df=integrand, ell=self.cfg.ell)
-        return result
+        return aux.normalized_shifted_legendre(self.m_u, self.cfg.ell, x)
 
-    # ==================================================
-    # METHOD: f1(x, t) – RHS of Displacement Equation
-    # ==================================================
-    def f1(self, x, t):
+    # ------------------------------------------------------
+    # SPATIAL BASIS FUNCTION φₘ(x) FOR v(x)
+    # ------------------------------------------------------
+    def h_v(self, x):
         """
-        Right-hand side of the displacement PDE:
+        Spatial shape function for rotation field v(x, t).
+        φₘ(x) = (√ℓ / 2) * Aₘ * [Pₘ₊₁(x) - Pₘ₋₁(x)]
+        """
+        return aux.phi_m(self.m_v, self.cfg.ell, x)
 
-        f₁(x, t) = ∂²u/∂t² - (α + β ∫(∂u/∂x)² dx) ∂²u/∂x² + a₁ ∂v/∂x
+    def d1h_v(self, x):
+        """
+        First derivative ∂φₘ/∂x for v(x).
+        This is the normalized shifted Legendre polynomial: P̂ₘ(x)
+        """
+        return aux.normalized_shifted_legendre(self.m_v, self.cfg.ell, x)
 
-        Parameters
-        ----------
-        x : float
-        t : float
+    # ------------------------------------------------------
+    # TEMPORAL BASIS FUNCTIONS FOR u(t) AND v(t)
+    # ------------------------------------------------------
+    def g_u(self, t):
+        """Temporal basis function for u(t); here simply g_u(t) = t"""
+        return t
+
+    def d2g_u(self, t):
+        """Second derivative of g_u(t); returns zero since it's linear"""
+        return np.float64(0.0)
+
+    def g_v(self, t):
+        """Temporal basis function for v(t); here simply g_v(t) = t"""
+        return t
+
+    def d2g_v(self, t):
+        """Second derivative of g_v(t); returns zero since it's linear"""
+        return np.float64(0.0)
+
+    # ------------------------------------------------------
+    # EXACT SOLUTIONS FOR u(x, t) AND v(x, t)
+    # ------------------------------------------------------
+    def u(self, x, t):
+        """Exact displacement solution: u(x, t) = h_u(x) * g_u(t)"""
+        return self.h_u(x) * self.g_u(t)
+
+    def v(self, x, t):
+        """Exact rotation solution: v(x, t) = h_v(x) * g_v(t)"""
+        return self.h_v(x) * self.g_v(t)
+
+    # ------------------------------------------------------
+    # DERIVATIVES OF u(x, t)
+    # ------------------------------------------------------
+    def diff1x_u(self, x, t):
+        """First spatial derivative of u: ∂u/∂x"""
+        return self.d1h_u(x) * self.g_u(t)
+
+    def diff2t_u(self, x, t):
+        """Second temporal derivative of u: ∂²u/∂t²"""
+        return self.h_u(x) * self.d2g_u(t)
+
+    # ------------------------------------------------------
+    # DERIVATIVES OF v(x, t)
+    # ------------------------------------------------------
+    def diff1x_v(self, x, t):
+        """First spatial derivative of v: ∂v/∂x"""
+        return self.d1h_v(x) * self.g_v(t)
+
+    def diff2t_v(self, x, t):
+        """Second temporal derivative of v: ∂²v/∂t²"""
+        return self.h_v(x) * self.d2g_v(t)
+
+    # ------------------------------------------------------
+    # NONLINEAR STIFFNESS TERM FOR u-EQUATION
+    # ------------------------------------------------------
+    def nonlinear_term(self, t):
+        """
+        Nonlinear term α + β ∫(∂u/∂x)² dx used in u-equation.
+
+        For normalized Legendre basis, ∫(∂u/∂x)² dx = t².
+        """
+        return self.cfg.alpha + self.cfg.beta * t**2
+
+    # ------------------------------------------------------
+    # SOURCE TERMS FOR WEAK FORMULATIONS OF u AND v
+    # ------------------------------------------------------
+    def source_terms(self):
+        """
+        Return the functional components of the source terms f₁(x, t) and f₂(x, t)
+        appearing in the weak formulation of the Timoshenko beam equations.
+
+        Each returned component corresponds to a specific term in the weak form
+        that must be projected against the test functions φₘ (and their gradients P̂ₘ).
+
+        These callable components are necessary for computing time-dependent
+        Galerkin inner products of the form:
+            (term(x, t), φₘ)       for mass-type terms
+            (term(x, t), P̂ₘ)       for stiffness/coupling terms
+
+        -------------------------------------------------------------------
+        f₁(x, t): Source term for the u-equation (displacement field)
+        -------------------------------------------------------------------
+        Strong form:
+            f₁(x, t) = ∂²u/∂t² 
+                     - (α + β ∫(∂u/∂x)² dx) ∂²u/∂x² 
+                     + a₁ ∂v/∂x
+
+        Weak form (after integration by parts):
+            (f₁, φₘ) = (∂²u/∂t², φₘ)
+                     + (α + β ∫(∂u/∂x)² dx) (∂u/∂x, P̂ₘ)
+                     - a₁ (v, P̂ₘ)
+
+        Required components:
+            1. ∂²u/∂t²                      — acceleration term for φₘ projection
+            2. (α + β ∫(∂u/∂x)² dx) ∂u/∂x   — nonlinear term for stiffness projection
+            3. a₁ v(x, t)                   — coupling term, projected against P̂ₘ
+
+        -------------------------------------------------------------------
+        f₂(x, t): Source term for the v-equation (rotation field)
+        -------------------------------------------------------------------
+        Strong form:
+            f₂(x, t) = ∂²v/∂t² 
+                     - γ ∂²v/∂x² 
+                     + δ v 
+                     - a₂ ∂u/∂x
+
+        Weak form (after integration by parts):
+            (f₂, φₘ) = (∂²v/∂t², φₘ)
+                     + γ (∂v/∂x, P̂ₘ)
+                     + δ (v, φₘ)
+                     + a₂ (u, P̂ₘ)
+
+        Required components:
+            1. ∂²v/∂t²    — acceleration term for φₘ projection
+            2. γ ∂v/∂x    — stiffness term for P̂ₘ projection
+            3. δ v(x, t)  — mass-like term for φₘ projection
+            4. a₂ u(x, t) — coupling term, projected against P̂ₘ
 
         Returns
         -------
-        float
-            Value of RHS at point (x, t)
+        dict of str -> list of callable
+            {
+                "f1": [∂²u/∂t², (α + β ∫(∂u/∂x)² dx) ∂u/∂x, a₁ v(x, t)],
+                "f2": [∂²v/∂t², γ ∂v/∂x, δ v(x, t), a₂ u(x, t)]
+            }
         """
-        return (
-            self.diff2t_u(x, t)
-            - (self.cfg.alpha + self.cfg.beta * self.integr_term(t)) * self.diff2x_u(x, t)
-            + self.cfg.a1 * self.diff1x_v(x, t)
-        )
+        return {
+            "f1": [
+                lambda x, t: self.diff2t_u(x, t),                          # Term 1: ∂²u/∂t² for (•, φₘ)
+                lambda x, t: self.nonlinear_term(t) * self.diff1x_u(x, t), # Term 2: nonlinear term for (•, P̂ₘ)
+                lambda x, t: self.cfg.a1 * self.v(x, t)                    # Term 3: a₁ v(x, t) for (•, P̂ₘ)
+            ],
+            "f2": [
+                lambda x, t: self.diff2t_v(x, t),                         # Term 1: ∂²v/∂t² for (•, φₘ)
+                lambda x, t: self.cfg.gamma * self.diff1x_v(x, t),        # Term 2: γ ∂v/∂x for (•, P̂ₘ)
+                lambda x, t: self.cfg.delta * self.v(x, t),               # Term 3: δ v(x, t) for (•, φₘ)
+                lambda x, t: self.cfg.a2 * self.u(x, t)                   # Term 4: a₂ u(x, t) for (•, P̂ₘ)
+            ]
+        }
 
-    # ==================================================
-    # METHOD: f2(x, t) – RHS of Rotation Equation
-    # ==================================================
-    def f2(self, x, t):
-        """
-        Right-hand side of the rotation PDE:
-
-        f₂(x, t) = ∂²v/∂t² - γ ∂²v/∂x² + δ v - a₂ ∂u/∂x
-
-        Parameters
-        ----------
-        x : float
-        t : float
-
-        Returns
-        -------
-        float
-            Value of RHS at point (x, t)
-        """
-        return (
-            self.diff2t_v(x, t)
-            - self.cfg.gamma * self.diff2x_v(x, t)
-            + self.cfg.delta * self.v(x, t)
-            - self.cfg.a2 * self.diff1x_u(x, t)
-        )
-
-    # ==================================================
-    # METHOD: Post Initialization Hook
-    # ==================================================
+    # ------------------------------------------------------
+    # POST-INIT HOOK FOR LATE INITIALIZATION
+    # ------------------------------------------------------
     def __post_init__(self):
         """
-        Optional dataclass-compatible hook to re-invoke custom setup.
+        Hook for dataclass compatibility: ensures proper late-stage initialization.
+        Called after dataclass fields are set (if used in dataclass context).
         """
         self._prepare_data()
