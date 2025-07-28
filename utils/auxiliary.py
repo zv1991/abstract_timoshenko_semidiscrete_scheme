@@ -2961,7 +2961,7 @@ def plot_L2_errors_over_time(
         time_array, error_u,
         marker='o', linestyle='-', linewidth=LINE_WIDTH,
         color=color_u,
-        label=r"$E_{1,k} = \left\| u(\cdot, t_k) - \tilde{u}_{k,N}(\cdot) \right\|$"
+        label=r"$E_{1,k} = \left\| u\left( \cdot, t_k \right) - \tilde{u}_{k,N}\left( \cdot \right) \right\|$"
     )
     plt.xlabel(rf"Time $t \in \left[ {t_min:g}, {t_max:g} \right]$")
     plt.ylabel(r"$E_{1, k}$")
@@ -2981,7 +2981,7 @@ def plot_L2_errors_over_time(
         time_array, error_v,
         marker='s', linestyle='--', linewidth=LINE_WIDTH,
         color=color_v,
-        label=r"$E_{2,k} = \left\| v(\cdot, t_k) - \tilde{v}_{k,N}(\cdot) \right\|$"
+        label=r"$E_{2,k} = \left\| v\left( \cdot, t_k \right) - \tilde{v}_{k,N}\left( \cdot \right) \right\|$"
     )
     plt.xlabel(rf"Time $t \in \left[ {t_min:g}, {t_max:g} \right]$")
     plt.ylabel(r"$E_{2, k}$")
@@ -3147,7 +3147,7 @@ def plot_exact_vs_approx_solution_at_time_k(
     plt.plot(
         x_vals,
         exact_values,
-        label=rf"Exact: ${solution_type}(x, {t_k:g})$",
+        label=rf"Exact: ${solution_type}\left( x, {t_k:g} \right)$",
         color=color_exact,
         linestyle='-',
         linewidth=LINE_WIDTH
@@ -3157,7 +3157,7 @@ def plot_exact_vs_approx_solution_at_time_k(
     plt.plot(
         x_vals,
         approx_values,
-        label=rf"Approximate: $\tilde{{{solution_type}}}_{{k,N}}(x)$",
+        label=rf"Approximate: $\tilde{{{solution_type}}}_{{k,N}}\left( x \right)$",
         color=color_approx,
         linestyle='--',
         linewidth=LINE_WIDTH
@@ -3168,7 +3168,7 @@ def plot_exact_vs_approx_solution_at_time_k(
     # =========================================================================
     plt.xlabel(rf"Spatial coordinate $x \in \left[0, {config.ell:g} \right]$")
     plt.ylabel("Solution value")
-    plt.title(rf"Exact vs Approximate Solution: ${solution_type}(x, t_{{{time_layer}}})$")
+    plt.title(rf"Exact vs Approximate Solution: ${solution_type}\left( x, t_{{{time_layer}}} \right)$")
     plt.grid(True)
     plt.legend()
     plt.tight_layout()  # Auto-adjust layout to avoid text clipping
