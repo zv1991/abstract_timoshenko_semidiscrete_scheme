@@ -319,87 +319,6 @@ def shifted_legendre(m: int, ell: float, x: float | np.ndarray) -> np.float64 | 
     # Return a scalar np.float64 if input was scalar; otherwise, return a float64 array
     return np.array(result, dtype=np.float64).item() if np.isscalar(x) else np.array(result, dtype=np.float64)
 
-
-# def shifted_legendre(m: int, x, ell) -> float | np.ndarray:
-#     """
-#     Computes the shifted Legendre polynomial P̃_m(x) over the interval [0, ell]
-#     using Bonnet's recursion formula. Internally, the domain is mapped to [-1, 1],
-#     the standard domain for Legendre polynomials.
-
-#     Parameters:
-#         m (int): Degree of the shifted Legendre polynomial (non-negative).
-#         x (ndarray, list, float, or int): Input value(s) in the interval [0, ell].
-#                                           Accepts scalars, lists, or NumPy arrays.
-#         ell (float or int): Interval length (must be > 0); cast internally to float64.
-
-#     Returns:
-#         float or np.ndarray: 
-#             - A float if a scalar x was provided.
-#             - A NumPy array if x was vector-like.
-#             Represents P̃_m(x) evaluated at the given x.
-#     """
-
-#     # --- Input Normalization ---
-#     ell = np.float64(ell)                      # Convert ell to float64 for consistency
-#     x = np.asarray(x, dtype=np.float64)        # Ensure x is a float64 NumPy array (handles scalars, lists, arrays)
-#     x = np.clip(x, 0, ell)                     # Ensure all x values lie within [0, ell]
-
-#     is_scalar_input = x.ndim == 0              # Track if input was originally scalar for output formatting
-
-#     # --- Domain Mapping ---
-#     x_mapped = 2 * x / ell - 1                 # Shift x from [0, ell] to standard Legendre domain [-1, 1]
-
-#     # --- Base Cases ---
-#     if m == 0:
-#         result = np.ones_like(x_mapped)        # P̃_0(x) = 1
-#     elif m == 1:
-#         result = x_mapped                      # P̃_1(x) = x_mapped
-#     else:
-#         # --- Initialize Recursion for Bonnet's Formula ---
-#         P_m_minus_1 = np.ones_like(x_mapped)   # P̃_0(x)
-#         P_m_curr = x_mapped                    # P̃_1(x)
-
-#         # --- Bonnet's Recursion ---
-#         # Recursively compute P̃_m(x) for m ≥ 2:
-#         # P̃_{k+1}(x) = ((2k + 1)x P̃_k(x) - k P̃_{k-1}(x)) / (k + 1)
-#         for k in range(1, m):
-#             P_m_next = ((2 * k + 1) * x_mapped * P_m_curr - k * P_m_minus_1) / (k + 1)
-#             P_m_minus_1, P_m_curr = P_m_curr, P_m_next  # Update for next iteration
-
-#         result = P_m_curr  # Final result after m iterations
-
-#     # --- Return Formatting ---
-#     return result.item() if is_scalar_input else result  # Return scalar if input was scalar, else array
-
-# def shifted_legendre(n: int, ell: float, x: np.ndarray) -> np.ndarray:
-#     """
-#     Evaluate the n-th shifted Legendre polynomial on the interval [0, ell].
-
-#     The shifted Legendre polynomial is defined on the domain [0, ell], 
-#     but standard Legendre polynomials are defined on the domain [-1, 1]. 
-#     This function performs the necessary transformation to map the input x 
-#     from [0, ell] to [-1, 1] and evaluates the polynomial using its coefficients.
-
-#     Args:
-#         n (int): Degree of the polynomial (non-negative integer).
-#         ell (float): The length of the interval [0, ell].
-#         x (np.ndarray): Points in the domain [0, ell] where the polynomial should be evaluated.
-
-#     Returns:
-#         np.ndarray: Values of the shifted Legendre polynomial evaluated at the points x.
-#     """
-    
-#     # Step 1: Map the input x from the domain [0, ell] to the domain [-1, 1]
-#     x_mapped = 2 * x / ell - 1
-    
-#     # Step 2: Get the coefficients of the standard Legendre polynomial P_n (highest degree first)
-#     coeffs = np.array(legendre(n).coef)  # Extract the coefficients of the Legendre polynomial P_n
-    
-#     # Step 3: Evaluate the polynomial using jax.numpy.polyval, which performs the evaluation using the coefficients
-#     # The `coeffs` array represents the polynomial in the form:
-#     #   coeffs[0] * x^n + coeffs[1] * x^(n-1) + ... + coeffs[n-1] * x + coeffs[n]
-#     return np.polyval(coeffs, x_mapped)  # Return the evaluated polynomial at the mapped points x
-
 # --------------------------------------------------------------------------- #
 # NORMALIZED SHIFTED LEGENDRE POLYNOMIAL FUNCTION
 # --------------------------------------------------------------------------- #
@@ -456,35 +375,63 @@ def normalized_shifted_legendre(m: int, ell: float, x: float | np.ndarray) -> np
     # Return np.float64 scalar if input x was scalar, else return float64 array
     return np.array(normalized, dtype=np.float64).item() if np.isscalar(x) else np.array(normalized, dtype=np.float64)
 
-def phi_m(m: int, ell: float, x: np.ndarray) -> np.ndarray:
+# --------------------------------------------------------------------------- #
+# GALERKIN BASIS FUNCTION φ_m(x) WITH SCALAR/ARRAY SUPPORT
+# --------------------------------------------------------------------------- #
+def phi_m(m: int, ell: float, x: float | np.ndarray) -> np.float64 | np.ndarray:
     """
-    Compute the m-th Galerkin basis function φ_m(x) defined as:
+    Compute the m-th Galerkin basis function φ_m(x) on the interval [0, ell].
+
+    Defined by:
         φ_m(x) = (sqrt(ell) / 2) * A_m * [P_{m+1}(x) - P_{m-1}(x)]
 
+    where:
+        - P_k(x) is the k-th shifted Legendre polynomial on [0, ell]
+        - A_m is a normalization coefficient (predefined)
+
     Parameters:
-    - m (int): Basis function index (m >= 1).
-    - ell (float): Length of the interval [0, ell].
-    - x (np.ndarray): Input points where φ_m is evaluated.
+    ----------
+    m : int
+        Index of the Galerkin basis function (must be m ≥ 1).
+    ell : float
+        Length of the interval [0, ell]; must be positive.
+    x : float or np.ndarray
+        Input value(s) at which to evaluate φ_m(x).
 
     Returns:
-    - np.ndarray: Evaluated φ_m(x) at each x.
+    -------
+    np.float64 or np.ndarray
+        Evaluated φ_m(x):
+        - Returns `np.float64` if x is a scalar
+        - Returns `np.ndarray` of `np.float64` if x is an array
+
+    Raises:
+    ------
+    ValueError
+        If m < 1 or if normalization coefficient A_m is undefined.
     """
-    
-    # Ensure m is a valid index (Galerkin basis functions are defined for m >= 1)
+    # --- Input Validation ---
     if m < 1:
-        raise ValueError("m must be >= 1.")
-    
-    # Compute the coefficient A_m
-    A_m = coeff_A[m]
-    
-    # Compute shifted Legendre polynomials P_{m+1} and P_{m-1} at x
-    P_plus = shifted_legendre(m + 1, ell, x)
-    P_minus = shifted_legendre(m - 1, ell, x)
-    
-    # Evaluate φ_m(x) using the defined formula
+        raise ValueError("m must be ≥ 1 for Galerkin basis functions φ_m(x).")
+
+    # --- Retrieve Normalization Coefficient A_m ---
+    try:
+        A_m = coeff_A[m]
+    except (IndexError, KeyError):
+        raise ValueError(f"Normalization coefficient A_m is not defined for m = {m}.")
+
+    # --- Ensure Input is a NumPy Array ---
+    x_array = np.asarray(x)
+
+    # --- Evaluate Shifted Legendre Polynomials ---
+    P_plus = shifted_legendre(m + 1, ell, x_array)   # P_{m+1}(x)
+    P_minus = shifted_legendre(m - 1, ell, x_array)  # P_{m-1}(x)
+
+    # --- Compute φ_m(x) Using the Formula ---
     phi_vals = (np.sqrt(ell) / 2) * A_m * (P_plus - P_minus)
-    
-    return phi_vals
+
+    # --- Return Result as float64 ---
+    return np.array(phi_vals, dtype=np.float64).item() if np.isscalar(x) else np.array(phi_vals, dtype=np.float64)
 
 # =============================================================================
 # Global Variables (Must be defined externally in the environment)
@@ -550,9 +497,9 @@ def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarra
     # =========================================================================
     # STEP 2: Allocate Arrays for Diagonal, RHS Transform, and Solution
     # =========================================================================
-    d = np.empty(N)  # Main diagonal values after transformation
-    z = np.empty(N)  # Transformed RHS vector during forward elimination
-    w = np.empty(N)  # Final solution vector
+    d = np.empty(N, dtype=np.float64)  # Diagonal entries (modified during elimination)
+    z = np.empty(N, dtype=np.float64)  # Transformed RHS (forward sweep)
+    w = np.empty(N, dtype=np.float64)  # Solution vector
 
     # =========================================================================
     # STEP 3: Initialize Diagonal and RHS Vectors for First Two Entries
@@ -622,7 +569,7 @@ def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarra
 # Function: gauss_legendre_integral
 # Purpose : Numerically integrate a function over [a, b] using Gauss–Legendre quadrature
 # ==========================================================
-def gauss_legendre_integral(f, a, b, n_gauss):
+def gauss_legendre_integral(f, a: float, b: float, n_gauss: int) -> np.float64:
     """
     Compute the Gauss–Legendre quadrature of a function `f` over the interval [a, b].
 
@@ -665,7 +612,7 @@ def gauss_legendre_integral(f, a, b, n_gauss):
 
         # Validate shape to ensure correct mapping
         if f_vals.shape != x_mapped.shape:
-            raise ValueError("Function output shape mismatch. Expected shape: {}".format(x_mapped.shape))
+            raise ValueError(f"Function output shape mismatch. Expected: {x_mapped.shape}, got: {f_vals.shape}")
 
     except Exception:
         # Fallback for functions that do not support vectorized input
@@ -677,7 +624,7 @@ def gauss_legendre_integral(f, a, b, n_gauss):
     # --------------------------------------------------
     integral = half_len * np.dot(weights, f_vals)  # Weighted sum scaled by interval length
 
-    return integral
+    return np.float64(integral)
 
 # ==========================================================
 # Function: adaptive_gauss_legendre_integrator
@@ -692,7 +639,7 @@ def adaptive_gauss_legendre_integrator(
     min_dx: float = 1 / 128.0,
     n_gauss: int = 5,
     max_gauss: int = 50
-    ) -> tuple[float, float, int, int]:
+) -> tuple[np.float64, np.float64, int, int]:
     """
     Approximate the integral of `f` over the interval [0, ell] using adaptive Gauss–Legendre quadrature.
 
@@ -729,7 +676,7 @@ def adaptive_gauss_legendre_integrator(
     if ell < 0:
         raise ValueError("Parameter 'ell' must be non-negative.")
     if ell == 0:
-        return 0.0, 0.0, 0, 0  # Trivial integral
+        return np.float64(0.0), np.float64(0.0), 0, 0  # Trivial integral
 
     # ------------------------------------------
     # Step 2: Attempt full interval integration with increasing node count
@@ -750,7 +697,7 @@ def adaptive_gauss_legendre_integrator(
         # Check convergence based on absolute difference
         if np.abs(integral_curr - integral_prev) < tol:
             estimated_error = np.abs(integral_curr - integral_prev)
-            return integral_curr, estimated_error, 0, max_nodes_used
+            return np.float64(integral_curr), np.float64(estimated_error), 0, max_nodes_used
 
         integral_prev = integral_curr
 
@@ -805,7 +752,7 @@ def adaptive_gauss_legendre_integrator(
         if converged:
             if prev_total is not None and np.abs(total_integral - prev_total) < tol:
                 estimated_error = np.abs(total_integral - prev_total)
-                return total_integral, estimated_error, counter, max_nodes_used
+                return np.float64(total_integral), np.float64(estimated_error), counter, max_nodes_used
 
             # If first converged estimate, store and continue
             prev_total = total_integral
@@ -813,8 +760,11 @@ def adaptive_gauss_legendre_integrator(
     # ------------------------------------------
     # Step 5: Return best estimate if convergence not reached
     # ------------------------------------------
-    estimated_error = np.abs(total_integral - prev_total) if prev_total is not None else float('inf')
-    return total_integral, estimated_error, counter, max_nodes_used
+    estimated_error = (
+        np.abs(total_integral - prev_total)
+        if prev_total is not None else np.float64(np.inf)
+        )
+    return np.float64(total_integral), np.float64(estimated_error), counter, max_nodes_used
 
 # =============================================================================
 # Module: compute_product_integral
