@@ -277,447 +277,506 @@ differences as employed in spectral basis constructions.
 """
 
 # --------------------------------------------------------------------------- #
-# Shifted Legendre Polynomial Function
+# Function: shifted_legendre
+# Purpose: Evaluate the shifted Legendre polynomial P_m(x) over [0, ell]
 # --------------------------------------------------------------------------- #
 def shifted_legendre(m: int, ell: float, x: float | np.ndarray) -> np.float64 | np.ndarray:
     """
-    Compute the shifted Legendre polynomial P_m(x) defined over the interval [0, ell].
+    Compute the shifted Legendre polynomial P_m(x) over the interval [0, ell].
 
-    This function maps the input x from [0, ell] to [-1, 1], evaluates the standard
-    Legendre polynomial P_m at the mapped value, and returns the result in np.float64 format.
+    The function maps input values from [0, ell] to the standard Legendre domain [-1, 1],
+    evaluates the polynomial of degree m using NumPy's Legendre implementation,
+    and returns the result with float64 precision.
 
-    Parameters:
+    Parameters
     ----------
     m : int
-        Degree of the Legendre polynomial (must be >= 0).
+        Degree of the Legendre polynomial (non-negative integer).
+    
     ell : float
-        Upper bound of the evaluation domain [0, ell] (must be > 0).
+        Upper bound of the evaluation interval [0, ell]; must be strictly positive.
+    
     x : float or np.ndarray
-        Input value(s) at which to evaluate the shifted Legendre polynomial. Values
-        outside [0, ell] are clipped to this interval.
+        Scalar or array of input values. Values outside [0, ell] are clipped to this range.
 
-    Returns:
+    Returns
     -------
     np.float64 or np.ndarray
-        Evaluated polynomial value(s), returned as:
-        - np.float64 scalar if x is a scalar
-        - np.ndarray of dtype np.float64 if x is an array
+        Evaluated polynomial values:
+        - Returns a scalar np.float64 if input x is a scalar.
+        - Returns a NumPy array of dtype float64 if x is an array.
     """
-    # --- Input Preparation ---
-    # Convert input to NumPy array if not already and ensure all values fall within [0, ell]
-    x = np.clip(np.asarray(x), 0, ell)
 
-    # --- Domain Mapping ---
-    # Map input x from [0, ell] to [-1, 1] for standard Legendre polynomial domain
-    x_mapped = 2 * x / ell - 1
+    # ---------------------------- Input Validation ---------------------------- #
+    # Convert x to a NumPy array for uniform handling and clip to [0, ell]
+    x = np.clip(np.asarray(x), 0.0, ell)
 
-    # --- Polynomial Evaluation ---
-    # Evaluate the standard Legendre polynomial P_m at the transformed input
+    # -------------------------- Domain Transformation -------------------------- #
+    # Map x from [0, ell] → [-1, 1] to match the standard Legendre domain
+    x_mapped = 2.0 * x / ell - 1.0
+
+    # ------------------------ Polynomial Computation --------------------------- #
+    # Generate and evaluate the m-th Legendre polynomial at the mapped point(s)
     result = legendre(m)(x_mapped)
 
-    # --- Output Handling ---
-    # Return a scalar np.float64 if input was scalar; otherwise, return a float64 array
-    return np.array(result, dtype=np.float64).item() if np.isscalar(x) else np.array(result, dtype=np.float64)
+    # ----------------------------- Type Handling ------------------------------- #
+    # Ensure consistent return type: np.float64 for scalar input, array otherwise
+    result = np.array(result, dtype=np.float64)
+    return result.item() if np.isscalar(x) else result
 
 # --------------------------------------------------------------------------- #
-# NORMALIZED SHIFTED LEGENDRE POLYNOMIAL FUNCTION
+# Function: normalized_shifted_legendre
+# Purpose: Evaluate the normalized shifted Legendre polynomial P_m^*(x) over [0, ell]
 # --------------------------------------------------------------------------- #
 def normalized_shifted_legendre(m: int, ell: float, x: float | np.ndarray) -> np.float64 | np.ndarray:
     """
     Compute the normalized shifted Legendre polynomial P_m^*(x) over the interval [0, ell].
 
-    The normalization is defined as:
+    The normalization is defined by:
         P_m^*(x) = shifted_legendre(m, ell, x) / (A_m * sqrt(ell))
 
     where:
-        - A_m is a normalization coefficient
-        - ell is the interval length
-        - shifted_legendre is the unnormalized Legendre polynomial over [0, ell]
+        - A_m is a precomputed normalization constant (depends on m),
+        - ell is the interval width,
+        - shifted_legendre is the unnormalized shifted Legendre polynomial over [0, ell].
 
-    Parameters:
+    Parameters
     ----------
     m : int
-        Degree of the polynomial (must be non-negative).
-    ell : float
-        Length of the interval [0, ell]; must be positive.
-    x : float or np.ndarray
-        Value or values at which the polynomial is evaluated.
+        Degree of the polynomial (must be a non-negative integer).
 
-    Returns:
+    ell : float
+        Upper bound of the interval [0, ell]; must be strictly positive.
+
+    x : float or np.ndarray
+        Scalar or array of input values at which to evaluate the polynomial.
+
+    Returns
     -------
     np.float64 or np.ndarray
-        Evaluated value(s) of the normalized shifted Legendre polynomial.
-        - Returns `np.float64` if x is scalar
-        - Returns `np.ndarray` of dtype `np.float64` if x is array-like
+        Normalized polynomial values:
+        - Returns a scalar `np.float64` if input x is a scalar,
+        - Returns an `np.ndarray` of dtype float64 if input x is array-like.
 
-    Raises:
+    Raises
     ------
     ValueError
-        If the normalization coefficient A_m is not available for the specified degree m.
+        If the normalization coefficient A_m is not defined for degree m.
     """
 
-    # --- Validate and retrieve normalization coefficient A_m ---
-    # coeff_A must be defined externally as a list, array, or dictionary of constants
+    # ----------------------- Retrieve Normalization Coefficient ------------------------ #
+    # The normalization coefficients A_m must be precomputed and accessible via coeff_A
     try:
-        A_m = coeff_A[m]  # Attempt to retrieve the normalization constant
+        A_m = coeff_A[m]  # Get A_m for the given degree m
     except (IndexError, KeyError):
+        # Raise an informative error if A_m is not defined
         raise ValueError(f"Normalization coefficient A_m is not defined for m = {m}")
 
-    # --- Evaluate base shifted Legendre polynomial on [0, ell] ---
-    # This function maps x to [-1, 1], evaluates P_m(x), and returns np.float64 output
+    # ---------------------- Compute Shifted Legendre Polynomial ------------------------ #
+    # Evaluate the base (unnormalized) shifted Legendre polynomial over the interval [0, ell]
     P_m_x = shifted_legendre(m, ell, x)
 
-    # --- Compute normalized result ---
-    # Divide by A_m * sqrt(ell) to normalize the polynomial
-    normalized = P_m_x / (A_m * np.sqrt(ell))
+    # --------------------------- Apply Normalization ----------------------------------- #
+    # Compute the normalization factor: A_m * sqrt(ell)
+    norm_factor = A_m * np.sqrt(ell)
 
-    # --- Return with consistent data type ---
-    # Return np.float64 scalar if input x was scalar, else return float64 array
-    return np.array(normalized, dtype=np.float64).item() if np.isscalar(x) else np.array(normalized, dtype=np.float64)
+    # Divide the unnormalized polynomial by the normalization factor
+    normalized = P_m_x / norm_factor
+
+    # --------------------------- Return Type Handling ---------------------------------- #
+    # Ensure output type matches the input type:
+    # - If x is scalar, return a scalar np.float64
+    # - If x is array-like, return a float64 NumPy array
+    normalized = np.array(normalized, dtype=np.float64)
+    return normalized.item() if np.isscalar(x) else normalized
 
 # --------------------------------------------------------------------------- #
-# GALERKIN BASIS FUNCTION φ_m(x) WITH SCALAR/ARRAY SUPPORT
+# Function: phi_m
+# Purpose : Evaluate the m-th Galerkin basis function φ_m(x) over the interval [0, ell]
 # --------------------------------------------------------------------------- #
 def phi_m(m: int, ell: float, x: float | np.ndarray) -> np.float64 | np.ndarray:
     """
     Compute the m-th Galerkin basis function φ_m(x) on the interval [0, ell].
 
-    Defined by:
+    The Galerkin basis is defined as:
         φ_m(x) = (sqrt(ell) / 2) * A_m * [P_{m+1}(x) - P_{m-1}(x)]
 
     where:
         - P_k(x) is the k-th shifted Legendre polynomial on [0, ell]
-        - A_m is a normalization coefficient (predefined)
+        - A_m is the normalization constant specific to index m
 
-    Parameters:
+    Parameters
     ----------
     m : int
-        Index of the Galerkin basis function (must be m ≥ 1).
+        Index of the Galerkin basis function (must be ≥ 1).
+    
     ell : float
-        Length of the interval [0, ell]; must be positive.
+        Length of the domain interval [0, ell]; must be strictly positive.
+    
     x : float or np.ndarray
-        Input value(s) at which to evaluate φ_m(x).
+        Input value(s) at which to evaluate the basis function.
 
-    Returns:
+    Returns
     -------
     np.float64 or np.ndarray
-        Evaluated φ_m(x):
-        - Returns `np.float64` if x is a scalar
-        - Returns `np.ndarray` of `np.float64` if x is an array
+        Evaluated basis function φ_m(x):
+        - Returns a scalar `np.float64` if x is scalar
+        - Returns a `np.ndarray` of dtype float64 if x is array-like
 
-    Raises:
+    Raises
     ------
     ValueError
-        If m < 1 or if normalization coefficient A_m is undefined.
+        If m < 1, or if normalization coefficient A_m is undefined.
     """
-    # --- Input Validation ---
+
+    # ----------------------------------------------------------------------- #
+    # Step 1: Validate basis index m                                          #
+    # ----------------------------------------------------------------------- #
+    # Galerkin basis functions are only defined for m ≥ 1 due to the use of P_{m-1}
     if m < 1:
         raise ValueError("m must be ≥ 1 for Galerkin basis functions φ_m(x).")
 
-    # --- Retrieve Normalization Coefficient A_m ---
+    # ----------------------------------------------------------------------- #
+    # Step 2: Retrieve normalization coefficient A_m                         #
+    # ----------------------------------------------------------------------- #
+    # These must be defined externally in a dictionary or list (e.g., coeff_A[m])
     try:
         A_m = coeff_A[m]
     except (IndexError, KeyError):
         raise ValueError(f"Normalization coefficient A_m is not defined for m = {m}.")
 
-    # --- Ensure Input is a NumPy Array ---
+    # ----------------------------------------------------------------------- #
+    # Step 3: Convert input to NumPy array (supports scalar and vector input) #
+    # ----------------------------------------------------------------------- #
     x_array = np.asarray(x)
 
-    # --- Evaluate Shifted Legendre Polynomials ---
-    P_plus = shifted_legendre(m + 1, ell, x_array)   # P_{m+1}(x)
-    P_minus = shifted_legendre(m - 1, ell, x_array)  # P_{m-1}(x)
+    # ----------------------------------------------------------------------- #
+    # Step 4: Evaluate shifted Legendre polynomials P_{m+1}(x) and P_{m-1}(x) #
+    # ----------------------------------------------------------------------- #
+    P_plus  = shifted_legendre(m + 1, ell, x_array)   # P_{m+1}(x)
+    P_minus = shifted_legendre(m - 1, ell, x_array)   # P_{m-1}(x)
 
-    # --- Compute φ_m(x) Using the Formula ---
-    phi_vals = (np.sqrt(ell) / 2) * A_m * (P_plus - P_minus)
+    # ----------------------------------------------------------------------- #
+    # Step 5: Compute φ_m(x) using the Galerkin basis formula                 #
+    # ----------------------------------------------------------------------- #
+    # Formula: φ_m(x) = (sqrt(ell) / 2) * A_m * (P_{m+1}(x) - P_{m-1}(x))
+    sqrt_ell = np.sqrt(ell)
+    phi_vals = (sqrt_ell / 2.0) * A_m * (P_plus - P_minus)
 
-    # --- Return Result as float64 ---
-    return np.array(phi_vals, dtype=np.float64).item() if np.isscalar(x) else np.array(phi_vals, dtype=np.float64)
+    # ----------------------------------------------------------------------- #
+    # Step 6: Format output as np.float64 or np.ndarray                      #
+    # ----------------------------------------------------------------------- #
+    # Ensure output matches the type of input: scalar or array
+    phi_vals = np.array(phi_vals, dtype=np.float64)
+    return phi_vals.item() if np.isscalar(x) else phi_vals
 
 # =============================================================================
 # Global Variables (Must be defined externally in the environment)
 # =============================================================================
 
 # coeff_B: np.ndarray
-#   Recurrence coefficients B_k for the second-derivative term (length ≥ N+3)
+#   Recurrence coefficients B_k for the second-derivative operator
+#   Length must be ≥ N + 3
+#
 # coeff_C: np.ndarray
-#   Recurrence coefficients C_k for the main diagonal entries (length ≥ N+3)
+#   Recurrence coefficients C_k for the diagonal entries
+#   Length must be ≥ N + 3
 
 
 # =============================================================================
 # Function: sys_soln
+# Title   : Spectral-Galerkin Linear System Solver
+# Purpose : Solve symmetric banded linear systems from Galerkin discretizations
 # =============================================================================
-# Title:
-#   Spectral-Galerkin Linear System Solver
-# -----------------------------------------------------------------------------
-# Purpose:
-#   Solves a symmetric, banded linear system arising from the spectral-Galerkin 
-#   discretization of a linear PDE. It uses an efficient custom solver that:
-#     - Exploits symmetry and structure in the banded matrix
-#     - Performs forward elimination to reduce the system
-#     - Uses backward substitution to reconstruct the solution
-# -----------------------------------------------------------------------------
-# Inputs:
-#   f    : np.ndarray, right-hand side vector (length N)
-#   N    : int, number of equations (must be ≥ 2)
-#   a    : float, coefficient for the identity operator
-#   b    : float, coefficient for the second-derivative operator
-#   ell  : float, physical domain scaling factor (e.g., length of domain)
-# -----------------------------------------------------------------------------
-# Returns:
-#   w    : np.ndarray, solution vector of shape (N,)
-# -----------------------------------------------------------------------------
-# External Requirements:
-#   - Global arrays: coeff_B, coeff_C (defined with length ≥ N+3)
-# =============================================================================
-
 def sys_soln(f: np.ndarray, N: int, a: float, b: float, ell: float) -> np.ndarray:
     """
-    Solves a symmetric banded linear system using a spectral-Galerkin discretization.
+    Solves a symmetric banded linear system arising from spectral-Galerkin
+    discretization of a second-order PDE on the domain [0, ell].
 
-    Parameters:
-        f (np.ndarray): Right-hand side vector of shape (N,)
-        N (int): Number of equations (must be ≥ 2)
-        a (float): Identity matrix coefficient
-        b (float): Second-derivative operator coefficient
-        ell (float): Physical length scale of the domain
+    The solver uses a custom algorithm that:
+        - Exploits matrix symmetry and 2-banded structure
+        - Performs forward elimination with recurrence
+        - Uses backward substitution to compute the solution
 
-    Returns:
-        np.ndarray: Solution vector of shape (N,)
+    Parameters
+    ----------
+    f : np.ndarray
+        Right-hand side vector of shape (N,)
+    N : int
+        Number of unknowns; must be ≥ 2
+    a : float
+        Coefficient of the identity term in the PDE
+    b : float
+        Coefficient of the second-derivative term in the PDE
+    ell : float
+        Length of the spatial domain [0, ell]
 
-    Raises:
-        ValueError: If N < 2
+    Returns
+    -------
+    np.ndarray
+        Solution vector w of shape (N,), representing Galerkin coefficients
+
+    Raises
+    ------
+    ValueError
+        If N is less than 2
     """
 
     # =========================================================================
-    # STEP 1: Validate Input
+    # STEP 1: Input Validation
     # =========================================================================
     if N < 2:
         raise ValueError("N must be at least 2 for the system to be solvable.")
 
     # =========================================================================
-    # STEP 2: Allocate Arrays for Diagonal, RHS Transform, and Solution
+    # STEP 2: Preallocate Arrays
     # =========================================================================
-    d = np.empty(N, dtype=np.float64)  # Diagonal entries (modified during elimination)
-    z = np.empty(N, dtype=np.float64)  # Transformed RHS (forward sweep)
-    w = np.empty(N, dtype=np.float64)  # Solution vector
+    # d: modified diagonal entries
+    # z: transformed right-hand side vector
+    # w: solution vector to be returned
+    d = np.empty(N, dtype=np.float64)
+    z = np.empty(N, dtype=np.float64)
+    w = np.empty(N, dtype=np.float64)
 
     # =========================================================================
-    # STEP 3: Initialize Diagonal and RHS Vectors for First Two Entries
+    # STEP 3: Initialize Diagonals and RHS for First Two Indices
     # =========================================================================
-    diag_scale = (4 * b) / (a * ell ** 2)  # Common scaling term derived from PDE
+    diag_scale = (4 * b) / (a * ell ** 2)  # Constant appearing in weak form stiffness matrix
 
-    # Initialize the first two diagonal entries using recurrence coefficient C
+    # Initialize first diagonal entries and RHS
     d[0] = coeff_C[1] + diag_scale
     d[1] = coeff_C[2] + diag_scale
-
-    # Copy the first two RHS entries directly
     z[0] = f[0]
     z[1] = f[1]
 
     # =========================================================================
-    # STEP 4: Forward Elimination
+    # STEP 4: Forward Elimination (Recurrence Sweep)
     # =========================================================================
-    # Recursively reduce the system using recurrence relations
-    # Each step eliminates a lower diagonal component by modifying d and z
+    # Recurrence relations eliminate lower bandwidth terms and transform RHS
 
-    half_N = (N + 1) // 2  # Half length, ensures correct indexing for even/odd N
+    half_N = (N + 1) // 2  # Ensures correct range for both even and odd N
 
     for j in range(2, half_N + 1):
-        idx = 2 * (j - 1)  # Even index (0-based): 2, 4, 6, ...
+        idx = 2 * (j - 1)  # Current even index: 2, 4, 6, ...
 
         if idx < N:
-            # Update diagonal for even index using recurrence and symmetry
-            d[idx] = coeff_C[idx + 1] + diag_scale - (coeff_B[idx] ** 2) / d[idx - 2]
-            # Update RHS for even index
+            # Update diagonal for even index using recursive formula
+            d[idx] = (
+                coeff_C[idx + 1] + diag_scale
+                - (coeff_B[idx] ** 2) / d[idx - 2]
+            )
+            # Update transformed RHS vector
             z[idx] = f[idx] + (coeff_B[idx] * z[idx - 2]) / d[idx - 2]
 
         if idx + 1 < N:
-            # Update diagonal for odd index using recurrence and symmetry
-            d[idx + 1] = coeff_C[idx + 2] + diag_scale - (coeff_B[idx + 1] ** 2) / d[idx - 1]
+            # Update diagonal for odd index (paired with even)
+            d[idx + 1] = (
+                coeff_C[idx + 2] + diag_scale
+                - (coeff_B[idx + 1] ** 2) / d[idx - 1]
+            )
             # Update RHS for odd index
             z[idx + 1] = f[idx + 1] + (coeff_B[idx + 1] * z[idx - 1]) / d[idx - 1]
 
     # =========================================================================
-    # STEP 5: Backward Substitution
+    # STEP 5: Backward Substitution (Solve Upper Triangular System)
     # =========================================================================
-    # Solve system from last to first using recurrence and modified RHS
+    # Starting from the last two values, solve recursively in reverse
 
-    # Initialize last two known values of solution vector
     w[N - 1] = z[N - 1] / d[N - 1]
     w[N - 2] = z[N - 2] / d[N - 2]
 
-    # Work backwards in steps of two to exploit sparsity structure
     for j in range(half_N - 1, 0, -1):
-        idx = 2 * (j - 1)  # Even index in reverse: ..., 4, 2, 0
+        idx = 2 * (j - 1)  # Reverse index: ..., 4, 2, 0
 
         if idx + 2 < N:
-            # Back-substitute to compute even-indexed value
+            # Solve even index coefficient
             w[idx] = (z[idx] + coeff_B[idx + 2] * w[idx + 2]) / d[idx]
 
         if idx + 3 < N:
-            # Back-substitute to compute odd-indexed value
+            # Solve odd index coefficient
             w[idx + 1] = (z[idx + 1] + coeff_B[idx + 3] * w[idx + 3]) / d[idx + 1]
 
     return w
-
 
 # =========================================================================== #
 #                            Quadrature Method Suite                          #
 # =========================================================================== #
 
-# ==========================================================
+# =========================================================================== #
 # Function: gauss_legendre_integral
 # Purpose : Numerically integrate a function over [a, b] using Gauss–Legendre quadrature
-# ==========================================================
+# =========================================================================== #
+
 def gauss_legendre_integral(f, a: float, b: float, n_gauss: int) -> np.float64:
     """
-    Compute the Gauss–Legendre quadrature of a function `f` over the interval [a, b].
+    Approximate the definite integral of a function f over the interval [a, b]
+    using Gauss–Legendre quadrature with a specified number of nodes.
 
-    Gauss–Legendre quadrature provides an efficient and highly accurate method for
-    numerical integration by evaluating the function at optimal nodes within the interval.
+    This method is ideal for smooth integrands, as it minimizes integration
+    error using optimally chosen sample points (nodes) and associated weights.
 
-    Parameters:
-        f       : callable
-                  Function to integrate. Should ideally support NumPy vectorized input.
-        a       : float
-                  Lower bound of the integration interval.
-        b       : float
-                  Upper bound of the integration interval.
-        n_gauss : int
-                  Number of Gauss–Legendre nodes (degree of quadrature).
+    Parameters
+    ----------
+    f : function
+        The function to integrate. Should ideally accept NumPy arrays as input
+        for vectorized evaluation, but scalar fallback is supported.
+    
+    a : float
+        Lower bound of the integration interval.
+    
+    b : float
+        Upper bound of the integration interval.
+    
+    n_gauss : int
+        Number of Gauss–Legendre nodes to use (higher = better accuracy).
 
-    Returns:
-        float : Approximate integral of `f` over the interval [a, b].
+    Returns
+    -------
+    np.float64
+        Approximate integral value over [a, b].
+
+    Raises
+    ------
+    ValueError
+        If the shape of the function's output does not match the shape of the evaluation nodes.
     """
 
-    # --------------------------------------------------
-    # STEP 1: Generate Gauss–Legendre nodes and weights
-    #         on the standard interval [-1, 1]
-    # --------------------------------------------------
-    nodes, weights = leggauss(n_gauss)  # Nodes: integration points; Weights: associated weights
+    # -----------------------------------------------------------------------
+    # STEP 1: Generate Gauss–Legendre nodes and weights on the interval [-1, 1]
+    # -----------------------------------------------------------------------
+    # Nodes are the x-values at which to evaluate f; weights are used for integration
+    nodes, weights = leggauss(n_gauss)
 
-    # --------------------------------------------------
-    # STEP 2: Affine transformation from [-1, 1] to [a, b]
-    # --------------------------------------------------
-    mid = 0.5 * (a + b)                 # Midpoint of the interval [a, b]
-    half_len = 0.5 * (b - a)            # Half the length of interval
-    x_mapped = mid + half_len * nodes   # Transform nodes from [-1, 1] to [a, b]
+    # -----------------------------------------------------------------------
+    # STEP 2: Transform nodes from [-1, 1] to the interval [a, b]
+    # -----------------------------------------------------------------------
+    mid = 0.5 * (a + b)                 # Midpoint of the interval
+    half_len = 0.5 * (b - a)            # Half of the interval length
+    x_mapped = mid + half_len * nodes   # Affine transformation to [a, b]
 
-    # --------------------------------------------------
-    # STEP 3: Evaluate the function at the transformed nodes
-    # --------------------------------------------------
+    # -----------------------------------------------------------------------
+    # STEP 3: Evaluate function f at the transformed nodes
+    # -----------------------------------------------------------------------
     try:
-        # Try vectorized evaluation for efficiency
+        # Prefer vectorized evaluation for performance
         f_vals = np.asarray(f(x_mapped))
 
-        # Validate shape to ensure correct mapping
+        # Confirm that the output shape matches the expected shape
         if f_vals.shape != x_mapped.shape:
-            raise ValueError(f"Function output shape mismatch. Expected: {x_mapped.shape}, got: {f_vals.shape}")
+            raise ValueError(
+                f"Function output shape mismatch: expected {x_mapped.shape}, got {f_vals.shape}"
+            )
 
     except Exception:
-        # Fallback for functions that do not support vectorized input
+        # If vectorized evaluation fails, fall back to scalar loop
         f_vals = np.array([f(xi) for xi in x_mapped])
 
-    # --------------------------------------------------
-    # STEP 4: Compute the weighted sum and scale it
-    #         to reflect the [a, b] interval
-    # --------------------------------------------------
-    integral = half_len * np.dot(weights, f_vals)  # Weighted sum scaled by interval length
+    # -----------------------------------------------------------------------
+    # STEP 4: Compute the weighted sum and scale it to the interval length
+    # -----------------------------------------------------------------------
+    # The integral is approximated by: sum(w_i * f(x_i)) * (b - a)/2
+    integral = half_len * np.dot(weights, f_vals)
 
+    # -----------------------------------------------------------------------
+    # STEP 5: Return result as high-precision NumPy float
+    # -----------------------------------------------------------------------
     return np.float64(integral)
 
-# ==========================================================
+# =========================================================================== #
 # Function: adaptive_gauss_legendre_integrator
-# Purpose : Perform adaptive integration over [0, ell] using:
-#           1. Increasing Gauss–Legendre node count,
-#           2. Subinterval refinement when needed.
-# ==========================================================
+# Purpose : Adaptive numerical integration over [0, ell] using:
+#           1. Increasing Gauss–Legendre node count for accuracy,
+#           2. Recursive subinterval refinement if convergence fails.
+# Dependencies: Requires gauss_legendre_integral(f, a, b, n_gauss) to be defined.
+# =========================================================================== #
+
 def adaptive_gauss_legendre_integrator(
-    f: callable,
-    ell: float,
-    tol: float = 1e-6,
-    min_dx: float = 1 / 128.0,
-    n_gauss: int = 5,
-    max_gauss: int = 50
+    f,                       # Integrand: any function accepting float input
+    ell: float,              # Upper limit of integration interval [0, ell]
+    tol: float = 1e-6,       # Tolerance for convergence
+    min_dx: float = 1/128.0, # Minimum width of subinterval before halting refinement
+    n_gauss: int = 5,        # Initial number of Gauss–Legendre nodes
+    max_gauss: int = 50      # Maximum number of Gauss–Legendre nodes per interval
 ) -> tuple[np.float64, np.float64, int, int]:
     """
-    Approximate the integral of `f` over the interval [0, ell] using adaptive Gauss–Legendre quadrature.
+    Adaptively approximate the definite integral of `f` over [0, ell]
+    using Gauss–Legendre quadrature and subinterval refinement.
 
-    Strategy:
-        - Start with low node count on full interval and try to converge.
-        - If not successful, split the interval into smaller parts.
-        - In each subinterval, adaptively increase node count until convergence or limits are reached.
+    Parameters
+    ----------
+    f : function
+        Function to integrate; must accept float inputs and return float outputs.
+    ell : float
+        Upper bound of the integration domain [0, ell]; must be ≥ 0.
+    tol : float, optional
+        Absolute error tolerance for convergence. Default is 1e-6.
+    min_dx : float, optional
+        Minimum subinterval width. Prevents infinite subdivision. Default is 1/128.
+    n_gauss : int, optional
+        Starting number of Gauss nodes per interval. Default is 5.
+    max_gauss : int, optional
+        Maximum allowable Gauss nodes in any interval. Default is 50.
 
-    Parameters:
-        f         : callable
-                    Function to integrate. Must accept float input.
-        ell       : float
-                    Upper limit of integration interval [0, ell]. Must be ≥ 0.
-        tol       : float, optional
-                    Absolute convergence tolerance. Default is 1e-6.
-        min_dx    : float, optional
-                    Minimum subinterval width before halting refinement. Default is 1/128.
-        n_gauss   : int, optional
-                    Initial number of Gauss nodes to try. Default is 5.
-        max_gauss : int, optional
-                    Maximum allowed Gauss nodes per interval. Default is 50.
-
-    Returns:
-        tuple:
-            - float : Estimated integral value
-            - float : Estimated absolute error
-            - int   : Number of interval halving iterations
-            - int   : Maximum number of Gauss nodes used
+    Returns
+    -------
+    tuple[np.float64, np.float64, int, int]
+        - Estimated integral value
+        - Estimated absolute error
+        - Number of interval refinements performed
+        - Maximum number of Gauss nodes used in any interval
     """
 
-    # ------------------------------------------
-    # Step 1: Validate input domain
-    # ------------------------------------------
+    # ---------------------------------------------------------------------------
+    # STEP 1: Handle trivial case where ell = 0
+    # ---------------------------------------------------------------------------
     if ell < 0:
         raise ValueError("Parameter 'ell' must be non-negative.")
     if ell == 0:
-        return np.float64(0.0), np.float64(0.0), 0, 0  # Trivial integral
+        return np.float64(0.0), np.float64(0.0), 0, 0  # Zero-length interval
 
-    # ------------------------------------------
-    # Step 2: Attempt full interval integration with increasing node count
-    # ------------------------------------------
-    initial_n_gauss = n_gauss             # Preserve initial value for subinterval reuse
-    max_nodes_used = n_gauss              # Track max Gauss nodes used overall
-    converged = False                     # Flag for global convergence
+    # ---------------------------------------------------------------------------
+    # STEP 2: Try full interval integration with increasing Gauss node count
+    # ---------------------------------------------------------------------------
+    initial_n_gauss = n_gauss          # Save starting node count
+    max_nodes_used = n_gauss           # Track highest node count used
+    converged = False                  # Convergence flag
 
+    # First approximation using initial node count
     integral_prev = gauss_legendre_integral(f, 0.0, ell, n_gauss)
 
     while n_gauss + 5 <= max_gauss:
         n_gauss += 5
         integral_curr = gauss_legendre_integral(f, 0.0, ell, n_gauss)
 
-        # Track maximum nodes used
         max_nodes_used = min(max(max_nodes_used, n_gauss), max_gauss)
 
-        # Check convergence based on absolute difference
         if np.abs(integral_curr - integral_prev) < tol:
+            # Converged within tolerance; return result
             estimated_error = np.abs(integral_curr - integral_prev)
-            return np.float64(integral_curr), np.float64(estimated_error), 0, max_nodes_used
+            return (
+                np.float64(integral_curr),
+                np.float64(estimated_error),
+                0,  # No interval splitting occurred
+                max_nodes_used
+            )
+        integral_prev = integral_curr  # Continue refining
 
-        integral_prev = integral_curr
-
-    # ------------------------------------------
-    # Step 3: Adaptive refinement by interval halving
-    # ------------------------------------------
-    counter = 0            # Number of halving iterations
-    prev_total = None      # Store previous estimate for convergence check
+    # ---------------------------------------------------------------------------
+    # STEP 3: Begin adaptive refinement by subinterval splitting
+    # ---------------------------------------------------------------------------
+    counter = 0                # Count of subdivision steps
+    prev_total = None          # Store previous total for convergence check
 
     while not converged:
         counter += 1
-        n_intervals = 2 ** counter
-        dx = ell / n_intervals
+        n_intervals = 2 ** counter      # Number of subintervals
+        dx = ell / n_intervals          # Width of each subinterval
 
-        # Stop refinement if interval width is too small
         if dx < min_dx:
-            break
+            break  # Stop if intervals become too small
 
         total_integral = 0.0
-        converged = True  # Assume convergence unless proven otherwise
+        converged = True  # Will set False if any subinterval fails
 
         for i in range(n_intervals):
             a = i * dx
@@ -727,12 +786,12 @@ def adaptive_gauss_legendre_integrator(
             integral_prev = gauss_legendre_integral(f, a, b, n_gauss_local)
             local_converged = False
 
-            # Try to converge in this subinterval
             while n_gauss_local + 5 <= max_gauss:
                 n_gauss_local += 5
                 integral_curr = gauss_legendre_integral(f, a, b, n_gauss_local)
 
                 if np.abs(integral_curr - integral_prev) < tol:
+                    # This subinterval converged
                     total_integral += integral_curr
                     local_converged = True
                     break
@@ -740,249 +799,267 @@ def adaptive_gauss_legendre_integrator(
                 integral_prev = integral_curr
 
             if not local_converged:
-                # Accept last estimate even if not converged
+                # Accept best estimate, but mark global failure
                 total_integral += integral_curr
                 converged = False
 
             max_nodes_used = min(max(max_nodes_used, n_gauss_local), max_gauss)
 
-        # ------------------------------------------
-        # Step 4: Global convergence verification
-        # ------------------------------------------
+        # -----------------------------------------------------------------------
+        # STEP 4: Check for global convergence over full domain
+        # -----------------------------------------------------------------------
         if converged:
-            if prev_total is not None and np.abs(total_integral - prev_total) < tol:
-                estimated_error = np.abs(total_integral - prev_total)
-                return np.float64(total_integral), np.float64(estimated_error), counter, max_nodes_used
+            if prev_total is not None:
+                if np.abs(total_integral - prev_total) < tol:
+                    estimated_error = np.abs(total_integral - prev_total)
+                    return (
+                        np.float64(total_integral),
+                        np.float64(estimated_error),
+                        counter,
+                        max_nodes_used
+                    )
 
-            # If first converged estimate, store and continue
-            prev_total = total_integral
+            prev_total = total_integral  # Store for next check
 
-    # ------------------------------------------
-    # Step 5: Return best estimate if convergence not reached
-    # ------------------------------------------
+    # ---------------------------------------------------------------------------
+    # STEP 5: Fallback – Return best estimate even if not converged
+    # ---------------------------------------------------------------------------
     estimated_error = (
         np.abs(total_integral - prev_total)
         if prev_total is not None else np.float64(np.inf)
-        )
-    return np.float64(total_integral), np.float64(estimated_error), counter, max_nodes_used
+    )
+
+    return (
+        np.float64(total_integral),
+        np.float64(estimated_error),
+        counter,
+        max_nodes_used
+    )
 
 # =============================================================================
 # Module: compute_product_integral
-# =============================================================================
 # Purpose:
-#   Compute a weighted integral over the interval [0, ell] of the form:
+#   Compute a weighted integral over [0, ell] of the form:
 #
 #       ∫₀^ell f(x, *args) × φₘ(x) dx      if multiplier = "galerkin_basis"
 #       ∫₀^ell f(x, *args) × P̂ₘ(x) dx      if multiplier = "norm_leg_poly"
 #
-#   - φₘ(x): Galerkin-style shape function
+#   - φₘ(x): Galerkin-style basis function
 #   - P̂ₘ(x): Normalized shifted Legendre polynomial
 #
-#   The integrand is constructed using the user-defined function `f` and a
-#   selected basis function. Integration is carried out using adaptive 
-#   Gauss–Legendre quadrature with tunable precision and node control.
+#   Integration is performed using adaptive Gauss–Legendre quadrature.
+# Dependencies:
+#   - Requires: `phi_m`, `normalized_shifted_legendre`, and 
+#     `adaptive_gauss_legendre_integrator` to be defined externally.
 # =============================================================================
 
-def compute_product_integral(f, ell, m, *args, multiplier="galerkin_basis", **quad_kwargs):
+# =============================================================================
+# Function: compute_product_integral
+# Title   : Weighted Integral with Basis Multiplier
+# =============================================================================
+def compute_product_integral(
+    f,                    # Function f(x, *args): user-defined integrand
+    ell: float,           # Upper limit of integration interval [0, ell]
+    m: int,               # Index of basis function (φₘ or P̂ₘ)
+    *args,                # Additional positional arguments passed to f
+    multiplier: str = "galerkin_basis",  # Type of basis multiplier
+    **quad_kwargs         # Optional keyword arguments for quadrature tuning
+) -> tuple[np.float64, np.float64]:
     """
-    -----------------------------------------------------------------------------
-    Function: compute_product_integral
-    -----------------------------------------------------------------------------
-    Numerically computes a weighted integral of the form:
+    Compute the integral of f(x, *args) × φₘ(x) or f(x, *args) × P̂ₘ(x) over [0, ell].
 
-        ∫₀^ell f(x, *args) × φₘ(x) dx    or    ∫₀^ell f(x, *args) × P̂ₘ(x) dx
-
-    depending on the basis function selected via the `multiplier` keyword.
-
-    Parameters:
-    -----------
+    Parameters
+    ----------
     f : callable
-        User-defined integrand. Must take `x` as first argument, followed by *args.
-
+        Integrand function. Must accept float `x` as first argument, followed by optional *args.
+    
     ell : float
         Upper limit of the integration interval. Must be strictly positive.
-
+    
     m : int
-        Basis function index or order (used to generate φₘ or P̂ₘ).
-
+        Index/order of the basis function.
+    
     *args : tuple
-        Additional positional arguments passed to `f`.
+        Additional positional arguments passed directly to `f(x, *args)`.
 
     multiplier : str, optional
-        Determines which basis function is used in the product:
-            - "galerkin_basis" → Galerkin-style shape function φₘ(x)
-            - "norm_leg_poly"  → Normalized shifted Legendre polynomial P̂ₘ(x)
+        Which multiplier to apply to `f(x)` in the product:
+        - "galerkin_basis" : Galerkin basis φₘ(x)
+        - "norm_leg_poly"  : Normalized shifted Legendre polynomial P̂ₘ(x)
 
-    **quad_kwargs : dict
-        Optional quadrature control parameters:
-            - tol       : Absolute error tolerance (default 1e-6)
-            - min_dx    : Minimum subinterval width (default 1/128)
-            - n_gauss   : Initial number of Gauss–Legendre nodes (default 5)
-            - max_gauss : Maximum Gauss nodes allowed (default 50)
+    **quad_kwargs : dict, optional
+        Quadrature control parameters:
+        - tol       : float, absolute tolerance (default = 1e-6)
+        - min_dx    : float, minimum subinterval width (default = 1/128)
+        - n_gauss   : int, initial Gauss nodes per interval (default = 5)
+        - max_gauss : int, maximum Gauss nodes (default = 50)
 
-    Returns:
-    --------
-    tuple
-        - integral_value   : float, result of the integral
-        - convergence_info : float, estimated error from quadrature
+    Returns
+    -------
+    tuple[np.float64, np.float64]
+        - integral_val     : Result of the numerical integration
+        - error_estimate   : Estimated absolute quadrature error
     """
 
     # -------------------------------------------------------------------------
-    # Step 1: Input validation for the integration bound
+    # Step 1: Validate integration domain
     # -------------------------------------------------------------------------
     if ell <= 0:
         raise ValueError("The integration upper bound 'ell' must be strictly positive.")
 
     # -------------------------------------------------------------------------
-    # Step 2: Basis function selection via dispatch dictionary
+    # Step 2: Select basis function based on multiplier flag
     # -------------------------------------------------------------------------
-    # Each basis function is a callable that accepts a scalar x.
     basis_dispatch = {
-        "galerkin_basis": lambda x: phi_m(m, ell, x),              # Galerkin shape φₘ(x)
+        "galerkin_basis": lambda x: phi_m(m, ell, x),  # Galerkin basis φₘ(x)
         "norm_leg_poly" : lambda x: normalized_shifted_legendre(m, ell, x)  # Normalized P̂ₘ(x)
     }
 
-    # -------------------------------------------------------------------------
-    # Step 3: Validate basis function key and retrieve corresponding function
-    # -------------------------------------------------------------------------
     if multiplier not in basis_dispatch:
         raise ValueError(
-            f"Invalid 'multiplier' value: {multiplier!r}. "
-            f"Expected one of: {list(basis_dispatch.keys())}."
+            f"Invalid 'multiplier' argument: {multiplier!r}. "
+            f"Expected one of {list(basis_dispatch.keys())}."
         )
 
-    basis_function = basis_dispatch[multiplier]  # Extract basis function generator
+    basis_function = basis_dispatch[multiplier]  # Select corresponding basis function
 
     # -------------------------------------------------------------------------
-    # Step 4: Define the integrand used in quadrature
+    # Step 3: Define the product integrand f(x) × φₘ(x) or f(x) × P̂ₘ(x)
     # -------------------------------------------------------------------------
     def integrand(x):
-        """
-        Combined integrand: product of user-defined function and basis function.
-        """
         return f(x, *args) * basis_function(x)
 
     # -------------------------------------------------------------------------
-    # Step 5: Set quadrature defaults and override using user-supplied values
+    # Step 4: Set default quadrature settings and override via kwargs
     # -------------------------------------------------------------------------
     default_quadrature_options = {
-        'tol': 1e-6,           # Absolute integration tolerance
-        'min_dx': 1 / 128.0,   # Minimum step size for subdivision
-        'n_gauss': 5,          # Initial number of Gauss nodes per interval
-        'max_gauss': 50        # Max nodes allowed for adaptive refinement
+        'tol': 1e-6,
+        'min_dx': 1 / 128.0,
+        'n_gauss': 5,
+        'max_gauss': 50
     }
 
-    # Merge user-supplied and default quadrature options
-    filtered_kwargs = {
+    # Merge user-supplied overrides with defaults
+    quadrature_options = {
         key: quad_kwargs.get(key, default_quadrature_options[key])
         for key in default_quadrature_options
     }
 
     # -------------------------------------------------------------------------
-    # Step 6: Call the adaptive Gauss–Legendre integrator
+    # Step 5: Compute integral using adaptive Gauss–Legendre quadrature
     # -------------------------------------------------------------------------
-    value, error_estimate, _, _ = adaptive_gauss_legendre_integrator(
+    integral_val, error_estimate, _, _ = adaptive_gauss_legendre_integrator(
         integrand,
         ell,
-        **filtered_kwargs
+        **quadrature_options
     )
 
     # -------------------------------------------------------------------------
-    # Step 7: Return the result and quadrature error estimate
+    # Step 6: Return final result and error estimate
     # -------------------------------------------------------------------------
-    return value, error_estimate
+    return np.float64(integral_val), np.float64(error_estimate)
 
 # =============================================================================
 # Function: compute_time_dependent_integrals
-# =============================================================================
-# Purpose:
-#   Compute a matrix of spatial integrals over time, where each entry is:
-#
-#       ∫₀^ell f(x, t[k+1]) × φₘ₊₁(x) dx   or   ∫₀^ell f(x, t[k+1]) × P̂ₘ₊₁(x) dx
-#
-#   for each time step k and basis index m. Commonly used in time-dependent
-#   Galerkin or spectral discretizations to project source terms onto basis.
+# Title   : Time-Dependent Spatial Projection Matrix
+# Purpose : Compute integrals of the form ∫₀^ell f(x, t[k+1]) × φₘ₊₁(x) dx or
+#           ∫₀^ell f(x, t[k+1]) × P̂ₘ₊₁(x) dx for use in Galerkin/spectral methods.
 # =============================================================================
 
-def compute_time_dependent_integrals(f, N, ell, t, multiplier="galerkin_basis", **quad_kwargs):
+def compute_time_dependent_integrals(
+    f,                        # Function to integrate: f(x, t)
+    N: int,                   # Number of spatial basis functions (m = 1 to N)
+    ell: float,               # Length of spatial domain [0, ell]
+    t,                        # 1D array of time values (length ≥ 2)
+    multiplier: str = "galerkin_basis",  # Basis type: φₘ or P̂ₘ
+    **quad_kwargs             # Optional kwargs for quadrature control
+) -> np.ndarray:
     """
-    -----------------------------------------------------------------------------
-    Function: compute_time_dependent_integrals
-    -----------------------------------------------------------------------------
-    Compute weighted spatial integrals across time steps for a function f(x, t),
-    using either Galerkin basis functions or normalized shifted Legendre polynomials.
+    Compute a matrix of time-dependent spatial integrals of the form:
+
+        integrals[k, m] ≈ ∫₀^ell f(x, t[k+1]) × φₘ₊₁(x) dx
+
+    or using normalized shifted Legendre polynomials:
+
+        ≈ ∫₀^ell f(x, t[k+1]) × P̂ₘ₊₁(x) dx
+
+    These integrals are typically used to project time-dependent source terms
+    onto a spatial basis for time-stepping PDE solvers.
 
     Parameters
     ----------
     f : callable
-        Function of two variables, f(x, t), evaluated at fixed time t[k+1]
-        and integrated over spatial variable x ∈ [0, ell].
+        Function of two variables: f(x, t). Called with a fixed t at each time step.
 
     N : int
-        Number of spatial basis functions to use (1-based indexing from m=1 to m=N).
+        Number of spatial basis functions to compute (m = 1 to N).
 
     ell : float
-        Upper bound of the spatial interval [0, ell].
+        Length of spatial domain [0, ell]. Must be strictly positive.
 
     t : array-like of shape (n,)
-        Array of time nodes, where each time interval [t[k], t[k+1]] corresponds
-        to a step in the output matrix. Must contain at least two values.
+        Array of time values. Must contain at least two entries.
 
     multiplier : str, optional
-        Basis function selection method:
-            - "galerkin_basis" → φₘ(x)
-            - "norm_leg_poly"  → P̂ₘ(x)
+        Basis function to use in the integral:
+        - "galerkin_basis" → Galerkin function φₘ(x)
+        - "norm_leg_poly"  → Normalized shifted Legendre polynomial P̂ₘ(x)
 
-    **quad_kwargs : dict
+    **quad_kwargs : dict, optional
         Additional arguments passed to `compute_product_integral`, such as:
-            - tol, min_dx, n_gauss, max_gauss
+        - tol: float, error tolerance
+        - min_dx: float, smallest allowed interval
+        - n_gauss: int, initial Gauss–Legendre node count
+        - max_gauss: int, upper limit on Gauss nodes
 
     Returns
     -------
-    integrals : np.ndarray of shape (n-1, N)
-        Matrix of integral values:
-            integrals[k, m] ≈ ∫₀^ell f(x, t[k+1]) × φₘ₊₁(x) dx
+    np.ndarray of shape (n-1, N)
+        Matrix of computed spatial integrals for each time step and basis index.
     """
 
     # -------------------------------------------------------------------------
-    # Step 1: Validate time vector length
+    # STEP 1: Validate input time array
     # -------------------------------------------------------------------------
+    t = np.asarray(t, dtype=np.float64)
     n = len(t)
+
     if n < 2:
-        raise ValueError("Time array 't' must contain at least two time points.")
+        raise ValueError("Time array 't' must contain at least two time values.")
+    if ell <= 0:
+        raise ValueError("Parameter 'ell' must be strictly positive.")
 
     # -------------------------------------------------------------------------
-    # Step 2: Allocate output matrix to store results
-    # Shape: (n-1 time steps) × (N basis functions)
-    # Use float64 for numerical precision
+    # STEP 2: Allocate output matrix for integral results
+    # Shape: (n-1 time intervals) × (N basis functions)
     # -------------------------------------------------------------------------
     integrals = np.zeros((n - 1, N), dtype=np.float64)
 
     # -------------------------------------------------------------------------
-    # Step 3: Compute integrals for each time step and basis function
-    # Loop over each time interval [t_k, t_{k+1}] and each spatial basis function
+    # STEP 3: Loop over time steps and basis function indices
     # -------------------------------------------------------------------------
     for k in range(n - 1):
-        t_next = t[k + 1]  # Use time at t_{k+1} for projection
+        t_next = t[k + 1]  # Project onto basis at time t_{k+1}
 
         for m in range(N):
-            # Compute integral at time t_{k+1} with φ_{m+1}(x) or P̂_{m+1}(x)
-            value, _ = compute_product_integral(
-                f,                      # Function to integrate
-                ell,                    # Upper limit of spatial domain
-                m + 1,                  # Use 1-based indexing for basis function
-                t_next,                 # Pass t[k+1] as argument to f(x, t)
-                multiplier=multiplier,  # Select basis function type
-                **quad_kwargs           # Forward any optional quadrature controls
+            # Compute spatial integral with basis index m+1
+            result, _ = compute_product_integral(
+                f,              # Integrand: f(x, t[k+1])
+                ell,            # Domain upper bound
+                m + 1,          # Basis function index (1-based)
+                t_next,         # Fixed time passed to f(x, t)
+                multiplier=multiplier,
+                **quad_kwargs   # Forwarded quadrature options
             )
 
-            # Store result in the integral matrix (error estimate discarded)
-            integrals[k, m] = value
+            # Store only the integral result (discard error estimate)
+            integrals[k, m] = result
 
     # -------------------------------------------------------------------------
-    # Step 4: Return the computed matrix of integrals
+    # STEP 4: Return the final integral matrix
     # -------------------------------------------------------------------------
     return integrals
+
 
 # ===============================================================
 # MODULE: Finite Difference Derivative Estimators
@@ -1164,61 +1241,58 @@ def first_order_derivative_unified(f, x, ell, derivmeth='nd', h_init=1e-3):
     else:
         raise ValueError("Invalid method. Use 'nd' (numdifftools) or 'sfd' (standard finite difference).")
 
-# ==============================================================================
-# FUNCTION: integrate_derivative_form
-# PURPOSE : Evaluate integrals involving the first derivative f′(x) over [0, ell], using:
-#           - 'squared'       → ∫₀^ell [f′(x)]² dx  (energy norm)
-#           - 'norm_leg_poly' → ∫₀^ell f′(x) · P̂ₘ(x) dx (Legendre projection)
-# ==============================================================================
+# =============================================================================
+# Function: integrate_derivative_form
+# Title   : Integrals Involving the First Derivative of f(x) over [0, ell]
+# Purpose : Evaluate either:
+#           - ∫₀^ell [f′(x)]² dx        (energy norm)         if form='squared'
+#           - ∫₀^ell f′(x) × P̂ₘ(x) dx  (Legendre projection) if form='norm_leg_poly'
+# =============================================================================
 
 def integrate_derivative_form(
-    f=None,
-    df=None,
-    ell=None,
-    form='squared',
-    m=None,
-    h=1e-3,
-    derivmeth='nd',
-    **quad_kwargs
-):
+    f=None,                   # Callable function f(x) for numerical differentiation
+    df=None,                  # Callable analytical derivative f′(x), if available
+    ell=None,                 # Upper limit of integration domain [0, ell]
+    form='squared',           # Integration type: 'squared' or 'norm_leg_poly'
+    m=None,                   # Degree of Legendre polynomial (used if form = 'norm_leg_poly')
+    h=1e-3,                   # Step size for numerical differentiation
+    derivmeth='nd',           # 'nd' = external lib (e.g., numdifftools), 'sfd' = standard finite difference
+    **quad_kwargs             # Additional quadrature options (tol, n_gauss, min_dx, max_gauss)
+) -> tuple[float, float]:
     """
-    Numerically compute gradient-based integrals over [0, ell] using adaptive quadrature.
+    Numerically compute one of the following integrals over [0, ell]:
 
-    Supported forms:
-        - 'squared'       → ∫₀^ell [f′(x)]² dx
-        - 'norm_leg_poly' → ∫₀^ell f′(x) · P̂ₘ(x) dx (projection onto Legendre polynomial)
+        - Energy norm     : ∫₀^ell [f′(x)]² dx
+        - Legendre projection : ∫₀^ell f′(x) × P̂ₘ(x) dx
 
     Parameters
     ----------
     f : callable, optional
-        Function f(x). Required unless `df` is provided.
+        Function f(x) used for numerical differentiation if `df` is not provided.
 
     df : callable, optional
-        Analytical derivative function f′(x). Used if available; overrides numerical differentiation.
+        Analytical derivative f′(x), overrides numerical differentiation if given.
 
     ell : float
-        Length of the interval domain [0, ell]. Must be a positive number.
+        Length of the integration interval. Must be strictly positive.
 
     form : {'squared', 'norm_leg_poly'}, default='squared'
-        Specifies which integral to compute.
+        Specifies the integral form to compute.
 
     m : int, optional
-        Degree of normalized shifted Legendre polynomial P̂ₘ(x). Required for 'norm_leg_poly'.
+        Degree of the normalized shifted Legendre polynomial P̂ₘ(x).
+        Required if form='norm_leg_poly'.
 
     h : float, default=1e-3
-        Initial step size for numerical differentiation (only if df is not provided).
+        Initial step size for numerical differentiation.
 
     derivmeth : {'nd', 'sfd'}, default='nd'
         Method for numerical differentiation:
-            - 'nd'  → external library like `numdifftools`
-            - 'sfd' → fourth-order symmetric finite difference
+            - 'nd'  : External library like `numdifftools`
+            - 'sfd' : Fourth-order standard finite difference
 
-    **quad_kwargs : dict, optional
-        Passed to `adaptive_gauss_legendre_integrator`. May include:
-            - tol      : float, integration tolerance
-            - n_gauss  : int, number of initial Gauss–Legendre points
-            - min_dx   : float, minimum subinterval width
-            - max_gauss: int, max number of Gauss nodes allowed
+    **quad_kwargs : dict
+        Additional keyword arguments passed to `adaptive_gauss_legendre_integrator`.
 
     Returns
     -------
@@ -1226,12 +1300,12 @@ def integrate_derivative_form(
         Result of the integral over [0, ell].
 
     error_estimate : float
-        Estimated integration error from the quadrature routine.
+        Estimated integration error.
     """
 
-    # ==========================================================================
-    # INPUT VALIDATION
-    # ==========================================================================
+    # =========================================================================
+    # STEP 1: Input Validation
+    # =========================================================================
     if ell is None or ell <= 0:
         raise ValueError("Parameter 'ell' must be a positive float.")
 
@@ -1242,41 +1316,42 @@ def integrate_derivative_form(
         raise ValueError("Parameter 'form' must be 'squared' or 'norm_leg_poly'.")
 
     if form == 'norm_leg_poly' and m is None:
-        raise ValueError("Parameter 'm' must be specified for 'norm_leg_poly' integrals.")
+        raise ValueError("Parameter 'm' is required when form='norm_leg_poly'.")
 
     if form == 'squared' and m is not None:
         warnings.warn("Parameter 'm' is ignored when form='squared'.", stacklevel=2)
 
-    # ==========================================================================
-    # STEP SIZE ADJUSTMENT FOR NUMERICAL DIFFERENTIATION
-    # ==========================================================================
+    # =========================================================================
+    # STEP 2: Adjust step size for differentiation stability
+    # =========================================================================
     if f is not None:
         while h >= ell / 4:
-            h /= 2  # Reduce h if too large relative to the domain (for stability)
+            h /= 2  # Ensure step size is small enough for finite differences
 
-    # ==============================================================================
-    # INNER FUNCTION: integrand(x)
-    # Purpose: Evaluates the integrand [f′(x)]² or f′(x)·P̂ₘ(x)
-    # ==============================================================================
+    # =========================================================================
+    # STEP 3: Construct the integrand function to be integrated
+    # =========================================================================
     def integrand(x):
         """
-        Evaluate integrand at point(s) x for use in adaptive quadrature.
+        Evaluates the integrand at each x-point:
+            - [f′(x)]²       if form = 'squared'
+            - f′(x) × P̂ₘ(x) if form = 'norm_leg_poly'
 
         Parameters
         ----------
-        x : float or array-like
-            Point(s) in the interval [0, ell] where the integrand is evaluated.
+        x : float or np.ndarray
+            Evaluation point(s) in [0, ell]
 
         Returns
         -------
-        result : float or ndarray
-            Value(s) of the integrand corresponding to each x.
+        float or np.ndarray
+            Value(s) of the integrand
         """
-        x = np.atleast_1d(x)              # Convert scalar input to array, if necessary
-        result = np.empty_like(x)         # Preallocate output array
+        x = np.atleast_1d(x)              # Ensure input is an array
+        result = np.empty_like(x)         # Preallocate output
 
         for i, xi in enumerate(x):
-            # Compute derivative (analytical or numerical fallback)
+            # Compute f′(x) from df or numerically
             if df is not None:
                 f_prime = df(xi)
             else:
@@ -1284,18 +1359,18 @@ def integrate_derivative_form(
                     f, xi, ell=ell, h_init=h, derivmeth=derivmeth
                 )
 
-            # Evaluate integrand based on selected form
+            # Select integrand type
             if form == 'squared':
                 result[i] = f_prime ** 2
             else:  # form == 'norm_leg_poly'
-                Pm_val = normalized_shifted_legendre(m, ell, xi)  # Evaluate P̂ₘ(xi)
+                Pm_val = normalized_shifted_legendre(m, ell, xi)
                 result[i] = f_prime * Pm_val
 
-        return result[0] if result.size == 1 else result  # Handle scalar output if needed
+        return result[0] if result.size == 1 else result
 
-    # ==============================================================================
-    # NUMERICAL INTEGRATION: Use adaptive Gauss–Legendre integration routine
-    # ==============================================================================
+    # =========================================================================
+    # STEP 4: Apply adaptive Gauss–Legendre quadrature to compute integral
+    # =========================================================================
     integral, error_estimate, *_ = adaptive_gauss_legendre_integrator(
         integrand, ell, **quad_kwargs
     )
@@ -1304,75 +1379,68 @@ def integrate_derivative_form(
 
 # =============================================================================
 # Function: compute_initial_integrals
-# -----------------------------------------------------------------------------
-# Purpose:
-#   Compute modal Galerkin coefficients for initial data functions u(x), v(x),
-#   and their first and second derivatives over the spatial domain [0, ell],
-#   using projections onto normalized shifted Legendre polynomials φₘ(x).
-#
-#   Supports both analytic and numerical differentiation.
+# Title   : Compute Modal Galerkin Coefficients for Initial Conditions
+# Purpose : Projects initial condition functions u(x), v(x) and their first and
+#           second derivatives onto a normalized Legendre–Galerkin basis over [0, ell].
+#           Handles both analytic and numerical differentiation.
 # =============================================================================
 
 def compute_initial_integrals(
-    u, v, N, ell, *,
+    u, v, N, ell,
+    *,
     du=None, dv=None,
-    h=1e-3, derivmeth='nd', **quad_kwargs
-):
+    h: float = 1e-3,
+    derivmeth: str = 'nd',
+    **quad_kwargs
+) -> dict:
     """
-    --------------------------------------------------------------------------
-    Method: compute_initial_integrals
-    --------------------------------------------------------------------------
-    Computes Legendre–Galerkin modal coefficients for u(x), v(x), and their
-    first/second derivatives using weighted L² projections.
+    Compute modal projection coefficients for u(x), v(x), u′(x), v′(x), u″(x), v″(x)
+    onto normalized shifted Legendre basis functions φₘ(x) over [0, ell].
 
     Parameters
     ----------
     u, v : list of callable
-        Initial condition functions:
-            u = [u₀(x), u₁(x)], v = [v₀(x), v₁(x)]
+        Initial functions u = [u₀(x), u₁(x)], v = [v₀(x), v₁(x)].
 
-    du, dv : list of callables or None
-        Analytic first derivatives. If not provided or partially missing,
-        numerical differentiation is used for missing entries.
+    du, dv : list of callable or None
+        First derivative functions (or None to trigger numerical differentiation).
 
     N : int
-        Number of basis functions used (φ₁ to φ_N)
+        Number of basis functions (from m = 1 to N).
 
     ell : float
-        Spatial domain length; integral domain is [0, ell]
+        Length of spatial domain [0, ell].
 
-    h : float, default=1e-3
-        Step size for numerical differentiation (when used)
+    h : float, optional
+        Initial step size for numerical differentiation. Default is 1e-3.
 
-    derivmeth : {'nd', 'sfd'}, default='nd'
+    derivmeth : {'nd', 'sfd'}, optional
         Numerical differentiation method:
-            - 'nd'  → Use `numdifftools`
-            - 'sfd' → Use custom 4th-order finite difference
+            - 'nd'  : external package (e.g., numdifftools)
+            - 'sfd' : fourth-order standard finite difference
 
     **quad_kwargs : dict
-        Passed directly to quadrature methods for integration control
+        Passed to internal quadrature routines (e.g., tol, n_gauss, max_gauss).
 
     Returns
     -------
     dict
-        Dictionary with arrays of modal coefficients:
-            'u_proj', 'v_proj'   : L² projections
-            'diff1_u1', 'diff1_v1': First derivative (by parts)
-            'diff2_u', 'diff2_v' : Second derivative (numerical or analytic)
+        Dictionary containing arrays of modal coefficients for each projection:
+            - 'u_proj', 'v_proj'   : L² projections of u, v
+            - 'diff1_u1', 'diff1_v1': Projections of first derivatives (via parts)
+            - 'diff2_u', 'diff2_v' : Projections of second derivatives
     """
 
-    # -------------------------------------------------------------------------
-    # Step 1: Helper functions for input validation
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # STEP 1: Validate Input Arguments
+    # =========================================================================
+
     def is_valid_func_list(lst):
         return isinstance(lst, list) and all(callable(f) for f in lst)
 
     def is_valid_deriv_list(lst):
         return isinstance(lst, list) and all(callable(f) or f is None for f in lst)
 
-    # -------------------------------------------------------------------------
-    # Step 2: Validate input lists and parameter types
-    # -------------------------------------------------------------------------
     if not (is_valid_func_list(u) and is_valid_func_list(v)):
         raise ValueError("Inputs 'u' and 'v' must be lists of callable functions.")
 
@@ -1383,38 +1451,39 @@ def compute_initial_integrals(
         raise ValueError("Inputs 'du' and 'dv' must be lists of callables or None.")
 
     if not (len(u) == len(v) == len(du) == len(dv)):
-        raise ValueError("Lists 'u', 'v', 'du', and 'dv' must all be the same length.")
+        raise ValueError("All input lists ('u', 'v', 'du', 'dv') must be the same length.")
 
     if not isinstance(N, int) or N <= 0:
-        raise ValueError("Parameter 'N' must be a positive integer.")
+        raise ValueError("'N' must be a positive integer.")
 
     if not isinstance(ell, (int, float)) or ell <= 0:
-        raise ValueError("Parameter 'ell' must be a positive float.")
+        raise ValueError("'ell' must be a positive float.")
 
-    # -------------------------------------------------------------------------
-    # Step 3: Allocate arrays to hold modal coefficients
-    # -------------------------------------------------------------------------
-    num_components = len(u)  # Typically 2 (e.g., [u₀, u₁])
-    u_proj = [np.zeros(N) for _ in range(num_components)]  # Modal ⟨uᵢ, φₘ⟩
-    v_proj = [np.zeros(N) for _ in range(num_components)]  # Modal ⟨vᵢ, φₘ⟩
-    diff1_u1 = np.zeros(N)  # ⟨u₁′, φₘ⟩ via integration by parts
-    diff1_v1 = np.zeros(N)  # ⟨v₁′, φₘ⟩ via integration by parts
-    diff2_u = np.zeros((num_components, N))  # ⟨uᵢ″, φₘ⟩
-    diff2_v = np.zeros((num_components, N))  # ⟨vᵢ″, φₘ⟩
+    # =========================================================================
+    # STEP 2: Initialize Modal Coefficient Arrays
+    # =========================================================================
+    num_components = len(u)
 
-    # -------------------------------------------------------------------------
-    # Step 4: Loop over basis indices m = 1 to N
-    # -------------------------------------------------------------------------
+    u_proj = [np.zeros(N) for _ in range(num_components)]       # ⟨uᵢ, φₘ⟩
+    v_proj = [np.zeros(N) for _ in range(num_components)]       # ⟨vᵢ, φₘ⟩
+    diff1_u1 = np.zeros(N)                                      # ⟨u₁′, φₘ⟩
+    diff1_v1 = np.zeros(N)                                      # ⟨v₁′, φₘ⟩
+    diff2_u = np.zeros((num_components, N))                     # ⟨uᵢ″, φₘ⟩
+    diff2_v = np.zeros((num_components, N))                     # ⟨vᵢ″, φₘ⟩
+
+    # =========================================================================
+    # STEP 3: Loop Over Basis Indices (m = 1 to N)
+    # =========================================================================
     for m in range(N):
-        m_idx = m + 1  # 1-based indexing for Legendre modes
+        m_idx = m + 1  # Shift to 1-based indexing for basis φₘ
 
         # ---------------------------------------------------------------------
-        # Step 4.1: Compute L² projection coefficients ⟨uᵢ, φₘ⟩ and ⟨vᵢ, φₘ⟩
+        # STEP 3.1: Project uᵢ, vᵢ onto Galerkin basis φₘ(x)
         # ---------------------------------------------------------------------
         for i in range(num_components):
             u_proj[i][m], _ = compute_product_integral(
                 u[i], ell, m_idx,
-                multiplier="galerkin_basis",  # Use Galerkin basis φₘ
+                multiplier="galerkin_basis",
                 **quad_kwargs
             )
             v_proj[i][m], _ = compute_product_integral(
@@ -1424,15 +1493,14 @@ def compute_initial_integrals(
             )
 
         # ---------------------------------------------------------------------
-        # Step 4.2: First derivative projections ⟨u₁′, φₘ⟩ and ⟨v₁′, φₘ⟩
-        # Done using integration by parts: ⟨f′, φₘ⟩ = -⟨f, φₘ′⟩
+        # STEP 3.2: Project first derivative ⟨u₁′, φₘ⟩ and ⟨v₁′, φₘ⟩
+        # Done via integration by parts: ⟨f′, φₘ⟩ = -⟨f, φₘ′⟩
         # ---------------------------------------------------------------------
         diff1_u1[m] = compute_product_integral(
             lambda x: -u[1](x), ell, m_idx,
-            multiplier="norm_leg_poly",  # φₘ′ is handled via norm_leg_poly
+            multiplier="norm_leg_poly",
             **quad_kwargs
         )[0]
-
         diff1_v1[m] = compute_product_integral(
             lambda x: -v[1](x), ell, m_idx,
             multiplier="norm_leg_poly",
@@ -1440,245 +1508,416 @@ def compute_initial_integrals(
         )[0]
 
         # ---------------------------------------------------------------------
-        # Step 4.3: Second derivative projections ⟨uᵢ″, φₘ⟩ and ⟨vᵢ″, φₘ⟩
-        # Use either analytic first derivative (df), or original f for numeric
+        # STEP 3.3: Project second derivatives ⟨uᵢ″, φₘ⟩ and ⟨vᵢ″, φₘ⟩
+        # Use analytic or numerical differentiation
+        # Done via integration by parts: ⟨f′′, φₘ⟩ = -⟨f′, φₘ′⟩
         # ---------------------------------------------------------------------
         for i in range(num_components):
-            # Handle uᵢ″ projection
-            f_u = None if du[i] else (lambda x, i=i: -u[i](x))         # For numerical diff
-            df_u = (lambda x, i=i: -du[i](x)) if du[i] else None       # For analytic diff
+            f_u = None if du[i] else (lambda x, i=i: -u[i](x))
+            df_u = (lambda x, i=i: -du[i](x)) if du[i] else None
 
             diff2_u[i][m], _ = integrate_derivative_form(
-                f=f_u, df=df_u, ell=ell, form='norm_leg_poly', m=m_idx,
-                h=h, derivmeth=derivmeth, **quad_kwargs
+                f=f_u, df=df_u, ell=ell,
+                form='norm_leg_poly', m=m_idx,
+                h=h, derivmeth=derivmeth,
+                **quad_kwargs
             )
 
-            # Handle vᵢ″ projection
             f_v = None if dv[i] else (lambda x, i=i: -v[i](x))
             df_v = (lambda x, i=i: -dv[i](x)) if dv[i] else None
 
             diff2_v[i][m], _ = integrate_derivative_form(
-                f=f_v, df=df_v, ell=ell, form='norm_leg_poly', m=m_idx,
-                h=h, derivmeth=derivmeth, **quad_kwargs
+                f=f_v, df=df_v, ell=ell,
+                form='norm_leg_poly', m=m_idx,
+                h=h, derivmeth=derivmeth,
+                **quad_kwargs
             )
 
-    # -------------------------------------------------------------------------
-    # Step 5: Package and return all computed modal coefficients
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # STEP 4: Return Computed Coefficients in Dictionary Format
+    # =========================================================================
     return {
-        'u_proj': u_proj,       # ⟨uᵢ, φₘ⟩
-        'v_proj': v_proj,       # ⟨vᵢ, φₘ⟩
-        'diff1_u1': diff1_u1,   # ⟨u₁′, φₘ⟩
-        'diff1_v1': diff1_v1,   # ⟨v₁′, φₘ⟩
-        'diff2_u': diff2_u,     # ⟨uᵢ″, φₘ⟩
-        'diff2_v': diff2_v      # ⟨vᵢ″, φₘ⟩
+        'u_proj'   : u_proj,        # Projections of uᵢ
+        'v_proj'   : v_proj,        # Projections of vᵢ
+        'diff1_u1' : diff1_u1,      # First derivative projection ⟨u₁′, φₘ⟩
+        'diff1_v1' : diff1_v1,      # First derivative projection ⟨v₁′, φₘ⟩
+        'diff2_u'  : diff2_u,       # Second derivative ⟨uᵢ″, φₘ⟩
+        'diff2_v'  : diff2_v        # Second derivative ⟨vᵢ″, φₘ⟩
     }
+
 
 # --------------------------------------------------------------------------- #
 """ Construction of operator matrices (stencils)
     derived via the Legendre–Galerkin spectral method """
 # --------------------------------------------------------------------------- #
 
-# --- Identity Operator Assembly ---
+# ==============================================================================
+# Function: associated_identity_operator
+# Title   : Assemble Symmetric Mass-Like Identity Operator Matrix (Sparse)
+# Purpose : Constructs a symmetric sparse matrix using a 3-point stencil pattern,
+#           often used in spectral Galerkin discretizations with Legendre polynomials.
+#           The matrix is assembled using pre-defined coefficients:
+#           - Main diagonal  →  C(m+1)
+#           - ±2 diagonals   → -B(m+2)
+# ==============================================================================
+
 def associated_identity_operator(N: int) -> csr_matrix:
     """
-    Assemble a symmetric mass-like identity operator with a 3-point stencil.
+    Assemble a symmetric sparse mass-like identity operator for Galerkin methods.
 
-    Parameters:
-        N (int): Number of basis functions (matrix size).
+    Parameters
+    ----------
+    N : int
+        Number of basis functions (i.e., the size of the operator matrix).
 
-    Returns:
-        csr_matrix: Sparse matrix representing the identity operator.
+    Returns
+    -------
+    csr_matrix
+        Symmetric sparse matrix (CSR format) with diagonals populated as:
+            - Main diagonal:    C(m+1)
+            - Off-diagonals:   -B(m+2) at positions ±2
     """
-    # Main diagonal: C(m+1)
-    main_diag = np.array([coeff_C[m + 1] for m in range(N)])
+    
+    # ==========================================================================
+    # STEP 1: Compute Main Diagonal
+    # Contains C(m+1) entries for m = 0 to N-1
+    # ==========================================================================
+    main_diag = np.array([coeff_C[m + 1] for m in range(N)], dtype=np.float64)
 
-    # Off-diagonals: -B(m+2), symmetric about ±2 diagonals
-    off_diag = np.array([-coeff_B[m + 2] for m in range(N - 2)])
+    # ==========================================================================
+    # STEP 2: Compute Off-Diagonals (±2)
+    # Contains -B(m+2) entries for m = 0 to N-3 (since it shifts ±2)
+    # ==========================================================================
+    off_diag = np.array([-coeff_B[m + 2] for m in range(N - 2)], dtype=np.float64)
 
-    # Create sparse matrix with diagonals at positions 0, ±2
+    # ==========================================================================
+    # STEP 3: Assemble Sparse Matrix Using SciPy's diags()
+    # Place the main and off-diagonals at offsets [0, -2, 2]
+    # CSR format ensures efficient row-based storage/access
+    # ==========================================================================
     H = diags(
-        diagonals=[main_diag, off_diag, off_diag],
-        offsets=[0, -2, 2],
-        shape=(N, N),
-        format="csr"
+        diagonals=[main_diag, off_diag, off_diag],  # Three diagonals
+        offsets=[0, -2, 2],                         # Positions: center and ±2
+        shape=(N, N),                               # Matrix shape
+        format="csr"                                # Compressed Sparse Row format
     )
+
     return H
 
-# --- First-Order Operator Assembly ---
+# ==============================================================================
+# Function: associated_first_order_operator
+# Title   : Assemble First-Order Skew-Symmetric Operator Matrix (Sparse)
+# Purpose : Constructs a sparse matrix for the first derivative operator
+#           using a ±1 stencil. This is typically used in Galerkin-type
+#           formulations involving spectral methods or orthogonal polynomials.
+#           The operator is skew-symmetric by design.
+# ==============================================================================
+
 def associated_first_order_operator(N: int) -> csr_matrix:
     """
-    Assemble a skew-symmetric first-order derivative operator using a ±1 stencil.
+    Assemble a skew-symmetric sparse matrix representing the first derivative
+    operator using a ±1 diagonal stencil.
 
-    Parameters:
-        N (int): Number of basis functions (matrix size).
+    Parameters
+    ----------
+    N : int
+        Number of basis functions (i.e., matrix size). Must be ≥ 2.
 
-    Returns:
-        csr_matrix: Sparse matrix representing the first-order operator.
+    Returns
+    -------
+    csr_matrix
+        Sparse skew-symmetric matrix (CSR format) where:
+            - Upper diagonal (offset +1):  A(m+1) * A(m+2)
+            - Lower diagonal (offset -1): -A(m+1) * A(m+2)
     """
-    # Upper diagonal: A(m+1)*A(m+2), size (N-1)
+
+    # ==========================================================================
+    # STEP 1: Input Validation
+    # Ensure sufficient size to support ±1 off-diagonal structure
+    # ==========================================================================
+    if not isinstance(N, int) or N < 2:
+        raise ValueError("N must be an integer ≥ 2 for a valid ±1 stencil.")
+
+    # ==========================================================================
+    # STEP 2: Compute Upper Diagonal Elements
+    # For m = 0 to N-2, construct A(m+1) * A(m+2)
+    # This defines the upper diagonal (i, i+1) of the matrix
+    # ==========================================================================
     upper_diag = np.array([
         coeff_A[m + 1] * coeff_A[m + 2] for m in range(N - 1)
-    ])
+    ], dtype=np.float64)
 
-    # Lower diagonal: Negative of upper for skew-symmetry
+    # ==========================================================================
+    # STEP 3: Compute Lower Diagonal Elements
+    # Skew-symmetry requires lower diagonal = -upper_diag
+    # ==========================================================================
     lower_diag = -upper_diag
 
-    # Assemble sparse skew-symmetric matrix
+    # ==========================================================================
+    # STEP 4: Assemble the Sparse Matrix
+    # - Upper diagonal placed at offset +1
+    # - Lower diagonal placed at offset -1
+    # ==========================================================================
     B = diags(
-        diagonals=[lower_diag, upper_diag],
-        offsets=[-1, 1],
-        shape=(N, N),
-        format="csr"
+        diagonals=[lower_diag, upper_diag],  # Diagonals: below and above the main
+        offsets=[-1, 1],                     # Positions relative to the main diagonal
+        shape=(N, N),                        # Matrix dimensions
+        format="csr"                         # Use Compressed Sparse Row for efficiency
     )
+
     return B
 
-# --- Operator Dispatcher ---
+
+# ==============================================================================
+# Function: associated_operators
+# Title   : Galerkin Operator Dispatcher
+# Purpose : Return the appropriate Galerkin operator matrix based on user input.
+#           Supports identity (mass-like) and first-order derivative operators.
+# ==============================================================================
+
 def associated_operators(N: int, operator: str) -> csr_matrix:
     """
-    Dispatcher for assembling different Galerkin operator matrices.
+    Dispatches to the correct operator assembly routine based on `operator` type.
 
-    Parameters:
-        N (int): Matrix size (number of basis functions).
-        operator (str): Operator type: "identity" or "first-order".
+    Parameters
+    ----------
+    N : int
+        Number of basis functions (matrix dimension).
 
-    Returns:
-        csr_matrix: Assembled sparse operator matrix.
-    
-    Raises:
-        ValueError: If the operator type is invalid.
+    operator : str
+        Type of operator to assemble:
+            - "identity"      : Returns symmetric mass-like identity matrix.
+            - "first-order"   : Returns skew-symmetric derivative matrix.
+
+    Returns
+    -------
+    csr_matrix
+        Sparse matrix (in CSR format) representing the selected operator.
+
+    Raises
+    ------
+    ValueError
+        If the operator type is unrecognized.
     """
     if operator == "identity":
         return associated_identity_operator(N)
     elif operator == "first-order":
         return associated_first_order_operator(N)
     else:
-        raise ValueError(f"Unknown operator type '{operator}'. Use 'identity' or 'first-order'.")
+        raise ValueError(
+            f"Unknown operator type '{operator}'. "
+            "Use 'identity' or 'first-order'."
+        )
 
-# --- Galerkin Operator Application ---
+
+# ==============================================================================
+# Function: galerkin_stencils
+# Title   : Apply Galerkin Operator to Vector
+# Purpose : Applies a selected sparse Galerkin operator matrix to an input vector.
+#           Useful in spectral-Galerkin schemes involving modal transformations.
+# ==============================================================================
+
 def galerkin_stencils(N: int, v: np.ndarray, operator: str = "identity") -> np.ndarray:
     """
-    Apply a Galerkin operator to a vector using sparse matrix multiplication.
+    Apply a Galerkin operator matrix to a vector via sparse matrix multiplication.
 
-    Parameters:
-        N (int): Vector size (must match operator matrix size).
-        v (np.ndarray): Input vector (shape: (N,)).
-        operator (str): Operator type to apply.
+    Parameters
+    ----------
+    N : int
+        Size of the Galerkin operator matrix (and expected vector length).
 
-    Returns:
-        np.ndarray: Output vector A * v.
-    
-    Raises:
-        ValueError: If vector shape doesn't match N or invalid operator.
+    v : np.ndarray
+        Input vector of shape (N,). Represents modal coefficients or function samples.
+
+    operator : str, default="identity"
+        Operator type to apply ("identity" or "first-order").
+
+    Returns
+    -------
+    np.ndarray
+        Output vector resulting from matrix-vector product: A @ v
+
+    Raises
+    ------
+    ValueError
+        If input vector `v` has incompatible shape.
     """
     if v.shape[0] != N:
-        raise ValueError(f"Input vector length mismatch: expected {N}, got {v.shape[0]}.")
+        raise ValueError(
+            f"Input vector length mismatch: expected {N}, got {v.shape[0]}."
+        )
 
-    A = associated_operators(N, operator)
-    return A.dot(v)
+    A = associated_operators(N, operator)  # Retrieve sparse operator matrix
+    return A.dot(v)                        # Perform matrix-vector multiplication
 
-# --------------------------------------------------------------------------- #
-""" Computation of the condition number associated with the Galerkin 
-    system matrix """
-# --------------------------------------------------------------------------- #
+# ==============================================================================
+# Function: condition_number_associated_matrix
+# Title   : Condition Number of Modified Galerkin System Matrix
+# Purpose : Compute the 2-norm condition number κ₂(A) for a matrix of the form:
+#               A = H + (4b / (a * ell²)) * I
+#           where H is the Galerkin identity (mass-like) operator.
+# ==============================================================================
 
-def condition_number_associated_matrix(N: int, ell: float, a: float, b: float) -> float:
+def condition_number_associated_matrix(
+    N: int,
+    ell: float,
+    a: float,
+    b: float
+) -> np.float64:
     """
-    Compute the condition number κ₂(A) of a modified Galerkin matrix:
+    Compute the 2-norm condition number κ₂(A) of a Galerkin system matrix:
         A = H + (4b / (a * ell²)) * I
 
-    Parameters:
-        N (int): Matrix size.
-        ell (float): Scaling parameter.
-        a (float): Physical coefficient.
-        b (float): Additive coefficient.
+    Parameters
+    ----------
+    N : int
+        Number of basis functions (size of the Galerkin matrix).
+    
+    ell : float
+        Length of the spatial domain [0, ell]; must be strictly positive.
 
-    Returns:
-        float: 2-norm condition number of the matrix.
+    a : float
+        Physical coefficient for the Galerkin operator term.
+
+    b : float
+        Coefficient applied to the identity term in A.
+
+    Returns
+    -------
+    np.float64
+        The 2-norm condition number of matrix A, as a float64.
     """
-    # Galerkin identity operator H
-    H = associated_operators(N, operator="identity")
 
-    # Identity matrix scaled by constant
-    scalar = (4 * b) / (a * ell ** 2)
+    # ----------------------------------------------------------------------
+    # STEP 1: Input Validation
+    # ----------------------------------------------------------------------
+    if not isinstance(N, int) or N <= 0:
+        raise ValueError("Parameter 'N' must be a positive integer.")
+
+    if not isinstance(ell, (int, float)) or ell <= 0:
+        raise ValueError("Parameter 'ell' must be a strictly positive float.")
+
+    if not isinstance(a, (int, float)) or a == 0:
+        raise ValueError("Parameter 'a' must be a non-zero number.")
+
+    if not isinstance(b, (int, float)):
+        raise ValueError("Parameter 'b' must be a numeric value.")
+
+    # ----------------------------------------------------------------------
+    # STEP 2: Assemble the System Matrix A
+    # ----------------------------------------------------------------------
+
+    # Retrieve the symmetric mass-like operator H using a Galerkin stencil
+    H = associated_operators(N, operator="identity")  # H is in sparse CSR format
+
+    # Compute scaling factor for identity matrix component
+    scalar = (4 * b) / (a * ell**2)  # Derived from the physical PDE formulation
+
+    # Assemble the scaled identity operator in CSR sparse format
     I_scaled = scalar * identity(N, format="csr")
 
-    # Final matrix A
-    A = H + I_scaled
+    # Combine Galerkin and identity contributions to form A
+    A = H + I_scaled  # Still sparse, efficient for large N
 
-    # Convert to dense for condition number computation
-    return cond(A.toarray(), p=2)
+    # ----------------------------------------------------------------------
+    # STEP 3: Condition Number Computation
+    # ----------------------------------------------------------------------
 
-# ----------------------------------------------------------------------
+    # Convert sparse matrix to dense array for use with SciPy's cond()
+    A_dense = A.toarray()
+
+    # Compute the condition number using 2-norm (spectral norm)
+    kappa_2 = cond(A_dense, p=2)
+
+    # Cast result to consistent NumPy float64 type for precision
+    return np.float64(kappa_2)
+
+# ==============================================================================
 # Function: galerkin_approx
-# Purpose : Computes the Galerkin approximation of u(x) using a set of 
-#           basis functions φₘ over a spatial domain [0, ell]. The 
-#           approximation is formed as a linear combination of φₘ 
-#           weighted by provided coefficients for each temporal layer.
-# Inputs  : 
-#    - ell   : Length of spatial domain (float)
-#    - coeff : Coefficient matrix of shape (n, N), where each row 
-#              corresponds to a temporal layer
-#    - x     : Spatial locations (float or np.ndarray)
-# Output  : 
-#    - Approximation result at x (scalar or np.ndarray of shape (n, len(x)))
-# ----------------------------------------------------------------------
+# Title   : Galerkin Series Evaluation Over Space
+# Purpose : Computes the Galerkin approximation u(x) as a linear combination
+#           of orthonormal basis functions φₘ(x), using precomputed coefficients.
+#           Handles both scalar and array-valued spatial inputs.
+# ==============================================================================
 
-def galerkin_approx(ell: float, coeff: np.ndarray, x: np.ndarray) -> np.ndarray:
+def galerkin_approx(
+    ell: float,
+    coeff: np.ndarray,
+    x: float | np.ndarray
+) -> np.ndarray | np.float64:
     """
-    Compute the Galerkin approximation:
-        u(x) ≈ sum_{m=1}^{N} coeff[m-1] * phi_m(m, ell, x)
+    --------------------------------------------------------------------------
+    Method: galerkin_approx
+    --------------------------------------------------------------------------
+    Evaluate the Galerkin approximation:
+        u(x) ≈ Σₘ coeff[i, m-1] · φₘ(x)
+    using precomputed modal coefficients for each time layer.
 
-    Parameters:
-    - ell (float): Length of spatial interval [0, ell] for each basis function phi_m(m, ell, x).
-    - coeff (np.ndarray): Coefficient matrix of shape (n, N), typically from solving a Galerkin system.
-                          Each row corresponds to a temporal layer.
-    - x (float or np.ndarray): Locations at which the approximation is evaluated.
+    Parameters
+    ----------
+    ell : float
+        Length of the spatial domain [0, ell].
 
-    Returns:
-    - np.ndarray or float: Evaluated approximation. Returns a scalar if input x is scalar,
-                           otherwise returns an array of shape (n, len(x)).
+    coeff : np.ndarray
+        Coefficient matrix of shape (n, N), where:
+            - n  = number of time layers (or trials)
+            - N  = number of basis functions (φ₁ to φ_N)
+
+    x : float or np.ndarray
+        Spatial coordinate(s) at which to evaluate u(x). Can be scalar or array-like.
+
+    Returns
+    -------
+    np.ndarray or np.float64
+        Approximation u(x). Return shape:
+            - (n,)              → if x is scalar
+            - (n, len(x))       → if x is an array of points
     """
-    
-    # Ensure 'ell' is explicitly a float (e.g., if passed as an int)
-    ell = float(ell)
 
-    # Convert input arrays to float-type NumPy arrays to avoid unexpected behavior
-    coeff = np.asarray(coeff, dtype=float)
-    x = np.asarray(x, dtype=float)
+    # ==========================================================================
+    # STEP 1: Input Normalization
+    # ==========================================================================
 
-    # Determine the number of basis functions (assumes coeff shape is (n, N))
-    N = coeff.shape[1]
+    ell = np.float64(ell)                     # Ensure ell is float64 for precision
+    coeff = np.asarray(coeff, dtype=np.float64)  # Convert coeff to NumPy array if needed
 
-    # Check if input 'x' is a scalar (to format output accordingly)
-    is_scalar = np.isscalar(x)
+    N = coeff.shape[1]                        # Number of basis functions
+    is_scalar = np.isscalar(x)                # Remember if x was scalar for output formatting
 
-    # Flatten 'x' to ensure it's always a 1D array for consistent processing
-    x = np.atleast_1d(x)
+    x = np.atleast_1d(x).astype(np.float64)   # Ensure x is 1D float64 array for consistency
 
-    # Evaluate basis functions φₘ(x) for m = 1 to N
-    # Resulting shape: (N, len(x)), each row is phi_m for m in 1..N
-    phi_vals = np.array([phi_m(m + 1, ell, x) for m in range(N)])
+    # ==========================================================================
+    # STEP 2: Basis Function Evaluation
+    # ==========================================================================
+    # Compute φₘ(x) for m = 1 to N
+    # Output: shape (N, len(x)), where each row is φₘ(x) for a specific m
+    phi_vals = np.array([
+        phi_m(m + 1, ell, x)  # m + 1 since φ₁ corresponds to index m=0
+        for m in range(N)
+    ], dtype=np.float64)
 
-    # Compute linear combination: matrix multiplication of coeff (n x N) with phi_vals (N x len(x))
+    # ==========================================================================
+    # STEP 3: Modal Expansion Computation
+    # ==========================================================================
+    # Multiply coeff (shape: n x N) with phi_vals (shape: N x len(x))
+    # Result shape: (n, len(x)) — evaluates the Galerkin sum for each time layer
     result = coeff @ phi_vals
 
-    # If x was scalar, return a vector (n,) with each row's result at that scalar x
+    # ==========================================================================
+    # STEP 4: Return Formatted Output
+    # ==========================================================================
+    # If x was scalar, return shape (n,)
     return result[:, 0] if is_scalar else result
 
-# =============================================================================
-# Analytical Solution Evaluation Utilities for Timoshenko Beam Model
-# -----------------------------------------------------------------------------
-# These two functions allow evaluation and inspection of exact analytical
-# solutions (u or v) of the Timoshenko beam model, either as precomputed arrays
-# over time-space grids or as callables for on-demand evaluation.
-# =============================================================================
-
-# -----------------------------------------------------------------------------
+# ==============================================================================
 # Function: exact_solution_on_grid
-# Description: Evaluate the analytical solution u(x, t) or v(x, t)
-#              at a spatial point or over a spatial grid for all/specific times.
-# -----------------------------------------------------------------------------
+# Title   : Evaluate Analytical Solution of Timoshenko Beam Model on Grid
+# Purpose : Computes the analytical solution u(x, t) or v(x, t) across either:
+#           - a uniform spatial grid (over full or specific time steps), or
+#           - a specific spatial location over time.
+#           Useful for benchmarking or comparison with numerical results.
+# ==============================================================================
+
 def exact_solution_on_grid(
     func: callable,
     config,
@@ -1687,94 +1926,103 @@ def exact_solution_on_grid(
     k: int = None
 ) -> np.ndarray | float:
     """
-    Evaluate the analytical solution of the Timoshenko beam model on a spatial grid
-    or specific point at given time(s).
+    --------------------------------------------------------------------------
+    Method: exact_solution_on_grid
+    --------------------------------------------------------------------------
+    Evaluate the exact (analytical) solution u(x, t) or v(x, t) for the
+    Timoshenko beam model either:
+        - across a spatial grid for all time steps,
+        - or at a specific spatial location across time,
+        - or at a specific time and location(s).
 
     Parameters
     ----------
     func : callable
-        The analytical solution of the Timoshenko beam model.
-        - Must have signature: func(x, t)
-        - Should return displacement u(x, t) or rotation v(x, t).
-        - Must support vectorized spatial input `x` and scalar temporal input `t`.
+        The analytical solution function of the form func(x, t).
+        Must accept vector-valued `x` and scalar `t`.
 
     config : object
-        Configuration object with the following required attributes:
-        - config.ell : float
-            Length of the spatial domain.
-        - config.t : np.ndarray
-            Array of discrete time values.
-        - config.n : int
-            Maximum index (or total number of steps - 1) for time grid.
+        Configuration object with attributes:
+            - ell (float): Length of the spatial domain.
+            - t (np.ndarray): Discrete time values.
+            - n (int): Number of time steps minus one (len(t) - 1).
 
     unif_prt_spc : int, optional
-        Number of uniform spatial partitions in the interval [0, config.ell].
-        Used to generate a grid of spatial points.
+        Number of uniform spatial subintervals. Defines the grid.
+        If given, generates a grid of `unif_prt_spc + 1` points.
 
     x_val : float, optional
-        A specific spatial coordinate in [0, config.ell] at which to evaluate the solution.
-        Used for single-point evaluation instead of a grid.
+        Specific spatial location in [0, ell] for single-point evaluation.
 
     k : int, optional
-        Specific time step index (from config.t) at which to extract the result.
-        If None, the full time evolution is returned.
+        Time index. If provided, returns data only at that time step.
 
     Returns
     -------
     np.ndarray or float
-        - If `k` is None: returns a 2D np.ndarray of shape (len(config.t), len(x)),
-          containing values at all time steps for the specified spatial location(s).
-        - If `k` is provided: returns a 1D np.ndarray or float with the values
-          at the specified time step.
+        Solution values:
+            - If `k` is None: array of shape (len(t), len(x)).
+            - If `k` is given: array of shape (len(x),) or scalar.
     """
 
-    # -------------------------------------------------------------------------
-    # Input Validation
-    # -------------------------------------------------------------------------
-    # Require at least one spatial argument: either a single point or a full grid
-    if x_val is None and unif_prt_spc is None:
-        raise ValueError("Specify either `x_val` or `unif_prt_spc`.")
+    # ==========================================================================
+    # STEP 1: Validate Inputs
+    # ==========================================================================
 
-    # -------------------------------------------------------------------------
-    # Spatial Grid or Point Setup
-    # -------------------------------------------------------------------------
+    # Ensure at least one spatial evaluation mode is requested
+    if x_val is None and unif_prt_spc is None:
+        raise ValueError("You must provide either `x_val` or `unif_prt_spc`.")
+
+    # ==========================================================================
+    # STEP 2: Define Spatial Evaluation Points
+    # ==========================================================================
+
     if x_val is not None:
-        # Ensure x_val is within the defined spatial domain
+        # Single-point evaluation mode
         if not (0 <= x_val <= config.ell):
-            raise ValueError(f"x_val = {x_val} is outside domain [0, {config.ell}].")
-        # Wrap single point in array for vector compatibility
-        x = np.array([x_val])
+            raise ValueError(f"x_val = {x_val} is outside the domain [0, {config.ell}].")
+
+        x = np.array([x_val])  # Convert to 1-element array for consistency
     else:
-        # Generate uniform spatial grid with (unif_prt_spc + 1) points
+        # Generate uniformly spaced grid: includes endpoints
         x = np.linspace(0, config.ell, unif_prt_spc + 1)
 
-    # -------------------------------------------------------------------------
-    # Evaluate Analytical Function Over Time
-    # -------------------------------------------------------------------------
-    # Compute the solution func(x, t) for each time t_i in the time grid
+    # ==========================================================================
+    # STEP 3: Evaluate func(x, t_i) at All Time Steps
+    # ==========================================================================
+
+    # Vectorized loop over time: apply func(x, t_i) at each t_i
     values = np.array([func(x, t_i) for t_i in config.t])
-    # Resulting shape: (len(config.t), len(x)) for grid,
-    # or (len(config.t), 1) for a single point
 
-    # -------------------------------------------------------------------------
-    # Extract Specific Time Step if Requested
-    # -------------------------------------------------------------------------
+    # Shape of `values`:
+    #   - (len(t), len(x)) if x is grid
+    #   - (len(t), 1) if x is a single point
+
+    # ==========================================================================
+    # STEP 4: Return Time Slice or Full Time Evolution
+    # ==========================================================================
+
     if k is not None:
-        # Check that the time index is within valid bounds
+        # Extract solution at specific time step
         if not (0 <= k <= config.n):
-            raise ValueError(f"Time index k = {k} out of range [0, {config.n}].")
-        return values[k]  # Return values at a specific time step
+            raise ValueError(f"Invalid time index k={k}. Must be in range [0, {config.n}].")
+        return values[k]  # 1D array or scalar depending on x
 
-    # -------------------------------------------------------------------------
-    # Return Full Time Evolution
-    # -------------------------------------------------------------------------
-    return values  # Return values across all time steps
+    # Return all time steps (e.g., for animation or full solution plot)
+    return values
 
-# -----------------------------------------------------------------------------
+# ==============================================================================
 # Function: callable_exact_solution
-# Description: Return callable(s) or evaluated result(s) for u(x, t) or v(x, t)
-#              depending on whether x_vals and/or time index k is provided.
-# -----------------------------------------------------------------------------
+# Title   : Flexible Evaluation of Exact Timoshenko Beam Solution
+# Purpose : Supports evaluation or callable generation for the analytical
+#           solution u(x, t) or v(x, t) of the Timoshenko beam model.
+#           Can evaluate:
+#             - single time-step function at many x,
+#             - all time steps at fixed x,
+#             - single (x, t) pair,
+#             - return callable objects.
+# ==============================================================================
+
 def callable_exact_solution(
     func: callable,
     config,
@@ -1782,172 +2030,157 @@ def callable_exact_solution(
     x_vals: float | int | list | np.ndarray = None
 ):
     """
-    Return callable(s) or evaluated values of the analytical solution
-    of the Timoshenko beam model at specified spatial locations and/or time steps.
+    Flexibly evaluate the exact analytical solution u(x, t) or v(x, t)
+    from the Timoshenko beam model.
+
+    Depending on input, the output can be:
+    - a single callable u_k(x) = u(x, t_k),
+    - a value at fixed (x, t_k),
+    - an array of u(x_val, t_k) over t_k,
+    - or a list of all callables u_k(x).
 
     Parameters
     ----------
     func : callable
-        Analytical solution function with the signature func(x, t), representing
-        displacement u(x, t) or rotation v(x, t).
-        - Must support vectorized spatial input `x` and scalar time input `t`.
+        The exact solution function with signature func(x, t), supporting:
+            - vectorized x (scalar or array)
+            - scalar t
+        Should return scalar or array outputs.
 
     config : object
-        Configuration object with the following required attributes:
-        - config.t : np.ndarray
-            1D array of time values used for evaluation.
-        - config.n : int
-            Maximum index for time steps, usually len(config.t) - 1.
+        Configuration object with:
+            - config.t : np.ndarray
+                Discrete time values (shape = (n+1,))
+            - config.n : int
+                Number of time steps (typically len(config.t) - 1)
 
     k : int, optional
-        Specific time step index to evaluate at. If None, operates across all time steps.
+        Specific time index to use for fixed-time evaluation.
+        If None, all time steps are processed.
 
     x_vals : float | int | list | np.ndarray, optional
-        Spatial coordinate(s) where the solution is to be evaluated.
-        If None, callables are returned instead of evaluated values.
+        Spatial value(s) to evaluate. If None, returns callable(s) instead of evaluating.
 
     Returns
     -------
     callable | list[callable] | float | np.ndarray
-        - If only `k` is provided: returns a callable func(x) at fixed t_k.
-        - If both `k` and `x_vals` are given: returns the evaluated result at (x_vals, t_k).
-        - If only `x_vals` is provided: returns an array of values for each t in config.t.
-        - If both `k` and `x_vals` are None: returns list of callables for all time steps.
+        Output depends on input combination:
+        - (k only):          Returns callable func_k(x) = func(x, t_k)
+        - (k and x_vals):    Returns evaluated result func(x_vals, t_k)
+        - (x_vals only):     Returns np.ndarray of func(x_vals, t_i) for all i
+        - (neither given):   Returns list of all callables func_i(x)
     """
 
-    # -------------------------------------------------------------------------
-    # Helper Function: Standardize and Validate x_vals Input
-    # -------------------------------------------------------------------------
+    # ==========================================================================
+    # STEP 1: Validate and Normalize Spatial Input
+    # ==========================================================================
     def validate_and_convert_x_vals(x_input):
-        """
-        Converts x_vals input to a consistent format (float or ndarray).
-
-        Parameters
-        ----------
-        x_input : float | int | list | np.ndarray | None
-            Input value(s) for spatial coordinates.
-
-        Returns
-        -------
-        float | np.ndarray | None
-            Standardized format suitable for vectorized computation.
-        """
+        """Standardizes x_vals into float or float array."""
         if isinstance(x_input, (float, int)):
-            return float(x_input)  # Single scalar value
+            return float(x_input)
         elif isinstance(x_input, list):
-            return np.array(x_input, dtype=float)  # Convert list to NumPy array
+            return np.array(x_input, dtype=float)
         elif isinstance(x_input, np.ndarray):
-            return x_input.astype(float)  # Ensure float dtype
+            return x_input.astype(float)
         elif x_input is None:
-            return None  # No evaluation requested
+            return None
         else:
-            raise TypeError("x_vals must be float, int, list, or np.ndarray.")
+            raise TypeError("x_vals must be float, int, list, np.ndarray, or None.")
 
-    # Convert spatial input to a consistent and safe format
     x_vals = validate_and_convert_x_vals(x_vals)
 
-    # -------------------------------------------------------------------------
-    # Helper Function: Construct Callable func(x) for Fixed Time Index
-    # -------------------------------------------------------------------------
-    def construct_exact_function_at_k(k_idx: int):
+    # ==========================================================================
+    # STEP 2: Time-Fixed Callable Generator
+    # ==========================================================================
+    def construct_exact_function_at_k(k_idx: int) -> callable:
         """
-        Constructs a callable function that maps x ↦ func(x, t_k) for a fixed t_k.
-
-        Parameters
-        ----------
-        k_idx : int
-            Index into the time grid (config.t).
-
-        Returns
-        -------
-        callable
-            Function taking x and returning func(x, config.t[k_idx]).
+        Create a callable x ↦ func(x, t_k_idx) for a fixed time index.
         """
         if not (0 <= k_idx <= config.n):
-            raise ValueError(f"Time index k = {k_idx} must be in [0, {config.n}].")
+            raise ValueError(f"Time index k = {k_idx} must be within [0, {config.n}].")
         return lambda x: func(x, config.t[k_idx])
 
-    # -------------------------------------------------------------------------
-    # Case 1: Fixed Time Step k is Specified
-    # -------------------------------------------------------------------------
+    # ==========================================================================
+    # CASE 1: Time index k is provided
+    # ==========================================================================
     if k is not None:
-        fn = construct_exact_function_at_k(k)  # Get callable at specific time
-        return fn if x_vals is None else fn(x_vals)  # Return function or its evaluated result
+        fn = construct_exact_function_at_k(k)
+        return fn if x_vals is None else fn(x_vals)
 
-    # -------------------------------------------------------------------------
-    # Case 2: Operate Over All Time Steps
-    # -------------------------------------------------------------------------
-    # Create list of callables, one for each time step
+    # ==========================================================================
+    # CASE 2: Time index not provided → process over all time steps
+    # ==========================================================================
     all_functions = [construct_exact_function_at_k(k_idx) for k_idx in range(config.n + 1)]
 
-    # If x_vals is None, return list of callables; else evaluate each at x_vals
-    return all_functions if x_vals is None else np.array([fn(x_vals) for fn in all_functions])
+    if x_vals is None:
+        return all_functions  # Return list of callables for all time steps
+    else:
+        # Evaluate each time-specific function at the same spatial input
+        return np.array([fn(x_vals) for fn in all_functions])
 
-# =============================================================
-# Kahan–Babuška–Neumaier Summation Algorithm Implementation
-# =============================================================
-# This module provides a highly accurate floating-point summation
-# using the Kahan–Babuška–Neumaier method.
-# It supports both Python lists and NumPy ndarrays and helps mitigate
-# rounding errors common in naive summation, especially when adding
-# numbers with large differences in magnitude.
-# =============================================================
-
-# =============================================================
+# ==============================================================================
 # Function: kahan_babuska_neumaier_sum
-# Purpose:  Perform accurate floating-point summation using the
-#           Kahan–Babuška–Neumaier algorithm.
-# =============================================================
-def kahan_babuska_neumaier_sum(numbers):
+# Title   : Accurate Floating-Point Summation Using Kahan–Babuška–Neumaier Method
+# Purpose : Improve numerical stability when summing floats, especially when
+#           large and small magnitudes are mixed (to reduce round-off errors).
+# ==============================================================================
+
+def kahan_babuska_neumaier_sum(numbers) -> np.float64:
     """
     ------------------------------------------------------------
     Accurate Summation Using Kahan–Babuška–Neumaier Algorithm
     ------------------------------------------------------------
-    Computes a numerically stable sum of floating-point numbers
-    by compensating for rounding errors during accumulation.
+    Performs a numerically stable summation of floating-point numbers
+    by tracking and correcting rounding errors at each step.
 
     Parameters
     ----------
     numbers : list or np.ndarray
-        A sequence of floats (1D or multi-D) to be summed.
+        Sequence of floats (1D or multi-D) to sum.
 
     Returns
     -------
-    float
-        The accurately summed result.
-    
+    np.float64
+        Accurately summed result using compensated summation.
+
     Raises
     ------
     TypeError
-        If an individual element in the sequence is not a scalar.
+        If any element is not a scalar numeric type (float or int).
     """
-    
-    # Flatten multidimensional arrays into a 1D view for iteration
-    if isinstance(numbers, np.ndarray):
-        numbers = numbers.ravel()
 
-    total = 0.0         # Main accumulator for the sum
-    compensation = 0.0  # Correction term for lost low-order bits
+    # -------------------------------------------------------------------------
+    # STEP 1: Flatten input to 1D array for consistent iteration
+    # -------------------------------------------------------------------------
+    flat = np.asarray(numbers).ravel()  # Ensure NumPy array, then flatten to 1D
 
-    # Iterate over each number in the sequence
-    for x in numbers:
-        # Prevent nested arrays or invalid types from entering the summation
+    total = np.float64(0.0)             # Accumulator for the running total
+    compensation = np.float64(0.0)      # Tracks small errors lost in floating-point math
+
+    # -------------------------------------------------------------------------
+    # STEP 2: Iterate through numbers, applying compensated summation
+    # -------------------------------------------------------------------------
+    for x in flat:
         if isinstance(x, np.ndarray):
-            raise TypeError("Each element passed to summation must be a scalar (float or int).")
+            raise TypeError("Nested arrays are not supported; elements must be scalar.")
 
-        # Perform the summation with compensation
-        temp = total + x
+        x = np.float64(x)  # Promote to consistent float64 type
 
-        # Error compensation logic based on which term is larger
+        temp = total + x   # Tentative sum
+
+        # Apply compensation depending on which operand has greater magnitude
         if abs(total) >= abs(x):
             compensation += (total - temp) + x
         else:
             compensation += (x - temp) + total
 
-        total = temp  # Update total with the temporary result
+        total = temp  # Update main accumulator
 
-    # Return the final corrected sum
+    # -------------------------------------------------------------------------
+    # STEP 3: Return final corrected total (sum + error compensation)
+    # -------------------------------------------------------------------------
     return total + compensation
+
 
 # =============================================================================
 # FUNCTION: compute_L2_norm_galerkin_approx
