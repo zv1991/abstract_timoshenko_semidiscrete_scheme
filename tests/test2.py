@@ -2,9 +2,8 @@
 # MODULE IMPORTS
 # ======================================================
 
-import numpy as np  # Numerical library for arrays and mathematical operations
-from utils.auxiliary import integrate_derivative_form  # Computes ∫(∂u/∂x)² dx — used for nonlinear stiffness term
-from tests.timoshenko_data import TimoshenkoTesterParent  # Base class handling symbolic/numeric init logic
+import numpy as np  # Numerical library for array operations, math functions, and performance computing
+from tests.timoshenko_data import TimoshenkoTesterParent  # Base class handling symbolic and numerical model setup
 
 
 # ======================================================
@@ -15,207 +14,254 @@ class Testcase2(TimoshenkoTesterParent):
     """
     Symbolic benchmark test case for the nonlinear Timoshenko beam model.
 
-    This test case provides closed-form trigonometric expressions for:
-    - Displacement field u(x, t)
-    - Rotation field v(x, t)
+    This class defines exact analytical solutions for:
+    - Displacement u(x, t)
+    - Rotation v(x, t)
 
-    These allow verification of numerical methods via direct comparison
-    to exact solutions and help test solver accuracy and stability.
+    These closed-form expressions are useful for validating
+    numerical solvers through comparison against ground truth.
     """
 
     # ------------------------------------------------------
-    # CONSTRUCTOR: Initialize with configuration
+    # CONSTRUCTOR: Initialize Benchmark Configuration
     # ------------------------------------------------------
     def __init__(self, cfg):
         """
-        Initialize the benchmark using external configuration.
+        Initialize the test case with beam configuration parameters.
 
         Parameters
         ----------
-        cfg : object or dict-like
-            Beam configuration object containing:
+        cfg : object or namespace
+            Contains attributes:
             tau, ell, alpha, beta, gamma, delta, a1, a2, lam_u, lam_v
         """
         self.cfg = cfg
-        self.name = "test2"           # Identifier for logging and plot output
-        self.known_solutions = True   # Enables exact solution-based solver validation
-        super().__init__(cfg)         # Initialize base class
-        self._prepare_data()          # Perform any symbolic setup or precaching
+        self.name = "test2"             # Identifier for plotting/logging outputs
+        self.known_solutions = True     # Indicates exact solutions are known
 
-        # Store oscillation frequencies for spatial basis functions
+        super().__init__(cfg)           # Initialize parent class
+        self._prepare_data()            # Optional symbolic precomputation
+
+        # Oscillation frequencies (modes) for displacement and rotation
         self.lam_u = cfg.lam_u
         self.lam_v = cfg.lam_v
 
     # ------------------------------------------------------
-    # METHOD: Spatial Basis for Displacement u(x)
+    # METHOD: Spatial Basis Function for Displacement u(x)
     # ------------------------------------------------------
     def h_u(self, x):
+        """
+        Trigonometric spatial basis function for displacement u.
+        """
         return np.sin(self.lam_u * np.pi * x / self.cfg.ell)
 
     def d1h_u(self, x):
-        # First spatial derivative of h_u(x)
+        """
+        First spatial derivative of h_u(x): ∂h_u/∂x
+        """
         return (self.lam_u * np.pi / self.cfg.ell) * np.cos(self.lam_u * np.pi * x / self.cfg.ell)
 
-    def d2h_u(self, x):
-        # Second spatial derivative of h_u(x)
-        factor = (self.lam_u * np.pi / self.cfg.ell) ** 2
-        return -factor * np.sin(self.lam_u * np.pi * x / self.cfg.ell)
-
     # ------------------------------------------------------
-    # METHOD: Spatial Basis for Rotation v(x)
+    # METHOD: Spatial Basis Function for Rotation v(x)
     # ------------------------------------------------------
     def h_v(self, x):
+        """
+        Trigonometric spatial basis function for rotation v.
+        """
         return np.sin(self.lam_v * np.pi * x / self.cfg.ell)
 
     def d1h_v(self, x):
+        """
+        First spatial derivative of h_v(x): ∂h_v/∂x
+        """
         return (self.lam_v * np.pi / self.cfg.ell) * np.cos(self.lam_v * np.pi * x / self.cfg.ell)
 
-    def d2h_v(self, x):
-        factor = (self.lam_v * np.pi / self.cfg.ell) ** 2
-        return -factor * np.sin(self.lam_v * np.pi * x / self.cfg.ell)
-
     # ------------------------------------------------------
-    # METHOD: Temporal Basis for Displacement u(t)
+    # METHOD: Temporal Basis Function for Displacement u(t)
     # ------------------------------------------------------
     def g_u(self, t):
+        """
+        Temporal evolution function for displacement u — linear in time.
+        """
         return t
-
-    def d1g_u(self, t):
-        return np.float64(0.0)
 
     def d2g_u(self, t):
+        """
+        Second time derivative of g_u(t) = 0 for linear functions.
+        """
         return np.float64(0.0)
 
     # ------------------------------------------------------
-    # METHOD: Temporal Basis for Rotation v(t)
+    # METHOD: Temporal Basis Function for Rotation v(t)
     # ------------------------------------------------------
     def g_v(self, t):
+        """
+        Temporal evolution function for rotation v — linear in time.
+        """
         return t
 
-    def d1g_v(self, t):
-        return np.float64(0.0)
-
     def d2g_v(self, t):
+        """
+        Second time derivative of g_v(t) = 0 for linear functions.
+        """
         return np.float64(0.0)
 
     # ------------------------------------------------------
-    # METHOD: Exact Solution Functions u(x, t) and v(x, t)
+    # METHOD: Exact Displacement Field u(x, t)
     # ------------------------------------------------------
     def u(self, x, t):
+        """
+        Exact solution for displacement:
+        u(x, t) = h_u(x) * g_u(t)
+        """
         return self.h_u(x) * self.g_u(t)
 
+    # ------------------------------------------------------
+    # METHOD: Exact Rotation Field v(x, t)
+    # ------------------------------------------------------
     def v(self, x, t):
+        """
+        Exact solution for rotation:
+        v(x, t) = h_v(x) * g_v(t)
+        """
         return self.h_v(x) * self.g_v(t)
 
     # ------------------------------------------------------
     # METHOD: Derivatives of u(x, t)
     # ------------------------------------------------------
-    def diff1t_u(self, x, t):
-        return self.h_u(x) * self.d1g_u(t)
-
-    def diff2t_u(self, x, t):
-        return self.h_u(x) * self.d2g_u(t)
-
     def diff1x_u(self, x, t):
+        """
+        First spatial derivative of u(x, t): ∂u/∂x = ∂h_u/∂x · g_u(t)
+        """
         return self.d1h_u(x) * self.g_u(t)
 
-    def diff2x_u(self, x, t):
-        return self.d2h_u(x) * self.g_u(t)
+    def diff2t_u(self, x, t):
+        """
+        Second time derivative of u(x, t): ∂²u/∂t² = h_u(x) · ∂²g_u/∂t²
+        """
+        return self.h_u(x) * self.d2g_u(t)
 
     # ------------------------------------------------------
     # METHOD: Derivatives of v(x, t)
     # ------------------------------------------------------
-    def diff1t_v(self, x, t):
-        return self.h_v(x) * self.d1g_v(t)
-
-    def diff2t_v(self, x, t):
-        return self.h_v(x) * self.d2g_v(t)
-
     def diff1x_v(self, x, t):
+        """
+        First spatial derivative of v(x, t): ∂v/∂x = ∂h_v/∂x · g_v(t)
+        """
         return self.d1h_v(x) * self.g_v(t)
 
-    def diff2x_v(self, x, t):
-        return self.d2h_v(x) * self.g_v(t)
-
-    # ------------------------------------------------------
-    # METHOD: Nonlinear Term ∫(∂u/∂x)² dx
-    # ------------------------------------------------------
-    def integr_term(self, t):
+    def diff2t_v(self, x, t):
         """
-        Computes nonlinear stiffness term:
-            ∫ (∂u/∂x)² dx
+        Second time derivative of v(x, t): ∂²v/∂t² = h_v(x) · ∂²g_v/∂t²
+        """
+        return self.h_v(x) * self.d2g_v(t)
 
-        Parameters
-        ----------
-        t : float
-            Time at which to evaluate derivative
+    # ------------------------------------------------------
+    # METHOD: Nonlinear Stiffness Term in u-Equation
+    # ------------------------------------------------------
+    def nonlinear_term(self, t):
+        """
+        Evaluate nonlinear stiffness term in the displacement (u) equation:
+
+            q(t) = α + β ∫ (∂u/∂x)² dx
+
+        Using u(x, t) = h_u(x) · g_u(t), and ∂u/∂x = ∂h_u/∂x · g_u(t),
+        this simplifies to:
+
+            q(t) = α + β · g_u(t)² · ∫ (∂h_u/∂x)² dx
+
+        Analytical result:
+            ∫₀^ell (∂h_u/∂x)² dx = (λ_u² · π²) / (2 · ell)
+        """
+        # Precomputed constant from analytical integration
+        integr_coeff = (self.lam_u**2 * np.pi**2) / (2.0 * self.cfg.ell)
+
+        # Compute full nonlinear coefficient q(t)
+        return self.cfg.alpha + self.cfg.beta * integr_coeff * self.g_u(t)**2
+
+    # ------------------------------------------------------
+    # SOURCE TERMS FOR WEAK FORMULATIONS OF u AND v
+    # ------------------------------------------------------
+    def source_terms(self):
+        """
+        Return the functional components of the source terms f₁(x, t) and f₂(x, t)
+        appearing in the weak formulation of the Timoshenko beam equations.
+
+        Each returned component corresponds to a specific term in the weak form
+        that must be projected against the test functions φₘ (and their gradients P̂ₘ).
+
+        These callable components are necessary for computing time-dependent
+        Galerkin inner products of the form:
+            (term(x, t), φₘ)       for mass-type terms
+            (term(x, t), P̂ₘ)       for stiffness/coupling terms
+
+        -------------------------------------------------------------------
+        f₁(x, t): Source term for the u-equation (displacement field)
+        -------------------------------------------------------------------
+        Strong form:
+            f₁(x, t) = ∂²u/∂t² 
+                     - (α + β ∫(∂u/∂x)² dx) ∂²u/∂x² 
+                     + a₁ ∂v/∂x
+
+        Weak form (after integration by parts):
+            (f₁, φₘ) = (∂²u/∂t², φₘ)
+                     + (α + β ∫(∂u/∂x)² dx) (∂u/∂x, P̂ₘ)
+                     - a₁ (v, P̂ₘ)
+
+        Required components:
+            1. ∂²u/∂t²                      — acceleration term for φₘ projection
+            2. (α + β ∫(∂u/∂x)² dx) ∂u/∂x   — nonlinear term for stiffness projection
+            3. a₁ v(x, t)                   — coupling term, projected against P̂ₘ
+
+        -------------------------------------------------------------------
+        f₂(x, t): Source term for the v-equation (rotation field)
+        -------------------------------------------------------------------
+        Strong form:
+            f₂(x, t) = ∂²v/∂t² 
+                     - γ ∂²v/∂x² 
+                     + δ v 
+                     - a₂ ∂u/∂x
+
+        Weak form (after integration by parts):
+            (f₂, φₘ) = (∂²v/∂t², φₘ)
+                     + γ (∂v/∂x, P̂ₘ)
+                     + δ (v, φₘ)
+                     + a₂ (u, P̂ₘ)
+
+        Required components:
+            1. ∂²v/∂t²    — acceleration term for φₘ projection
+            2. γ ∂v/∂x    — stiffness term for P̂ₘ projection
+            3. δ v(x, t)  — mass-like term for φₘ projection
+            4. a₂ u(x, t) — coupling term, projected against P̂ₘ
 
         Returns
         -------
-        float
-            Integral result at time t
+        dict of str -> list of callable
+            {
+                "f1": [∂²u/∂t², (α + β ∫(∂u/∂x)² dx) ∂u/∂x, a₁ v(x, t)],
+                "f2": [∂²v/∂t², γ ∂v/∂x, δ v(x, t), a₂ u(x, t)]
+            }
         """
-        integrand = lambda x: self.diff1x_u(x, t)
-        result, *_ = integrate_derivative_form(df=integrand, ell=self.cfg.ell)
-        return result
+        return {
+            "f1": [
+                lambda x, t: self.diff2t_u(x, t),                          # Term 1: ∂²u/∂t² for (•, φₘ)
+                lambda x, t: self.nonlinear_term(t) * self.diff1x_u(x, t), # Term 2: nonlinear term for (•, P̂ₘ)
+                lambda x, t: self.cfg.a1 * self.v(x, t)                    # Term 3: a₁ v(x, t) for (•, P̂ₘ)
+            ],
+            "f2": [
+                lambda x, t: self.diff2t_v(x, t),                         # Term 1: ∂²v/∂t² for (•, φₘ)
+                lambda x, t: self.cfg.gamma * self.diff1x_v(x, t),        # Term 2: γ ∂v/∂x for (•, P̂ₘ)
+                lambda x, t: self.cfg.delta * self.v(x, t),               # Term 3: δ v(x, t) for (•, φₘ)
+                lambda x, t: self.cfg.a2 * self.u(x, t)                   # Term 4: a₂ u(x, t) for (•, P̂ₘ)
+            ]
+        }
 
     # ------------------------------------------------------
-    # METHOD: f₁(x, t) – RHS of Displacement Equation
-    # ------------------------------------------------------
-    def f1(self, x, t):
-        """
-        Compute RHS for displacement equation:
-
-        f₁(x, t) = ∂²u/∂t² - (α + β ∫(∂u/∂x)² dx) ∂²u/∂x² + a₁ ∂v/∂x
-
-        Parameters
-        ----------
-        x : float
-        t : float
-
-        Returns
-        -------
-        float
-            Source term for u-equation
-        """
-        return (
-            self.diff2t_u(x, t)
-            - (self.cfg.alpha + self.cfg.beta * self.integr_term(t)) * self.diff2x_u(x, t)
-            + self.cfg.a1 * self.diff1x_v(x, t)
-        )
-
-    # ------------------------------------------------------
-    # METHOD: f₂(x, t) – RHS of Rotation Equation
-    # ------------------------------------------------------
-    def f2(self, x, t):
-        """
-        Compute RHS for rotation equation:
-
-        f₂(x, t) = ∂²v/∂t² - γ ∂²v/∂x² + δ v - a₂ ∂u/∂x
-
-        Parameters
-        ----------
-        x : float
-        t : float
-
-        Returns
-        -------
-        float
-            Source term for v-equation
-        """
-        return (
-            self.diff2t_v(x, t)
-            - self.cfg.gamma * self.diff2x_v(x, t)
-            + self.cfg.delta * self.v(x, t)
-            - self.cfg.a2 * self.diff1x_u(x, t)
-        )
-
-    # ------------------------------------------------------
-    # METHOD: Post-Init Hook (For Dataclasses Compatibility)
+    # POST-INIT HOOK FOR LATE INITIALIZATION
     # ------------------------------------------------------
     def __post_init__(self):
         """
-        Optional post-initialization hook for dataclass usage.
-        Ensures custom setup logic is re-applied.
+        Hook for dataclass compatibility: ensures proper late-stage initialization.
+        Called after dataclass fields are set (if used in dataclass context).
         """
         self._prepare_data()

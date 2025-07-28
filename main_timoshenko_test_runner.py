@@ -32,7 +32,7 @@ test_selector = {
 # ======================================================
 
 # Choose the test case by name
-test_name = "test1"
+test_name = "test2"
 
 # Validate test name and extract config and testcase object
 if test_name not in test_selector:
