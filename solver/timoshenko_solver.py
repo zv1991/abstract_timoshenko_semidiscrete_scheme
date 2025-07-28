@@ -68,8 +68,13 @@ class TimoshenkoModelSolver:
         min_dx=1/128.0,        # Minimum subinterval size for adaptive quadrature
         n_gauss=5,             # Initial Gauss nodes per subinterval
         max_gauss=50,          # Max Gauss nodes allowed in adaptive quadrature
+        
         # Boolean flag indicating whether analytical solutions are known (True) or not provided (False)
-        known_solutions=False  # Default: analytical solutions are not provided
+        known_solutions=False, # Default: analytical solutions are not provided
+        
+        # Boolean flag to enable Kahan–Babuška–Neumaier (KBN) compensated summation
+        # for improved numerical precision in modal solution reconstruction.
+        use_kahan_sum=False  # Default is False (standard summation).
     ):
         # Spatial and temporal domain setup
         self.ell = ell               # Beam length (domain: [0, ell])
@@ -106,6 +111,9 @@ class TimoshenkoModelSolver:
         
         # Flag indicating availability of analytical solutions
         self.known_solutions = known_solutions  # Boolean flag indicating whether analytical solutions are known (True) or not provided (False)
+        
+        # Store flag controlling use of Kahan-Babuška-Neumaier summation in solution reconstruction.
+        self.use_kahan_sum = use_kahan_sum  # Enables consistent access to this flag throughout the class methods
         
         # Precomputed constant used in the v-equation update
         self.a0 = 4.0 / (2.0 + self.delta * self.tau**2)
@@ -431,35 +439,34 @@ class TimoshenkoModelSolver:
         self,
         solution_type: str,
         k: int = None,
-        x_vals: float | int | list | np.ndarray = None,
-        use_kahan_sum: bool = False
+        x_vals: float | int | list | np.ndarray = None
     ):
         """
         ----------------------------------------------------------------
-        Return Callable or Evaluated Galerkin Ansatz u(x, t_k) or v(x, t_k)
+        Return Callable or Evaluated Galerkin Approximate Solution u(x, t_k) or v(x, t_k)
         ----------------------------------------------------------------
-        Generates callable function(s) representing the Galerkin solution
+        Generates callable function(s) representing the Galerkin approximate solution 
         for displacement (u) or rotation (v) at a specific time step (k).
-        You may optionally evaluate the function at specified spatial
-        points (x_vals), and choose between standard or compensated summation.
-    
+        Optionally evaluates at specified spatial points (x_vals). Summation method is 
+        controlled by the instance flag `self.use_kahan_sum`:
+          - True:  use Kahan–Babuška–Neumaier (compensated) summation 
+          - False: use standard Python summation (default) 
+        
         Parameters
         ----------
         solution_type : str
             'u' for displacement or 'v' for rotation.
         k : int, optional
-            Time step index. If None, generates for all time steps.
+            Time step index (0 ≤ k ≤ n). If None, returns for all steps.
         x_vals : float | int | list | np.ndarray, optional
-            Spatial point(s) for evaluation. If None, returns callables.
-        use_kahan_sum : bool, optional
-            If True, uses the Kahan–Babuška–Neumaier summation algorithm
-            for improved numerical precision. Defaults to False.
-    
+            Points at which to evaluate. If None, returns callables.
+        
         Returns
         -------
         Callable or np.ndarray
-            A single callable (u or v at time k), a list of callables (if k is None),
-            or an array of evaluated values at x_vals.
+            - If k and x_vals are None: list of callables, one per time step.
+            - If k is specified and x_vals is None: single callable at step k.
+            - If x_vals is specified: evaluated numpy array or scalar.
         """
 
         # ----------------------------------------
@@ -523,14 +530,14 @@ class TimoshenkoModelSolver:
                 if isinstance(x, np.ndarray):
                     return np.array([
                         aux.kahan_babuska_neumaier_sum([c * phi(xi) for c, phi in zip(coeffs, basis)])
-                        if use_kahan_sum else
+                        if self.use_kahan_sum else
                         sum(c * phi(xi) for c, phi in zip(coeffs, basis))
                         for xi in x
                     ])
                 else:
                     # Scalar evaluation
                     terms = [c * phi(x) for c, phi in zip(coeffs, basis)]
-                    return aux.kahan_babuska_neumaier_sum(terms) if use_kahan_sum else sum(terms)
+                    return aux.kahan_babuska_neumaier_sum(terms) if self.use_kahan_sum else sum(terms)
     
             return ansatz_function
     
