@@ -35,8 +35,8 @@ a2    = 1.0   # Coupling term: ∂u/∂x feeds into v-equation (shear interactio
 # These parameters define how many spatial oscillations appear in the benchmark
 # solutions u(x, t) and v(x, t). Higher values create finer wave structures.
 
-lam_u = 5  # Spatial frequency (number of sine wave peaks) in displacement field u
-lam_v = 5  # Spatial frequency in rotation field v
+lam_u = 14  # Spatial frequency (number of sine wave peaks) in displacement field u
+lam_v = 14  # Spatial frequency in rotation field v
 
 
 # ======================================================
@@ -44,7 +44,7 @@ lam_v = 5  # Spatial frequency in rotation field v
 # ======================================================
 # Setup for uniform time discretization used in numerical integration/solving.
 
-n = 128                        # Number of uniform time intervals in [0, T]
+n = 256                        # Number of uniform time intervals in [0, T]
 t = np.linspace(0, T, n + 1)   # Time grid: [t₀, t₁, ..., tₙ]; includes both endpoints
 tau = T / n                    # Time step size: τ = (T - 0) / n
 
@@ -54,7 +54,7 @@ tau = T / n                    # Time step size: τ = (T - 0) / n
 # ======================================================
 # Settings for the Galerkin spectral method using Legendre polynomials as basis functions.
 
-N = 15  # Number of Legendre polynomial modes (basis functions) in spatial projection
+N = 35  # Number of Legendre polynomial modes (basis functions) in spatial projection
 
 
 # ======================================================
