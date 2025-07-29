@@ -6,10 +6,12 @@ import utils.auxiliary as aux        # Utility functions: lambdify solutions, co
 import setting.config_test0 as cfg0  # Configuration: parameters specific to Testcase 0
 import setting.config_test1 as cfg1  # Configuration: parameters specific to Testcase 1
 import setting.config_test2 as cfg2  # Configuration: parameters specific to Testcase 2
+import setting.config_test3 as cfg3  # Configuration: parameters specific to Testcase 3
 
 from tests.test0 import Testcase0    # Analytic test case with known solution: Testcase0
 from tests.test1 import Testcase1    # Analytic test case with known solution: Testcase1
 from tests.test2 import Testcase2    # Analytic test case with known solution: Testcase2
+from tests.test3 import Testcase3    # Analytic test case with known solution: Testcase3
 
 from solver.timoshenko_solver import TimoshenkoModelSolver  # Galerkin method solver for Timoshenko beam PDE system
 
