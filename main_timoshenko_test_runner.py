@@ -25,6 +25,7 @@ test_selector = {
     "test0": lambda: (cfg0, Testcase0(cfg0)),
     "test1": lambda: (cfg1, Testcase1(cfg1)),
     "test2": lambda: (cfg2, Testcase2(cfg2)),
+    "test3": lambda: (cfg3, Testcase3(cfg3)),
     # Add further test cases here as needed
 }
 
