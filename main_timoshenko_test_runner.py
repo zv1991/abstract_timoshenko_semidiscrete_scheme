@@ -46,7 +46,7 @@ test_selector = {
 # ======================================================
 # Set and verify which test case will be used in the simulation run.
 
-test_name = "test4"  # Change this string to test0, test1, etc., to switch the benchmark
+test_name = "test1"  # Change this string to test0, test1, etc., to switch the benchmark
 
 # Sanity check: ensure selected test name is registered in the dictionary
 if test_name not in test_selector:

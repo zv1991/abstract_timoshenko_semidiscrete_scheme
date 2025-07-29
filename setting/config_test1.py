@@ -35,8 +35,8 @@ a2    = 1.0   # Coupling coefficient: ∂u/∂x term in v-equation
 # These values are used to construct a known analytical solution (manufactured solution)
 # via shifted Legendre polynomials of specified degrees.
 
-m_u = 2  # Degree of Legendre polynomial for displacement u(x, t)
-m_v = 2  # Degree of Legendre polynomial for rotation    v(x, t)
+m_u = 35  # Degree of Legendre polynomial for displacement u(x, t)
+m_v = 35  # Degree of Legendre polynomial for rotation v(x, t)
 
 # Use the maximum degree to determine minimum necessary spectral resolution
 degree_max = max(m_u, m_v)  # Ensures enough basis functions to resolve both fields
@@ -47,7 +47,7 @@ degree_max = max(m_u, m_v)  # Ensures enough basis functions to resolve both fie
 # ======================================================
 # Discretize the time domain [0, T] using uniform intervals.
 
-n = 5                          # Number of time steps; affects time resolution
+n = 64                        # Number of time steps; affects time resolution
 t = np.linspace(0, T, n + 1)   # Time grid points array: t₀, t₁, ..., tₙ
 tau = T / n                    # Uniform time step size τ
 

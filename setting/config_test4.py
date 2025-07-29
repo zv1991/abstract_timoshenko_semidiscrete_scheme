@@ -42,7 +42,7 @@ lam_v = 14  # Number of spatial oscillations in rotation v(x, t)
 # ======================================================
 # Defines time grid and time step size for numerical integration over [0, T].
 
-n = 256                         # Number of time subintervals in [0, T]
+n = 512                         # Number of time subintervals in [0, T]
 t = np.linspace(0, T, n + 1)    # Time grid with (n+1) points: includes both endpoints
 tau = T / n                     # Time step size: τ = T / n
 
