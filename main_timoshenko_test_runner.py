@@ -2,75 +2,80 @@
 # MODULE IMPORTS
 # ======================================================
 
-# Utilities: provides helper functions for plotting, lambdification, and error metrics
+# Utility tools: helper functions for plotting, symbolic lambdification, L2 error metrics, etc.
 import utils.auxiliary as aux
 
-# Configuration modules: define model parameters and physical constants for each test scenario
+# Configuration modules: define numerical and physical parameters for each test scenario
 import setting.config_test0 as cfg0  # Configuration settings for Testcase 0
 import setting.config_test1 as cfg1  # Configuration settings for Testcase 1
 import setting.config_test2 as cfg2  # Configuration settings for Testcase 2
 import setting.config_test3 as cfg3  # Configuration settings for Testcase 3
+import setting.config_test4 as cfg4  # Configuration settings for Testcase 4
 
-# Test case definitions: symbolic benchmark problems with known analytical solutions
-from tests.test0 import Testcase0    # Analytic test case with constant or simple functions
-from tests.test1 import Testcase1    # Slightly more complex benchmark
+# Test case definitions: symbolic PDE solutions used to verify numerical solver accuracy
+from tests.test0 import Testcase0    # Basic test case with simple solution
+from tests.test1 import Testcase1    # Intermediate test case with more complexity
 from tests.test2 import Testcase2    # Trigonometric benchmark including nonlinear effects
-from tests.test3 import Testcase3    # Oscillatory benchmark using sinusoids in space and time
+from tests.test3 import Testcase3    # Oscillatory benchmark with sinusoidal space-time structure
+from tests.test4 import Testcase4    # Extended oscillatory benchmark (same structure as Testcase3)
 
-# Solver for the Timoshenko beam PDE system using a Galerkin spectral method
+# PDE solver implementation for the nonlinear Timoshenko beam using a Galerkin spectral method
 from solver.timoshenko_solver import TimoshenkoModelSolver
 
 
 # ======================================================
 # FUNCTIONAL BLOCK: TEST CASE SELECTOR DICTIONARY
 # ======================================================
-# Maps a string identifier to a tuple of (configuration, testcase object).
-# This structure allows easy test switching by key.
+# This dictionary links a test case name (string key) to a tuple:
+#     (corresponding config module, instantiated test case object)
+# Allows for dynamic selection of different symbolic benchmarks.
 
 test_selector = {
     "test0": lambda: (cfg0, Testcase0(cfg0)),
     "test1": lambda: (cfg1, Testcase1(cfg1)),
     "test2": lambda: (cfg2, Testcase2(cfg2)),
     "test3": lambda: (cfg3, Testcase3(cfg3)),
-    # Add additional test cases here in the format: "testX": lambda: (cfgX, TestcaseX(cfgX))
+    "test4": lambda: (cfg4, Testcase4(cfg4)),
+    # Add additional test cases here as needed:
+    # "test5": lambda: (cfg5, Testcase5(cfg5)),
 }
 
 
 # ======================================================
 # FUNCTIONAL BLOCK: SELECT AND VALIDATE TEST CASE
 # ======================================================
+# Set and verify which test case will be used in the simulation run.
 
-# Specify the test case name to run (change as needed)
-test_name = "test3"
+test_name = "test4"  # Change this string to test0, test1, etc., to switch the benchmark
 
-# Ensure the test name is valid
+# Sanity check: ensure selected test name is registered in the dictionary
 if test_name not in test_selector:
     raise ValueError(
         f"Unknown test name: '{test_name}'. "
         f"Available options: {list(test_selector.keys())}"
     )
 
-# Dynamically retrieve the config and test class instance
-cfg, test = test_selector[test_name]()  # For "test2", returns (cfg2, Testcase2(cfg2))
+# Retrieve the configuration and test case object associated with the chosen test
+cfg, test = test_selector[test_name]()  # e.g., ("test2") → (cfg2, Testcase2(cfg2))
 
 
 # ======================================================
 # FUNCTIONAL BLOCK: LOAD INITIAL & BOUNDARY DATA
 # ======================================================
-# Pull symbolic source terms and initial conditions for the Timoshenko system.
-# These are used to construct the PDE system and verify numerical accuracy.
+# Pull symbolic expressions for PDE source terms, initial values, and boundary gradients.
+# These values are used by the solver to initialize and advance the Timoshenko beam simulation.
 
-# Returned symbolic expressions:
-#   f1(t, x)     : Source term for displacement equation (u)
-#   f2(t, x)     : Source term for rotation equation (v)
-#   u0(x)        : Initial displacement u(x, t=0)
-#   u1(x)        : Displacement at t = τ (used for initialization)
-#   v0(x)        : Initial rotation v(x, t=0)
-#   v1(x)        : Rotation at t = τ (used for initialization)
-#   du0(x)       : ∂u/∂x at t=0 (displacement gradient at initial time)
-#   du1(x)       : ∂u/∂x at t=τ
-#   dv0(x)       : ∂v/∂x at t=0 (rotation gradient at initial time)
-#   dv1(x)       : ∂v/∂x at t=τ
+# Returned expressions:
+#   f1(t, x)     : External forcing for the displacement u-equation
+#   f2(t, x)     : External forcing for the rotation v-equation
+#   u0(x)        : Initial displacement profile at t = 0
+#   u1(x)        : Displacement at first time-step t = τ (for 2-step methods or tests)
+#   v0(x)        : Initial angular rotation profile at t = 0
+#   v1(x)        : Rotation field at t = τ (for consistency checks or solvers needing two states)
+#   du0(x)       : ∂u/∂x at t = 0 (initial spatial gradient of displacement)
+#   du1(x)       : ∂u/∂x at t = τ (gradient after one time-step)
+#   dv0(x)       : ∂v/∂x at t = 0 (initial spatial gradient of rotation)
+#   dv1(x)       : ∂v/∂x at t = τ (gradient after one time-step)
 
 f1, f2, u0, u1, v0, v1, du0, du1, dv0, dv1 = test.get_initial_data()
 
