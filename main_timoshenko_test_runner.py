@@ -2,54 +2,74 @@
 # MODULE IMPORTS
 # ======================================================
 
-import utils.auxiliary as aux        # Utility functions: lambdify solutions, compute L2 errors, plotting, etc.
-import setting.config_test0 as cfg0  # Configuration: parameters specific to Testcase 0
-import setting.config_test1 as cfg1  # Configuration: parameters specific to Testcase 1
-import setting.config_test2 as cfg2  # Configuration: parameters specific to Testcase 2
-import setting.config_test3 as cfg3  # Configuration: parameters specific to Testcase 3
+import utils.auxiliary as aux  # Utility tools: symbolic lambdification, error computation, visualization
 
-from tests.test0 import Testcase0    # Analytic test case with known solution: Testcase0
-from tests.test1 import Testcase1    # Analytic test case with known solution: Testcase1
-from tests.test2 import Testcase2    # Analytic test case with known solution: Testcase2
-from tests.test3 import Testcase3    # Analytic test case with known solution: Testcase3
+# Configuration modules: contain model parameters for each benchmark test
+import setting.config_test0 as cfg0  # Configuration for Testcase 0
+import setting.config_test1 as cfg1  # Configuration for Testcase 1
+import setting.config_test2 as cfg2  # Configuration for Testcase 2
+import setting.config_test3 as cfg3  # Configuration for Testcase 3
 
-from solver.timoshenko_solver import TimoshenkoModelSolver  # Galerkin method solver for Timoshenko beam PDE system
+# Benchmark test classes: provide symbolic solutions to validate the solver
+from tests.test0 import Testcase0    # Basic analytic test case
+from tests.test1 import Testcase1    # Slightly more advanced benchmark
+from tests.test2 import Testcase2    # Trigonometric benchmark with nonlinear terms
+from tests.test3 import Testcase3    # Oscillatory benchmark with spatial-temporal modes
+
+# Numerical solver for Timoshenko beam equations (Galerkin spectral method)
+from solver.timoshenko_solver import TimoshenkoModelSolver
 
 
 # ======================================================
-# TEST CASE SELECTOR
+# METHOD: TEST CASE SELECTOR DICTIONARY
 # ======================================================
+# Maps string identifiers (e.g., "test0") to a tuple:
+# (config object, benchmark test class instance)
+# This supports easy switching between different test scenarios.
 
-# Dictionary: maps test case name to a lambda function returning (config, testcase instance)
 test_selector = {
     "test0": lambda: (cfg0, Testcase0(cfg0)),
     "test1": lambda: (cfg1, Testcase1(cfg1)),
     "test2": lambda: (cfg2, Testcase2(cfg2)),
     "test3": lambda: (cfg3, Testcase3(cfg3)),
-    # Add further test cases here as needed
+    # Add new test entries here as needed
 }
 
 
 # ======================================================
-# SELECT AND INITIALIZE TEST CASE
+# METHOD: SELECT AND VALIDATE TEST CASE
 # ======================================================
+# Choose and validate a test case by name
 
-# Choose the test case by name
-test_name = "test2"
+test_name = "test2"  # Change this to "test0", "test1", etc., to run a different benchmark
 
-# Validate test name and extract config and testcase object
 if test_name not in test_selector:
-    raise ValueError(f"Unknown test name: {test_name}. Available tests: {list(test_selector.keys())}")
+    raise ValueError(
+        f"Unknown test name: {test_name}. "
+        f"Available options: {list(test_selector.keys())}"
+    )
 
-# Unpack configuration and testcase instance from selector
-cfg, test = test_selector[test_name]()  # For "test0", returns cfg0 and Testcase0(cfg0)
+# Load configuration and test instance dynamically
+cfg, test = test_selector[test_name]()  # Example: ("test2") → (cfg2, Testcase2(cfg2))
 
 
 # ======================================================
-# INITIALIZE TEST CASE AND RETRIEVE INITIAL DATA
+# METHOD: LOAD INITIAL CONDITIONS FROM TEST CASE
 # ======================================================
+# Extract symbolic initial and source terms for the PDE system
+# These functions are needed to construct right-hand sides and apply initial/boundary conditions
 
-# Obtain symbolic source terms, initial and boundary conditions from testcase
+# Returned expressions:
+#   f1, f2   : Source terms for u-equation and v-equation
+#   u0       : Displacement u(x, t=0)
+#   u1       : Initial velocity ∂u/∂t at t=τ
+#   v0       : Rotation v(x, t=0)
+#   v1       : Initial angular velocity ∂v/∂t at t=τ
+#   du0      : Spatial derivative ∂u/∂x at x in [0, ℓ] when t=0
+#   du1      : Spatial derivative ∂u/∂x at x in [0, ℓ] when t=τ
+#   dv0      : Spatial derivative ∂v/∂x at x in [0, ℓ] when t=0
+#   dv1      : Spatial derivative ∂v/∂x at x in [0, ℓ] when t=τ
+
 f1, f2, u0, u1, v0, v1, du0, du1, dv0, dv1 = test.get_initial_data()
 
 
