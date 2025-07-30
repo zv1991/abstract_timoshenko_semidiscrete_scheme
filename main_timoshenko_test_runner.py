@@ -75,7 +75,7 @@ test_selector = {
 # ======================================================
 # Modify this to choose which test configuration to simulate.
 
-test_name = "test1"  # Options: "test0", "test1", ..., "test5"
+test_name = "test5"  # Options: "test0", "test1", ..., "test5"
 
 # Validate that the test name is supported
 if test_name not in test_selector:

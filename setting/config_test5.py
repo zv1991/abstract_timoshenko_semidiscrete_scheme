@@ -11,7 +11,7 @@ import numpy as np  # NumPy enables efficient numerical computations: array crea
 # ======================================================
 # Defines the spatial and temporal boundaries of the simulation domain.
 
-T = 2.0     # Total simulation time — defines time interval [0, T]
+T = 1.0     # Total simulation time — defines time interval [0, T]
 ell = 2.0   # Length of the beam — defines spatial domain [0, ell]
 
 
@@ -32,33 +32,36 @@ a2    = 1.0   # Coupling from ∂u/∂x to v-equation (shear)
 # ======================================================
 # BENCHMARK SOLUTION CONFIGURATION: LEGENDRE BASIS
 # ======================================================
-# These define the degrees of Legendre polynomial basis functions
-# and the polynomial powers of time in the manufactured solution.
+# Polynomial degrees and time-scaling factors used in analytical (manufactured) solution.
 
-m_u = 35      # Degree of Legendre polynomial for spatial shape of u(x, t)
-m_v = 35      # Degree of Legendre polynomial for spatial shape of v(x, t)
+m_u = 20       # Degree of Legendre polynomial for spatial component of u(x, t)
+m_v = 20       # Degree of Legendre polynomial for spatial component of v(x, t)
 
-pow_u = 5     # Power of t in temporal component of u(x, t)
-pow_v = 5     # Power of t in temporal component of v(x, t)
+pow_u = 5      # Polynomial degree in time for displacement field u(x, t)
+pow_v = 5      # Polynomial degree in time for rotation field v(x, t)
 
-# Choose the greater of m_u and m_v for spectral resolution guidance
+coeff_u = 1 / 16.0  # Coefficient scaling time polynomial for u(x, t)
+coeff_v = 1 / 16.0  # Coefficient scaling time polynomial for v(x, t)
+
+# Use the maximum degree for deciding default spectral resolution
 degree_max = max(m_u, m_v)
 
 
 # ======================================================
 # TEMPORAL DISCRETIZATION
 # ======================================================
-# Uniform time grid for advancing the solution in time.
+# Defines the time grid and step size for the simulation.
 
-n = 512                        # Number of time intervals
-t = np.linspace(0, T, n + 1)   # Time grid with n+1 points: [t₀, ..., tₙ]
-tau = T / n                    # Uniform time step size
+n = 256                        # Number of time intervals (uniform)
+t = np.linspace(0, T, n + 1)   # Time grid with n+1 points from 0 to T
+tau = T / n                    # Time step size τ = T / n
 
 
 # ======================================================
 # GALERKIN METHOD CONFIGURATION
 # ======================================================
-# Set the number of spectral modes (basis functions) for spatial approximation.
+# Function to determine the number of spectral modes (basis functions)
+# for spatial discretization using Legendre polynomials.
 
 def set_N(input_N: int = None) -> int:
     """
@@ -88,21 +91,22 @@ def set_N(input_N: int = None) -> int:
             raise ValueError("input_N must be a positive integer.")
         return input_N
 
-    # Auto-selection: minimum 2 modes unless benchmark requires more
+    # Default: ensure sufficient resolution for benchmark polynomial degree
     return max(2, degree_max)
 
-# Determine spectral resolution
-N = set_N()  # Number of Legendre modes (basis functions) in spatial projection
+# Number of basis functions for spatial projection (spectral resolution)
+N = set_N()
 
 
 # ======================================================
 # QUADRATURE CONFIGURATION
 # ======================================================
-# Parameters for adaptive Gauss–Legendre quadrature used in numerical projections.
+# Parameters for adaptive Gauss–Legendre integration.
+# Used in inner products and projection integrals during Galerkin assembly.
 
 quad_kwargs = {
-    'tol': 1e-6,           # Integration convergence tolerance (absolute)
-    'min_dx': 1 / 128.0,   # Smallest subinterval before stopping refinement
-    'n_gauss': 5,          # Initial number of Gauss–Legendre points per subinterval
-    'max_gauss': 50        # Upper bound on Gauss points to prevent over-refinement
+    'tol': 1e-6,           # Absolute error tolerance for adaptive quadrature
+    'min_dx': 1 / 128.0,   # Minimum width of subinterval during recursive refinement
+    'n_gauss': 5,          # Initial number of Gauss–Legendre quadrature points per segment
+    'max_gauss': 50        # Cap on refinement to avoid excessive subdivisions
 }

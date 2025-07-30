@@ -4,11 +4,13 @@
 
 import utils.auxiliary as aux
 # Custom utility module:
-# Provides spatial basis functions (Legendre), normalization, and projection utilities
+# - Provides Legendre-based spatial basis functions (phi_m)
+# - Offers normalized polynomial derivatives and projection utilities
 
 from tests.timoshenko_data import TimoshenkoTesterParent
-# Base class that integrates symbolic and numerical behavior
-# for constructing analytical benchmark solutions to Timoshenko beam equations
+# Base class offering symbolic framework for constructing exact PDE solutions
+# - Provides PDE structure
+# - Handles storage, symbolic pre-processing, and solution formatting
 
 
 # ======================================================
@@ -17,16 +19,17 @@ from tests.timoshenko_data import TimoshenkoTesterParent
 
 class Testcase5(TimoshenkoTesterParent):
     """
-    Analytical benchmark for the nonlinear Timoshenko beam system.
+    Symbolic benchmark solution for the nonlinear Timoshenko beam model.
 
-    The exact solution is constructed as a separable product:
-        - u(x, t) = h_u(x) * g_u(t)
-        - v(x, t) = h_v(x) * g_v(t)
+    Constructs u(x, t) and v(x, t) as separable products:
+        u(x, t) = h_u(x) * g_u(t)
+        v(x, t) = h_v(x) * g_v(t)
 
-    Spatial basis h_u, h_v: Derived from shifted Legendre polynomials (Galerkin projection)
-    Temporal basis g_u, g_v: Powers of t (polynomial in time)
+    - Spatial basis h_u, h_v derived from shifted Legendre polynomials.
+    - Time basis g_u, g_v is polynomial: t^p scaled by coefficients.
 
-    Purpose: Validate numerical solvers against this exact known solution.
+    Purpose:
+    - Used to verify numerical accuracy of solvers via Method of Manufactured Solutions (MMS).
     """
 
     # ------------------------------------------------------
@@ -34,113 +37,111 @@ class Testcase5(TimoshenkoTesterParent):
     # ------------------------------------------------------
     def __init__(self, cfg):
         """
-        Constructor to initialize the benchmark case with a configuration object.
+        Initializes benchmark problem using provided configuration.
 
         Parameters
         ----------
         cfg : object
-            Contains model coefficients and spatial/temporal basis degrees:
-            - tau, ell, alpha, beta, gamma, delta, a1, a2
-            - m_u, m_v: Legendre polynomial mode indices for u, v
-            - pow_u, pow_v: Polynomial power for time dependence
+            Configuration with:
+            - Model coefficients: alpha, beta, gamma, delta, a1, a2
+            - Domain parameters: ell, tau
+            - Polynomial degrees: m_u, m_v, pow_u, pow_v
+            - Coefficients: coeff_u, coeff_v
         """
         self.cfg = cfg
         self.name = "test5"
-        self.known_solutions = True  # Indicates this test provides exact symbolic solutions
+        self.known_solutions = True  # Enable L2 error comparison
 
-        super().__init__(cfg)        # Parent class sets symbolic defaults and storage
-        self._prepare_data()         # Precompute symbolic source terms, BCs, and ICs
+        super().__init__(cfg)        # Initialize parent symbolic utilities
+        self._prepare_data()         # Generate symbolic expressions (ICs, BCs, forcing)
 
-        self.m_u = cfg.m_u           # Degree of φ_m(x) for displacement
-        self.m_v = cfg.m_v           # Degree of φ_m(x) for rotation
+        # Spatial basis mode degrees for u and v
+        self.m_u = cfg.m_u
+        self.m_v = cfg.m_v
 
-        self.pow_u = cfg.pow_u       # Exponent for temporal function g_u(t)
-        self.pow_v = cfg.pow_v       # Exponent for temporal function g_v(t)
+        # Time polynomial powers for u(t) and v(t)
+        self.pow_u = cfg.pow_u
+        self.pow_v = cfg.pow_v
+
+        # Time polynomial coefficients
+        self.coeff_u = cfg.coeff_u
+        self.coeff_v = cfg.coeff_v
 
     # ------------------------------------------------------
-    # METHOD: h_u – Spatial Basis for Displacement
+    # METHOD: h_u, d1h_u – Spatial Basis for Displacement
     # ------------------------------------------------------
     def h_u(self, x):
-        """
-        φₘ(x) basis for u(x), constructed via Legendre polynomial combination.
-        """
+        """Spatial basis function for u(x): φₘ(x) using shifted Legendre form."""
         return aux.phi_m(self.m_u, self.cfg.ell, x)
 
     def d1h_u(self, x):
-        """
-        First derivative of h_u(x) with respect to x.
-        Evaluates normalized shifted Legendre polynomial: P̂ₘ(x)
-        """
+        """First spatial derivative ∂φₘ/∂x used in ∂u/∂x calculations."""
         return aux.normalized_shifted_legendre(self.m_u, self.cfg.ell, x)
 
     # ------------------------------------------------------
-    # METHOD: h_v – Spatial Basis for Rotation
+    # METHOD: h_v, d1h_v – Spatial Basis for Rotation
     # ------------------------------------------------------
     def h_v(self, x):
-        """
-        φₘ(x) basis for v(x), same structure as h_u but with m_v degree.
-        """
+        """Spatial basis function for v(x): φₘ(x) using shifted Legendre form."""
         return aux.phi_m(self.m_v, self.cfg.ell, x)
 
     def d1h_v(self, x):
-        """
-        First derivative of h_v(x) with respect to x.
-        """
+        """First spatial derivative ∂φₘ/∂x used in ∂v/∂x calculations."""
         return aux.normalized_shifted_legendre(self.m_v, self.cfg.ell, x)
 
     # ------------------------------------------------------
-    # METHOD: g_u, d2g_u – Temporal Basis for Displacement
+    # METHOD: g_u, d2g_u – Time Component for Displacement
     # ------------------------------------------------------
     def g_u(self, t):
-        """Time dependence for u(t) as a monomial."""
-        return t**self.pow_u
+        """Time multiplier for displacement u(x, t): coeff_u * t^pow_u"""
+        return self.coeff_u * t**self.pow_u
 
     def d2g_u(self, t):
-        """Second time derivative of g_u(t) = d²g_u/dt²."""
-        return self.pow_u * (self.pow_u - 1) * t**(self.pow_u - 2)
+        """Second derivative ∂²g_u/∂t² needed for ∂²u/∂t²."""
+        return self.coeff_u * self.pow_u * (self.pow_u - 1) * t**(self.pow_u - 2)
 
     # ------------------------------------------------------
-    # METHOD: g_v, d2g_v – Temporal Basis for Rotation
+    # METHOD: g_v, d2g_v – Time Component for Rotation
     # ------------------------------------------------------
     def g_v(self, t):
-        """Time dependence for v(t) as a monomial."""
-        return t**self.pow_v
+        """Time multiplier for rotation v(x, t): coeff_v * t^pow_v"""
+        return self.coeff_v * t**self.pow_v
 
     def d2g_v(self, t):
-        """Second time derivative of g_v(t) = d²g_v/dt²."""
-        return self.pow_v * (self.pow_v - 1) * t**(self.pow_v - 2)
+        """Second derivative ∂²g_v/∂t² needed for ∂²v/∂t²."""
+        return self.coeff_v * self.pow_v * (self.pow_v - 1) * t**(self.pow_v - 2)
 
     # ------------------------------------------------------
-    # METHOD: u, v – Exact Analytical Solutions
+    # METHOD: u, v – Exact Displacement and Rotation
     # ------------------------------------------------------
     def u(self, x, t):
-        """Exact analytical displacement: u(x, t) = h_u(x) * g_u(t)"""
+        """Exact displacement field: u(x, t) = h_u(x) * g_u(t)"""
         return self.h_u(x) * self.g_u(t)
 
     def v(self, x, t):
-        """Exact analytical rotation: v(x, t) = h_v(x) * g_v(t)"""
+        """Exact rotation field: v(x, t) = h_v(x) * g_v(t)"""
         return self.h_v(x) * self.g_v(t)
 
     # ------------------------------------------------------
     # METHOD: diff1x_u, diff2t_u – Derivatives of u(x, t)
     # ------------------------------------------------------
     def diff1x_u(self, x, t):
-        """First spatial derivative of u(x, t): ∂u/∂x"""
+        """∂u/∂x = ∂φₘ/∂x * g_u(t)"""
         return self.d1h_u(x) * self.g_u(t)
 
     def diff2t_u(self, x, t):
-        """Second time derivative of u(x, t): ∂²u/∂t²"""
+        """∂²u/∂t² = φₘ(x) * ∂²g_u/∂t²"""
         return self.h_u(x) * self.d2g_u(t)
 
     # ------------------------------------------------------
     # METHOD: diff1x_v, diff2t_v – Derivatives of v(x, t)
     # ------------------------------------------------------
     def diff1x_v(self, x, t):
-        """First spatial derivative of v(x, t): ∂v/∂x"""
+        """∂v/∂x = ∂φₘ/∂x * g_v(t)"""
         return self.d1h_v(x) * self.g_v(t)
 
     def diff2t_v(self, x, t):
-        """Second time derivative of v(x, t): ∂²v/∂t²"""
+        """∂²v/∂t² = φₘ(x) * ∂²g_v/∂t²"""
         return self.h_v(x) * self.d2g_v(t)
 
     # ------------------------------------------------------
