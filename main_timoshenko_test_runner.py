@@ -206,7 +206,10 @@ if test.known_solutions:
 
             # Compute L2 error across all time steps
             L2_errors[f"L2_error_{sol_type}"] = aux.compute_L2_error(
-                exact_func, approx_func, solver.ell
+                exact_func,        # Exact benchmark solution at each time step
+                approx_func,       # Numerical approximation from Galerkin solver
+                solver.ell,        # Spatial domain length used for integration limits
+                **cfg.quad_kwargs  # Inject quadrature parameters (tol, min_dx, etc.) from config
             )
 
         # Print errors step-by-step

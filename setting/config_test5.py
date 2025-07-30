@@ -50,7 +50,7 @@ degree_max = max(m_u, m_v)
 # ======================================================
 # Uniform time grid for advancing the solution in time.
 
-n = 128                        # Number of time intervals
+n = 512                        # Number of time intervals
 t = np.linspace(0, T, n + 1)   # Time grid with n+1 points: [t₀, ..., tₙ]
 tau = T / n                    # Uniform time step size
 
