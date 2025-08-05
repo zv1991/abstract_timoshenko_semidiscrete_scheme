@@ -124,6 +124,10 @@ class TimoshenkoTesterParent:
             d2psi0    = lambda x: self.d2psi0(x)
             d3varphi0 = lambda x: self.d3varphi0(x)
             d3psi0    = lambda x: self.d3psi0(x)
+            
+            # Source terms
+            f1 = lambda x, t: self.f1(x, t)
+            f2 = lambda x, t: self.f2(x, t)
 
             # Compute nonlinear stiffness contribution
             nonlinear_term, *_ = integrate_derivative_form(
@@ -132,13 +136,13 @@ class TimoshenkoTesterParent:
 
             # Second-order time derivatives from PDE model
             varphi2 = lambda x: (
-                self.f1(x, 0)
+                f1(x, 0)
                 - self.cfg.a1 * self.dv0(x)
                 + (self.cfg.alpha + self.cfg.beta * nonlinear_term) * d2varphi0(x)
             )
 
             psi2 = lambda x: (
-                self.f2(x, 0)
+                f2(x, 0)
                 + self.cfg.a2 * self.du0(x)
                 + self.cfg.gamma * d2psi0(x)
                 - self.cfg.delta * self.v0(x)

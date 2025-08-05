@@ -4,42 +4,41 @@
 # Provides dynamic retrieval of configuration and benchmark classes based on a string identifier.
 # ======================================================
 
-
 # ======================================================
 # CONFIGURATION MODULES — PHYSICAL & NUMERICAL PARAMETERS
 # ======================================================
-# Each imported configuration defines:
+# Each configuration module defines:
 #   - Physical coefficients: α, β, γ, δ, a₁, a₂
-#   - Spatial domain length (ℓ) and simulation time (T)
-#   - Discretization parameters: number of basis functions (N), number of time steps (n), time step size (τ)
-#   - Test-specific symbolic tuning parameters (e.g., spatial frequency, amplitude scaling)
+#   - Domain size (ℓ), total simulation time (T)
+#   - Discretization parameters: basis functions (N), time steps (n), time step size (τ)
+#   - Symbolic tuning: spatial frequency, Gaussian width/amplitude, etc.
 
-import setting.config_test0 as cfg0  # cfg0: Testcase0 — Simple constant/linear solutions (debug baseline)
-import setting.config_test1 as cfg1  # cfg1: Testcase1 — Differences of the Legendre polynomials solution with linear temporal multiplier
-import setting.config_test2 as cfg2  # cfg2: Testcase2 — Nonlinear system with sinusoidal forcing
-import setting.config_test3 as cfg3  # cfg3: Testcase3 — Oscillatory benchmark using sinusoids in x and t
-import setting.config_test4 as cfg4  # cfg4: Testcase4 — Variant of Testcase3 with tunable wave frequency
-import setting.config_test5 as cfg5  # cfg5: Testcase5 — Legendre spatial basis with polynomial-in-time solutions
-import setting.config_test6 as cfg6  # cfg6: Testcase6 — Sinusoidal in x, exponential amplitude growth in t
-
+import setting.config_test0 as cfg0  # Testcase0 — Constant or linear field (debug baseline)
+import setting.config_test1 as cfg1  # Testcase1 — Linear time scaling with Legendre modes
+import setting.config_test2 as cfg2  # Testcase2 — Nonlinear system with sinusoidal forcing
+import setting.config_test3 as cfg3  # Testcase3 — Oscillatory benchmark: sinusoids in x and t
+import setting.config_test4 as cfg4  # Testcase4 — Variant of Testcase3 with tunable wave freq
+import setting.config_test5 as cfg5  # Testcase5 — Polynomial time × Legendre spatial basis
+import setting.config_test6 as cfg6  # Testcase6 — Exponentially growing sinusoidal system
+import setting.config_test7 as cfg7  # Testcase7 — Unknown manufactured solution test case
 
 # ======================================================
 # SYMBOLIC TEST CASE CLASSES — Exact Solutions & Sources
 # ======================================================
-# Each class defines symbolic expressions used for:
-#   - Displacement field u(x, t) and rotation field v(x, t)
-#   - Spatial and temporal derivatives (∂u/∂x, ∂²u/∂t², etc.)
-#   - Source terms f₁(t, x) and f₂(t, x)
-#   - Boundary and initial conditions
+# Each class implements symbolic expressions for:
+#   - Fields: u(x, t), v(x, t)
+#   - Derivatives: ∂u/∂x, ∂²u/∂t², ...
+#   - Sources: f₁(x, t), f₂(x, t)
+#   - Initial and boundary conditions
 
-from tests.test0 import Testcase0  # Testcase0: Basic constant/polynomial field (sanity check)
-from tests.test1 import Testcase1  # Testcase1: Mild trigonometric benchmark with temporal variation
-from tests.test2 import Testcase2  # Testcase2: Sinusoidal solution with nonlinearity in u-equation
-from tests.test3 import Testcase3  # Testcase3: Oscillatory test with spatial and temporal sine waves
-from tests.test4 import Testcase4  # Testcase4: Testcase3 variant with parameterized spatial frequencies
-from tests.test5 import Testcase5  # Testcase5: Analytical test using Legendre spatial modes and time polynomials
-from tests.test6 import Testcase6  # Testcase6: Sinusoidal solution with exponential time dynamics (amplitude-growing)
-
+from tests.test0 import Testcase0  # Basic symbolic case (constant or linear fields)
+from tests.test1 import Testcase1  # Mild trigonometric + time-varying amplitude
+from tests.test2 import Testcase2  # Sinusoidal displacement, nonlinear damping
+from tests.test3 import Testcase3  # Oscillatory x–t sine functions
+from tests.test4 import Testcase4  # Frequency-parametric extension of Testcase3
+from tests.test5 import Testcase5  # Spatial Legendre modes × polynomial time dynamics
+from tests.test6 import Testcase6  # Exponential time-amplitude sinusoidal fields
+from tests.test7 import Testcase7  # Non-symbolic reference test for solver validation
 
 # ======================================================
 # FUNCTION: get_testcase
@@ -53,26 +52,26 @@ def get_testcase(name: str):
     Parameters
     ----------
     name : str
-        Identifier of the test case to load. Must be one of:
-        'test0', 'test1', ..., 'test6'.
+        Identifier for the test case (e.g., "test0", ..., "test7").
 
     Returns
     -------
-    cfg : module
-        Configuration module defining numerical and physical parameters.
-    test : object
-        Instance of the corresponding Testcase class with symbolic expressions.
+    tuple
+        (cfg, testcase) where:
+            cfg : module
+                Configuration module with physical and numerical settings.
+            testcase : Testcase object
+                Instance of the corresponding symbolic test case class.
 
     Raises
     ------
     ValueError
-        If the test name is not in the supported registry.
+        If the name is not found in the registry.
     """
 
-    # ----------------------------------------------
-    # Registry: maps test name strings to loader lambdas
-    # Each entry returns a tuple: (cfg_module, Testcase instance)
-    # ----------------------------------------------
+    # --------------------------------------------------
+    # REGISTRY: Mapping from test names to (cfg, class)
+    # --------------------------------------------------
     test_registry = {
         "test0": lambda: (cfg0, Testcase0(cfg0)),
         "test1": lambda: (cfg1, Testcase1(cfg1)),
@@ -81,20 +80,21 @@ def get_testcase(name: str):
         "test4": lambda: (cfg4, Testcase4(cfg4)),
         "test5": lambda: (cfg5, Testcase5(cfg5)),
         "test6": lambda: (cfg6, Testcase6(cfg6)),
-        # To extend the suite, add new entries here:
-        # "test7": lambda: (cfg7, Testcase7(cfg7)),
+        "test7": lambda: (cfg7, Testcase7(cfg7)),
+        # Extend here for new test cases:
+        # "test8": lambda: (cfg8, Testcase8(cfg8)),
     }
 
-    # ----------------------------------------------
-    # Validate user input against supported test cases
-    # ----------------------------------------------
+    # --------------------------------------------------
+    # VALIDATION: Check if test name exists
+    # --------------------------------------------------
     if name not in test_registry:
         raise ValueError(
             f"Unknown test name: '{name}'. "
             f"Available options are: {list(test_registry.keys())}"
         )
 
-    # ----------------------------------------------
-    # Return configuration and benchmark instance
-    # ----------------------------------------------
+    # --------------------------------------------------
+    # DISPATCH: Return selected configuration and testcase
+    # --------------------------------------------------
     return test_registry[name]()
