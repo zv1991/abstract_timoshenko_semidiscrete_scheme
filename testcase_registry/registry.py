@@ -4,73 +4,75 @@
 # Provides dynamic retrieval of configuration and benchmark classes based on a string identifier.
 # ======================================================
 
-# ======================================================
-# CONFIGURATION MODULES — PHYSICAL & NUMERICAL PARAMETERS
-# ======================================================
-# Each configuration module defines:
-#   - Physical coefficients: α, β, γ, δ, a₁, a₂
-#   - Domain size (ℓ), total simulation time (T)
-#   - Discretization parameters: basis functions (N), time steps (n), time step size (τ)
-#   - Symbolic tuning: spatial frequency, Gaussian width/amplitude, etc.
-
-import setting.config_test0 as cfg0  # Testcase0 — Constant or linear field (debug baseline)
-import setting.config_test1 as cfg1  # Testcase1 — Linear time scaling with Legendre modes
-import setting.config_test2 as cfg2  # Testcase2 — Nonlinear system with sinusoidal forcing
-import setting.config_test3 as cfg3  # Testcase3 — Oscillatory benchmark: sinusoids in x and t
-import setting.config_test4 as cfg4  # Testcase4 — Variant of Testcase3 with tunable wave freq
-import setting.config_test5 as cfg5  # Testcase5 — Polynomial time × Legendre spatial basis
-import setting.config_test6 as cfg6  # Testcase6 — Exponentially growing sinusoidal system
-import setting.config_test7 as cfg7  # Testcase7 — Unknown manufactured solution test case
 
 # ======================================================
-# SYMBOLIC TEST CASE CLASSES — Exact Solutions & Sources
+# CONFIGURATION MODULE IMPORTS — Physical & Numerical Settings
 # ======================================================
-# Each class implements symbolic expressions for:
-#   - Fields: u(x, t), v(x, t)
-#   - Derivatives: ∂u/∂x, ∂²u/∂t², ...
-#   - Sources: f₁(x, t), f₂(x, t)
+# Each config module defines:
+#   - Physical coefficients (alpha, beta, gamma, delta, a1, a2)
+#   - Domain settings (ell, T)
+#   - Numerical parameters (N, n, tau)
+#   - Oscillatory/Gaussian benchmark parameters
+
+import setting.config_test0 as cfg0  # Testcase0: Constant/linear fields — simple baseline
+import setting.config_test1 as cfg1  # Testcase1: Linear time scaling + Legendre modes
+import setting.config_test2 as cfg2  # Testcase2: Nonlinear system with sinusoidal input
+import setting.config_test3 as cfg3  # Testcase3: Sinusoidal spatial/temporal fields
+import setting.config_test4 as cfg4  # Testcase4: Adjustable frequency extension of Testcase3
+import setting.config_test5 as cfg5  # Testcase5: Legendre spatial × polynomial temporal
+import setting.config_test6 as cfg6  # Testcase6: Exponential-in-time sinusoidal fields
+import setting.config_test7 as cfg7  # Testcase7: Oscillating Gaussian-modulated sine fields
+
+
+# ======================================================
+# TESTCASE CLASS IMPORTS — Symbolic Solution Definitions
+# ======================================================
+# Each class defines:
+#   - Exact fields u(x,t), v(x,t)
+#   - Derivatives and source terms
 #   - Initial and boundary conditions
 
-from tests.test0 import Testcase0  # Basic symbolic case (constant or linear fields)
-from tests.test1 import Testcase1  # Mild trigonometric + time-varying amplitude
-from tests.test2 import Testcase2  # Sinusoidal displacement, nonlinear damping
-from tests.test3 import Testcase3  # Oscillatory x–t sine functions
-from tests.test4 import Testcase4  # Frequency-parametric extension of Testcase3
-from tests.test5 import Testcase5  # Spatial Legendre modes × polynomial time dynamics
-from tests.test6 import Testcase6  # Exponential time-amplitude sinusoidal fields
-from tests.test7 import Testcase7  # Non-symbolic reference test for solver validation
+from tests.test0 import Testcase0  # Basic test with constant/linear symbolic fields
+from tests.test1 import Testcase1  # Trig functions with time scaling
+from tests.test2 import Testcase2  # Sinusoidal benchmark with nonlinear terms
+from tests.test3 import Testcase3  # Sinusoids in space and time
+from tests.test4 import Testcase4  # Frequency-tunable extension of test3
+from tests.test5 import Testcase5  # Polynomial-time Legendre-spatial solution
+from tests.test6 import Testcase6  # Time-exponential sinusoidal behavior
+from tests.test7 import Testcase7  # Gaussian spatial envelope × time-oscillatory wave
+
 
 # ======================================================
 # FUNCTION: get_testcase
-# PURPOSE : Dispatcher that returns the (cfg, testcase) pair for a given test identifier.
+# PURPOSE : Dispatcher for returning (cfg, testcase) by name
 # ======================================================
 
 def get_testcase(name: str):
     """
-    Retrieve configuration and symbolic test class for a given test name.
+    Dispatcher to fetch the configuration module and symbolic testcase instance
+    for a given benchmark identifier string (e.g., "test0", "test1", ...).
 
     Parameters
     ----------
     name : str
-        Identifier for the test case (e.g., "test0", ..., "test7").
+        String identifier corresponding to the test case.
 
     Returns
     -------
     tuple
-        (cfg, testcase) where:
-            cfg : module
-                Configuration module with physical and numerical settings.
-            testcase : Testcase object
-                Instance of the corresponding symbolic test case class.
+        (cfg, testcase)
+        - cfg      : Configuration module containing physical and numerical settings
+        - testcase : Instantiated class with symbolic solutions and source terms
 
     Raises
     ------
     ValueError
-        If the name is not found in the registry.
+        If the name is not found in the registered test dictionary.
     """
 
     # --------------------------------------------------
-    # REGISTRY: Mapping from test names to (cfg, class)
+    # REGISTRY: Mapping of test names to lambda functions
+    # Each lambda lazily constructs the (cfg, testcase) pair
     # --------------------------------------------------
     test_registry = {
         "test0": lambda: (cfg0, Testcase0(cfg0)),
@@ -81,12 +83,12 @@ def get_testcase(name: str):
         "test5": lambda: (cfg5, Testcase5(cfg5)),
         "test6": lambda: (cfg6, Testcase6(cfg6)),
         "test7": lambda: (cfg7, Testcase7(cfg7)),
-        # Extend here for new test cases:
+        # Template for future additions:
         # "test8": lambda: (cfg8, Testcase8(cfg8)),
     }
 
     # --------------------------------------------------
-    # VALIDATION: Check if test name exists
+    # VALIDATION: Check if requested test name is valid
     # --------------------------------------------------
     if name not in test_registry:
         raise ValueError(
@@ -95,6 +97,6 @@ def get_testcase(name: str):
         )
 
     # --------------------------------------------------
-    # DISPATCH: Return selected configuration and testcase
+    # DISPATCH: Construct and return the (cfg, testcase) pair
     # --------------------------------------------------
     return test_registry[name]()

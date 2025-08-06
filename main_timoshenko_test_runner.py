@@ -91,12 +91,12 @@ if test.known_solutions:
             v0=v0, v1=v1,        # Initial rotations at t=0 and t=τ
             du0=du0, du1=du1,    # Initial spatial derivatives of u
             dv0=dv0, dv1=dv1,    # Initial spatial derivatives of v
-            h=1e-3,              # Finite difference step for derivatives (if needed)
-            derivmeth='nd',      # Derivative method: 'nd' (NumDiff) or 'sfd' (Standard Finite Difference)
-            tol=cfg.quad_kwargs['tol'],              # Gauss integration tolerance
-            min_dx=cfg.quad_kwargs['min_dx'],        # Minimum subdivision size for integration
-            n_gauss=cfg.quad_kwargs['n_gauss'],      # Initial number of Gauss nodes
-            max_gauss=cfg.quad_kwargs['max_gauss'],  # Maximum number of Gauss nodes
+            # h=1e-3,              # Finite difference step for derivatives (if needed)
+            # derivmeth='nd',      # Derivative method: 'nd' (NumDiff) or 'sfd' (Standard Finite Difference)
+            # tol=cfg.quad_kwargs['tol'],              # Gauss integration tolerance
+            # min_dx=cfg.quad_kwargs['min_dx'],        # Minimum subdivision size for integration
+            # n_gauss=cfg.quad_kwargs['n_gauss'],      # Initial number of Gauss nodes
+            # max_gauss=cfg.quad_kwargs['max_gauss'],  # Maximum number of Gauss nodes
             known_solutions=test.known_solutions     # Whether analytic solution is known (True/False)
         )
     )
