@@ -20,9 +20,9 @@ ell = 2.0    # Length of the beam; spatial interval: [0, ell]
 # Physical coefficients for the Timoshenko beam model.
 # These affect stiffness, damping, and coupling between translation and rotation.
 
-alpha = 1.0  # Stiffness coefficient for translational displacement u(x, t)
-beta  = 1.0  # Nonlinear damping coefficient in u-equation (dissipation based on gradients)
-gamma = 1.0  # Rotational stiffness coefficient in v-equation (restoring torque)
+alpha = 10.0  # Stiffness coefficient for translational displacement u(x, t)
+beta  = 0.25  # Nonlinear damping coefficient in u-equation (dissipation based on gradients)
+gamma = 10.0  # Rotational stiffness coefficient in v-equation (restoring torque)
 delta = 1.0  # Linear damping coefficient in v-equation (energy loss through damping)
 a1    = 1.0  # Coupling coefficient: ∂v/∂x in u-equation (rotation affects displacement)
 a2    = 1.0  # Coupling coefficient: ∂u/∂x in v-equation (displacement affects rotation)
@@ -43,8 +43,8 @@ lam1_u = 2   # Number of temporal oscillations for u(x, t)
 lam1_v = 2   # Number of temporal oscillations for v(x, t)
 
 # Amplitude parameters
-A_u = 0.5    # Amplitude of Gaussian profile for u(x, t)
-A_v = 0.5   # Amplitude of Gaussian profile for v(x, t)
+A_u = 1.0   # Amplitude of Gaussian profile for u(x, t)
+A_v = 1.0   # Amplitude of Gaussian profile for v(x, t)
 
 # Width of Gaussian envelope (smaller = narrower)
 c_u = 1.0    # Gaussian width parameter for u(x, t)
@@ -66,7 +66,7 @@ tau = T / n                   # Time step size Δt (uniform steps)
 # ======================================================
 # Configuration for Galerkin spectral projection using Legendre polynomials.
 
-N = 35  # Number of basis functions (Legendre polynomials) used for spatial approximation
+N = 45  # Number of basis functions (Legendre polynomials) used for spatial approximation
 
 
 # ======================================================
