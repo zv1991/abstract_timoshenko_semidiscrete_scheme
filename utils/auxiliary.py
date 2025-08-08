@@ -3052,18 +3052,6 @@ def plot_L2_errors_over_time(
 #   - str : Full file path to the saved PDF plot
 # =============================================================================
 
-# =============================================================================
-# MODULE IMPORTS
-# =============================================================================
-from pathlib import Path                # Handles filesystem paths across OSes
-from datetime import datetime           # For unique timestamped file naming
-import numpy as np                      # Numerical operations and array handling
-import matplotlib.pyplot as plt         # Main plotting API
-from matplotlib import rcParams         # For advanced plot style configurations
-
-# =============================================================================
-# METHOD: plot_exact_vs_approx_solution_at_time_k
-# =============================================================================
 def plot_exact_vs_approx_solution_at_time_k(
     exact_soln: callable,
     approx_solver: object,
@@ -3091,6 +3079,15 @@ def plot_exact_vs_approx_solution_at_time_k(
     Returns:
         str: Path to the saved PDF plot.
     """
+    
+    # =========================================================================
+    # MODULE IMPORTS (local to reduce global dependency footprint)
+    # =========================================================================
+    from pathlib import Path                # Handles filesystem paths across OSes
+    from datetime import datetime           # For unique timestamped file naming
+    import numpy as np                      # Numerical operations and array handling
+    import matplotlib.pyplot as plt         # Main plotting API
+    from matplotlib import rcParams         # For advanced plot style configurations
 
     # =========================================================================
     # VALIDATE INPUTS
@@ -3198,3 +3195,160 @@ def plot_exact_vs_approx_solution_at_time_k(
     # RETURN FULL FILE PATH TO THE SAVED PLOT
     # =========================================================================
     return str(filename)
+
+# =============================================================================
+# METHOD: plot_approx_solution_at_time_k
+# =============================================================================
+# Title:
+#     Plot Galerkin Approximate Solution at Discrete Time Layers
+#
+# Description:
+#     Generates LaTeX-styled, publication-quality plots of the Galerkin-based 
+#     approximate solution at five equally spaced time layers in the simulation 
+#     domain (t = 0, T/4, T/2, 3T/4, T). Each snapshot is saved as a 
+#     timestamped PDF for traceability.
+#
+# Parameters:
+#     approx_solver (object): Solver instance with callable_compute_ansatz() method.
+#     solution_type (str): Solution field to evaluate: 'u' (displacement) or 'v' (rotation).
+#     config (object): Configuration object with fields like `ell`, `n`, `N`, `t`, and optional `name`.
+#     output_dir (str): Directory to save the plots (default is "plots").
+#
+# Returns:
+#     list[str]: List of absolute paths to the saved PDF plots.
+# =============================================================================
+def plot_approx_solution_at_time_k(
+    approx_solver: object,
+    solution_type: str,
+    config,
+    output_dir: str = "plots"
+) -> list[str]:
+    """
+    Title: Plot Galerkin Approximate Solution at Discrete Time Layers
+
+    Description:
+        Generates LaTeX-styled, publication-quality plots of the Galerkin-based 
+        approximate solution at five equally spaced time layers in the simulation 
+        time domain (t = 0, T/4, T/2, 3T/4, T). Each snapshot is saved as a 
+        separate, timestamped PDF file.
+
+    Parameters:
+        approx_solver (object): Must implement callable_compute_ansatz().
+        solution_type (str): 'u' (displacement) or 'v' (rotation).
+        config (object): Simulation configuration containing ell, n, N, optionally name.
+        output_dir (str): Directory to save the plots (default: "plots").
+
+    Returns:
+        list[str]: List of paths to the saved PDF files.
+    """
+
+    # =========================================================================
+    # MODULE IMPORTS (Scoped locally to minimize global side effects)
+    # =========================================================================
+    from pathlib import Path                 # Platform-independent path handling
+    from datetime import datetime            # For unique timestamped filenames
+    import numpy as np                       # For numerical operations
+    import matplotlib.pyplot as plt          # For generating plots
+    from matplotlib import rcParams          # For LaTeX-based rendering setup
+
+    # =========================================================================
+    # PLOT AND SAMPLE CONFIGURATION
+    # =========================================================================
+    LINE_WIDTH = 3.0                         # Thickness of plot lines
+    NUM_POINTS = 201                         # Number of spatial samples (x-axis)
+    x_vals = np.linspace(0, config.ell, NUM_POINTS)  # Spatial grid over [0, ℓ]
+
+    # Compute time indices for t = 0, T/4, T/2, 3T/4, T
+    step = int(config.n / 4)
+    time_layers = [i * step for i in range(5)]
+
+    # =========================================================================
+    # COLOR SETTINGS (Colorblind-safe: Okabe–Ito palette)
+    # =========================================================================
+    COLOR_APPROX = "#D55E00"                 # Orange for approximation curve
+
+    # =========================================================================
+    # ENABLE LATEX-STYLED RENDERING FOR HIGH-QUALITY FIGURES
+    # =========================================================================
+    rcParams["text.usetex"] = True
+    rcParams["font.family"] = "lmodern"
+    rcParams["text.latex.preamble"] = r"""
+    \usepackage[utf8]{inputenc}
+    \usepackage[T1]{fontenc}
+    \usepackage{lmodern}
+    \usepackage{slantsc}
+    \usepackage{dsfont}
+    \usepackage{upgreek}
+    \usepackage{amsmath,amssymb,amsthm,amstext,amsfonts}
+    \usepackage{mathtools}
+    \usepackage{nicefrac}
+    \usepackage{xcolor}
+    """
+
+    # =========================================================================
+    # PREPARE OUTPUT DIRECTORY
+    # =========================================================================
+    config_name = getattr(config, "name", "config")        # Use 'config' if name not present
+    output_path = Path(output_dir) / config_name           # plots/<config_name>/
+    output_path.mkdir(parents=True, exist_ok=True)         # Create directory if missing
+
+    # =========================================================================
+    # LOOP OVER TIME LAYERS AND GENERATE PLOTS
+    # =========================================================================
+    saved_files = []  # Collect full paths to saved plot files
+
+    for time_layer in time_layers:
+        # ---------------------------------------------------------------------
+        # Evaluate Galerkin approximation at current time index `k`
+        # ---------------------------------------------------------------------
+        approx_values = approx_solver.callable_compute_ansatz(
+            solution_type=solution_type,
+            k=time_layer,
+            x_vals=x_vals
+        )
+
+        # Safely fetch time value `t_k` for labeling
+        try:
+            t_k = config.t[time_layer]
+        except (IndexError, AttributeError):
+            t_k = time_layer  # Fallback to index if time array is missing
+
+        # ---------------------------------------------------------------------
+        # Initialize the Plot
+        # ---------------------------------------------------------------------
+        plt.figure(figsize=(8, 4))  # Set figure size in inches (width, height)
+
+        # Plot approximate solution curve
+        plt.plot(
+            x_vals,
+            approx_values,
+            label=rf"Approximate: $\tilde{{{solution_type}}}_{{{time_layer},{config.N}}}(x)$",
+            color=COLOR_APPROX,
+            linestyle='-',
+            linewidth=LINE_WIDTH
+        )
+
+        # Configure axes and labels
+        plt.xlabel(rf"Spatial coordinate $x \in [0, {config.ell:g}]$")
+        plt.ylabel("Solution value")
+        plt.title(rf"Approximate Solution: ${solution_type}(x, {t_k:g})$")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()  # Ensures no label overlap
+
+        # ---------------------------------------------------------------------
+        # Generate Timestamped Filename and Save Plot
+        # ---------------------------------------------------------------------
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g., 20250808_141500
+        filename = output_path / (
+            f"{config_name}_solution_{solution_type}_t{time_layer}_N{config.N}_{timestamp}.pdf"
+        )
+        plt.savefig(filename)   # Save figure as high-quality PDF
+        plt.close()             # Free memory after saving
+
+        saved_files.append(str(filename))  # Track saved file path
+
+    # =========================================================================
+    # RETURN ALL GENERATED FILE PATHS
+    # =========================================================================
+    return saved_files

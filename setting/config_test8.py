@@ -37,11 +37,11 @@ a2    = 1.0   # Coupling coefficient from ∂u/∂x in v-equation — displaceme
 lam_u = 15  # Number of spatial oscillations in initial displacement u(x, 0)
 lam_v = 15  # Number of spatial oscillations in initial rotation v(x, 0)
 
-A_u = 1.0  # Amplitude of the Gaussian profile for u(x, 0)
-A_v = 1.0  # Amplitude of the Gaussian profile for v(x, 0)
+A_u = 0.25  # Amplitude of the Gaussian profile for u(x, 0)
+A_v = 0.25  # Amplitude of the Gaussian profile for v(x, 0)
 
-c_u = 2.0  # Gaussian width parameter for u(x, 0); lower values = narrower peak
-c_v = 2.0  # Gaussian width parameter for v(x, 0); lower values = narrower peak
+c_u = 1.0  # Gaussian width parameter for u(x, 0); lower values = narrower peak
+c_v = 1.0  # Gaussian width parameter for v(x, 0); lower values = narrower peak
 
 
 # ======================================================
@@ -49,7 +49,7 @@ c_v = 2.0  # Gaussian width parameter for v(x, 0); lower values = narrower peak
 # ======================================================
 # Define time discretization for time-stepping algorithms like Runge-Kutta or backward Euler.
 
-n = 128                       # Number of time steps (uniformly spaced) over [0, T]
+n = 256                       # Number of time steps (uniformly spaced) over [0, T]
 t = np.linspace(0, T, n + 1)  # Discretized time array from t₀ = 0 to tₙ = T; (n+1) points total
 tau = T / n                  # Time step size (τ), derived from total time and step count
 

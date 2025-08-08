@@ -22,6 +22,7 @@ import setting.config_test4 as cfg4  # Testcase4: Adjustable frequency extension
 import setting.config_test5 as cfg5  # Testcase5: Legendre spatial × polynomial temporal
 import setting.config_test6 as cfg6  # Testcase6: Exponential-in-time sinusoidal fields
 import setting.config_test7 as cfg7  # Testcase7: Oscillating Gaussian-modulated sine fields
+import setting.config_test8 as cfg8
 
 
 # ======================================================
@@ -40,6 +41,7 @@ from tests.test4 import Testcase4  # Frequency-tunable extension of test3
 from tests.test5 import Testcase5  # Polynomial-time Legendre-spatial solution
 from tests.test6 import Testcase6  # Time-exponential sinusoidal behavior
 from tests.test7 import Testcase7  # Gaussian spatial envelope × time-oscillatory wave
+from tests.test8 import Testcase8
 
 
 # ======================================================
@@ -83,8 +85,9 @@ def get_testcase(name: str):
         "test5": lambda: (cfg5, Testcase5(cfg5)),
         "test6": lambda: (cfg6, Testcase6(cfg6)),
         "test7": lambda: (cfg7, Testcase7(cfg7)),
+        "test8": lambda: (cfg8, Testcase8(cfg8)),
         # Template for future additions:
-        # "test8": lambda: (cfg8, Testcase8(cfg8)),
+        # "test9": lambda: (cfg9, Testcase9(cfg9)),
     }
 
     # --------------------------------------------------

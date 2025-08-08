@@ -26,7 +26,7 @@ from testcase_registry.registry import get_testcase
 
 # Set the name of the test case to run.
 # Options: 'test0', 'test1', ..., 'test6' depending on availability.
-test_name = "test7"
+test_name = "test8"
 
 # Retrieve both the configuration module (cfg) and symbolic benchmark instance (test)
 # - cfg: holds physical and numerical simulation parameters
@@ -208,6 +208,7 @@ if test.known_solutions:
     
     # Optional cleanup of used variables
     del f1, f2, path, results, sol_type, test_name, time_layer
+
 else:
     # ---------------------------------------------------------------
     # IF NO EXACT SOLUTION IS AVAILABLE, RUN CONVERGENCE ANALYSIS
@@ -221,41 +222,58 @@ else:
     n_base = cfg.n
     N_base = cfg.N
 
-    for p in range(0, max_increment_n + 1):  # Time refinement
-        n_updt = 2**p * n_base
+    converged = False  # Track convergence
+
+    for n_incr in range(0, max_increment_n + 1):  # Time refinement
+        n_updt = 2**n_incr * n_base
+        if n_updt > 512:
+            break  # Stop if time resolution too large
 
         # Base solution at fixed spatial resolution
-        solver_prev = TimoshenkoModelSolver(
-            ell=cfg.ell, T=cfg.T,
-            alpha=cfg.alpha, beta=cfg.beta,
-            gamma=cfg.gamma, delta=cfg.delta,
-            a1=cfg.a1, a2=cfg.a2,
-            n=n_updt, N=N_base,
-            f1=f1, f2=f2,
-            u0=u0, u1=u1,
-            v0=v0, v1=v1,
-            du0=du0, du1=du1,
-            dv0=dv0, dv1=dv1
-        )
-
-        for q in range(1, max_galerkin_mode + 1):  # Spatial refinement
-            N_updt = N_base + q
-
-            solver = TimoshenkoModelSolver(
+        solver_prev = aux.named(
+            test.name,
+            TimoshenkoModelSolver(
                 ell=cfg.ell, T=cfg.T,
                 alpha=cfg.alpha, beta=cfg.beta,
                 gamma=cfg.gamma, delta=cfg.delta,
                 a1=cfg.a1, a2=cfg.a2,
-                n=n_updt, N=N_updt,
+                n=n_updt, N=N_base,
                 f1=f1, f2=f2,
                 u0=u0, u1=u1,
                 v0=v0, v1=v1,
                 du0=du0, du1=du1,
-                dv0=dv0, dv1=dv1
+                dv0=dv0, dv1=dv1,
+                known_solutions=test.known_solutions
+            )
+        )
+
+        for galerkin_mode in range(1, max_galerkin_mode + 1):  # Spatial refinement
+            N_updt = N_base + galerkin_mode
+            if N_updt > 45:
+                break  # Stop spatial refinement if limit exceeded
+            
+            # Display current increment step
+            print(f"Testing n = {n_updt}, N = {N_updt}.")
+
+            solver = aux.named(
+                test.name,
+                TimoshenkoModelSolver(
+                    ell=cfg.ell, T=cfg.T,
+                    alpha=cfg.alpha, beta=cfg.beta,
+                    gamma=cfg.gamma, delta=cfg.delta,
+                    a1=cfg.a1, a2=cfg.a2,
+                    n=n_updt, N=N_updt,
+                    f1=f1, f2=f2,
+                    u0=u0, u1=u1,
+                    v0=v0, v1=v1,
+                    du0=du0, du1=du1,
+                    dv0=dv0, dv1=dv1,
+                    known_solutions=test.known_solutions
+                )
             )
 
             u_converged = True
-            for k in range(n_updt):
+            for k in range(2, n_updt):
                 norm_u = aux.compute_L2_difference_norms_from_coeffs(
                     coeff_init=solver_prev.tilde_u,
                     coeff_next=solver.tilde_u,
@@ -268,7 +286,7 @@ else:
 
             if u_converged:
                 v_converged = True
-                for k in range(n_updt):
+                for k in range(2, n_updt):
                     norm_v = aux.compute_L2_difference_norms_from_coeffs(
                         coeff_init=solver_prev.tilde_v,
                         coeff_next=solver.tilde_v,
@@ -283,9 +301,23 @@ else:
 
             if u_converged and v_converged:
                 print(f"\n Converged at n = {n_updt}, N = {N_updt}")
+                converged = True
+                
+                # Plot approximate solution snapshots
+                print("Plotting approximate solution snapshots")
+                for sol_type in ["u", "v"]:
+                    aux.plot_approx_solution_at_time_k(
+                        approx_solver=solver,
+                        solution_type=sol_type,
+                        config=solver
+                    )
+                
                 break  # Exit spatial loop
 
             solver_prev = solver  # Only if same n_updt
 
-        if u_converged and v_converged:
+        if converged:
             break  # Exit time loop
+
+    if not converged:
+        print("\n Convergence was not reached within the given limits: n ≤ 512 and N ≤ 45.")

@@ -7,10 +7,10 @@ from tests.timoshenko_data import TimoshenkoTesterParent  # Parent class for tes
 
 
 # ======================================================
-# CLASS: Testcase7 – Unknown Benchmark Solution for Timoshenko System
+# CLASS: Testcase8 – Unknown Benchmark Solution for Timoshenko System
 # ======================================================
 
-class Testcase7(TimoshenkoTesterParent):
+class Testcase8(TimoshenkoTesterParent):
     """
     Unknown benchmark test case for the nonlinear Timoshenko beam model.
 
@@ -37,7 +37,7 @@ class Testcase7(TimoshenkoTesterParent):
             - Gaussian shape parameters: A_*, c_*
         """
         self.cfg = cfg
-        self.name = "test7"
+        self.name = "test8"
         self.known_solutions = False  # No exact time-evolving solution is provided
 
         # Oscillation parameters
