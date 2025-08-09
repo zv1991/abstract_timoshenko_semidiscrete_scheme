@@ -4,6 +4,11 @@
 # Provides dynamic retrieval of configuration and benchmark classes based on a string identifier.
 # ======================================================
 
+# (Optional reading) This module exposes a single public function:
+#   get_testcase(name: str) -> (cfg_module, testcase_instance)
+# which returns the configuration module and an instantiated testcase for the
+# requested benchmark. The mapping itself is stored in a module-level constant
+# to avoid re-allocating the dictionary on every call.
 
 # ======================================================
 # CONFIGURATION MODULE IMPORTS — Physical & Numerical Settings
@@ -22,8 +27,9 @@ import setting.config_test4 as cfg4  # Testcase4: Adjustable frequency extension
 import setting.config_test5 as cfg5  # Testcase5: Legendre spatial × polynomial temporal
 import setting.config_test6 as cfg6  # Testcase6: Exponential-in-time sinusoidal fields
 import setting.config_test7 as cfg7  # Testcase7: Oscillating Gaussian-modulated sine fields
-import setting.config_test8 as cfg8
-
+import setting.config_test8 as cfg8  # Testcase8: Oscillating Gaussian-modulated sine initial condition
+import setting.config_test9 as cfg9  # Testcase9: Unknown solution; sinusoidal spatial/temporal fields
+import setting.config_test10 as cfg10  # Testcase8: Oscillating Gaussian-modulated sine initial condition
 
 # ======================================================
 # TESTCASE CLASS IMPORTS — Symbolic Solution Definitions
@@ -41,14 +47,37 @@ from tests.test4 import Testcase4  # Frequency-tunable extension of test3
 from tests.test5 import Testcase5  # Polynomial-time Legendre-spatial solution
 from tests.test6 import Testcase6  # Time-exponential sinusoidal behavior
 from tests.test7 import Testcase7  # Gaussian spatial envelope × time-oscillatory wave
-from tests.test8 import Testcase8
+from tests.test8 import Testcase8  # Oscillating Gaussian-modulated sine initial condition; a "wave packet" test.
+from tests.test9 import Testcase9  # Sinusoids in space and time
+from tests.test10 import Testcase10  # Oscillating Gaussian-modulated sine initial condition; a "wave packet" test.
 
+# ======================================================
+# REGISTRY (module-level) — maps string keys to lazy constructors
+# ======================================================
+# Using lambdas defers testcase construction until requested and avoids
+# building the dictionary on every get_testcase() call.
+_TEST_REGISTRY = {
+    "test0": lambda: (cfg0, Testcase0(cfg0)),  # Pair: (config module, testcase instance)
+    "test1": lambda: (cfg1, Testcase1(cfg1)),
+    "test2": lambda: (cfg2, Testcase2(cfg2)),
+    "test3": lambda: (cfg3, Testcase3(cfg3)),
+    "test4": lambda: (cfg4, Testcase4(cfg4)),
+    "test5": lambda: (cfg5, Testcase5(cfg5)),
+    "test6": lambda: (cfg6, Testcase6(cfg6)),
+    "test7": lambda: (cfg7, Testcase7(cfg7)),
+    "test8": lambda: (cfg8, Testcase8(cfg8)),
+    "test9": lambda: (cfg9, Testcase9(cfg9)),
+    "test10": lambda: (cfg10, Testcase10(cfg10)),
+    # Template for future additions:
+    # "testX": lambda: (cfgX, TestcaseX(cfgX)),
+}
 
 # ======================================================
 # FUNCTION: get_testcase
 # PURPOSE : Dispatcher for returning (cfg, testcase) by name
 # ======================================================
 
+# === Method Title: get_testcase — registry dispatcher returning (cfg_module, testcase_instance)
 def get_testcase(name: str):
     """
     Dispatcher to fetch the configuration module and symbolic testcase instance
@@ -71,35 +100,18 @@ def get_testcase(name: str):
     ValueError
         If the name is not found in the registered test dictionary.
     """
-
-    # --------------------------------------------------
-    # REGISTRY: Mapping of test names to lambda functions
-    # Each lambda lazily constructs the (cfg, testcase) pair
-    # --------------------------------------------------
-    test_registry = {
-        "test0": lambda: (cfg0, Testcase0(cfg0)),
-        "test1": lambda: (cfg1, Testcase1(cfg1)),
-        "test2": lambda: (cfg2, Testcase2(cfg2)),
-        "test3": lambda: (cfg3, Testcase3(cfg3)),
-        "test4": lambda: (cfg4, Testcase4(cfg4)),
-        "test5": lambda: (cfg5, Testcase5(cfg5)),
-        "test6": lambda: (cfg6, Testcase6(cfg6)),
-        "test7": lambda: (cfg7, Testcase7(cfg7)),
-        "test8": lambda: (cfg8, Testcase8(cfg8)),
-        # Template for future additions:
-        # "test9": lambda: (cfg9, Testcase9(cfg9)),
-    }
-
     # --------------------------------------------------
     # VALIDATION: Check if requested test name is valid
     # --------------------------------------------------
-    if name not in test_registry:
+    # Materialize keys once for a clean, deterministic error message.
+    if name not in _TEST_REGISTRY:
+        available = ", ".join(_TEST_REGISTRY.keys())  # e.g., "test0, test1, ..., test9"
         raise ValueError(
-            f"Unknown test name: '{name}'. "
-            f"Available options are: {list(test_registry.keys())}"
+            f"Unknown test name: '{name}'. Available options are: {available}"
         )
 
     # --------------------------------------------------
     # DISPATCH: Construct and return the (cfg, testcase) pair
     # --------------------------------------------------
-    return test_registry[name]()
+    # Calling the lambda performs lazy instantiation at request time.
+    return _TEST_REGISTRY[name]()

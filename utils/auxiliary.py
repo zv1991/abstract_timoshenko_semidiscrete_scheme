@@ -3227,128 +3227,194 @@ def plot_approx_solution_at_time_k(
     Title: Plot Galerkin Approximate Solution at Discrete Time Layers
 
     Description:
-        Generates LaTeX-styled, publication-quality plots of the Galerkin-based 
-        approximate solution at five equally spaced time layers in the simulation 
-        time domain (t = 0, T/4, T/2, 3T/4, T). Each snapshot is saved as a 
-        separate, timestamped PDF file.
+        Generates publication-quality plots of the Galerkin-based approximate
+        solution at five time layers: t = 0, T/4, T/2, 3T/4, T (clamped to grid).
+        Each snapshot is saved as a timestamped PDF (falls back to PNG if LaTeX is unavailable).
 
     Parameters:
-        approx_solver (object): Must implement callable_compute_ansatz().
+        approx_solver (object): Must implement callable_compute_ansatz(solution_type) -> callable.
         solution_type (str): 'u' (displacement) or 'v' (rotation).
-        config (object): Simulation configuration containing ell, n, N, optionally name.
+        config (object): Simulation configuration/solver with .ell, .n, .N, .t (optional), .name (optional).
         output_dir (str): Directory to save the plots (default: "plots").
 
     Returns:
-        list[str]: List of paths to the saved PDF files.
+        list[str]: List of paths to the saved files.
     """
 
     # =========================================================================
     # MODULE IMPORTS (Scoped locally to minimize global side effects)
     # =========================================================================
-    from pathlib import Path                 # Platform-independent path handling
-    from datetime import datetime            # For unique timestamped filenames
-    import numpy as np                       # For numerical operations
-    import matplotlib.pyplot as plt          # For generating plots
-    from matplotlib import rcParams          # For LaTeX-based rendering setup
+    from pathlib import Path
+    from datetime import datetime
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib import rcParams
 
     # =========================================================================
     # PLOT AND SAMPLE CONFIGURATION
     # =========================================================================
-    LINE_WIDTH = 3.0                         # Thickness of plot lines
-    NUM_POINTS = 201                         # Number of spatial samples (x-axis)
-    x_vals = np.linspace(0, config.ell, NUM_POINTS)  # Spatial grid over [0, ℓ]
+    LINE_WIDTH = 3.0
+    NUM_POINTS = 201
 
-    # Compute time indices for t = 0, T/4, T/2, 3T/4, T
-    step = int(config.n / 4)
-    time_layers = [i * step for i in range(5)]
+    # Spatial grid over [0, ℓ] (float64 for numerical stability)
+    x_vals = np.linspace(0.0, float(config.ell), NUM_POINTS, dtype=float)
+
+    # Compute time indices near [0, n]; make them safe even if n < 4
+    # step = max(1, n//4); then clamp each layer to n to avoid IndexError
+    n = int(getattr(config, "n", 0))
+    step = max(1, n // 4) if n > 0 else 1
+    raw_layers = [0, step, 2 * step, 3 * step, 4 * step]
+    time_layers = [min(k, n) for k in raw_layers]          # clamp to final layer
+    time_layers = sorted(set(time_layers))                  # unique & sorted (handles small n)
 
     # =========================================================================
     # COLOR SETTINGS (Colorblind-safe: Okabe–Ito palette)
     # =========================================================================
-    COLOR_APPROX = "#D55E00"                 # Orange for approximation curve
+    COLOR_APPROX = "#D55E00"  # Orange for approximation curve
 
     # =========================================================================
-    # ENABLE LATEX-STYLED RENDERING FOR HIGH-QUALITY FIGURES
+    # ENABLE LATEX-STYLED RENDERING (with safe fallback)
     # =========================================================================
-    rcParams["text.usetex"] = True
-    rcParams["font.family"] = "lmodern"
-    rcParams["text.latex.preamble"] = r"""
-    \usepackage[utf8]{inputenc}
-    \usepackage[T1]{fontenc}
-    \usepackage{lmodern}
-    \usepackage{slantsc}
-    \usepackage{dsfont}
-    \usepackage{upgreek}
-    \usepackage{amsmath,amssymb,amsthm,amstext,amsfonts}
-    \usepackage{mathtools}
-    \usepackage{nicefrac}
-    \usepackage{xcolor}
-    """
+    # Try to use LaTeX if available; otherwise fall back to mathtext.
+    use_tex = True
+    try:
+        rcParams["text.usetex"] = True
+        rcParams["font.family"] = "lmodern"
+        rcParams["text.latex.preamble"] = r"""
+        \usepackage[utf8]{inputenc}
+        \usepackage[T1]{fontenc}
+        \usepackage{lmodern}
+        \usepackage{slantsc}
+        \usepackage{dsfont}
+        \usepackage{upgreek}
+        \usepackage{amsmath,amssymb,amsthm,amstext,amsfonts}
+        \usepackage{mathtools}
+        \usepackage{nicefrac}
+        \usepackage{xcolor}
+        """
+    except Exception:
+        # Fallback: disable LaTeX; labels still support TeX-like syntax via mathtext.
+        use_tex = False
+        rcParams["text.usetex"] = False
 
     # =========================================================================
     # PREPARE OUTPUT DIRECTORY
     # =========================================================================
-    config_name = getattr(config, "name", "config")        # Use 'config' if name not present
-    output_path = Path(output_dir) / config_name           # plots/<config_name>/
-    output_path.mkdir(parents=True, exist_ok=True)         # Create directory if missing
+    config_name = getattr(config, "name", "config")
+    output_path = Path(output_dir) / config_name
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # =========================================================================
+    # OBTAIN THE ANSATZ CALLABLE (robustly)
+    # =========================================================================
+    # preferred API: callable = approx_solver.callable_compute_ansatz(solution_type)
+    # which we then evaluate with (x, k). If the solver also supports direct
+    # evaluation via kwargs, we keep a fallback path below.
+    ansatz = None
+    if hasattr(approx_solver, "callable_compute_ansatz"):
+        ansatz = approx_solver.callable_compute_ansatz(solution_type)
+        # ansatz should now be a function we can call with (x, k) or (x, t=…)
+    else:
+        raise AttributeError(
+            "approx_solver must define `callable_compute_ansatz(solution_type)`."
+        )
 
     # =========================================================================
     # LOOP OVER TIME LAYERS AND GENERATE PLOTS
     # =========================================================================
-    saved_files = []  # Collect full paths to saved plot files
+    saved_files: list[str] = []
 
-    for time_layer in time_layers:
-        # ---------------------------------------------------------------------
-        # Evaluate Galerkin approximation at current time index `k`
-        # ---------------------------------------------------------------------
-        approx_values = approx_solver.callable_compute_ansatz(
-            solution_type=solution_type,
-            k=time_layer,
-            x_vals=x_vals
-        )
+    for k in time_layers:
+        # ---------------- Evaluate Galerkin approximation safely ----------------
+        approx_values = None
 
-        # Safely fetch time value `t_k` for labeling
+        # Try common signatures in order of likelihood:
+        # 1) ansatz(x, k)
         try:
-            t_k = config.t[time_layer]
-        except (IndexError, AttributeError):
-            t_k = time_layer  # Fallback to index if time array is missing
+            approx_values = ansatz(x_vals, k)
+        except TypeError:
+            pass
 
-        # ---------------------------------------------------------------------
-        # Initialize the Plot
-        # ---------------------------------------------------------------------
-        plt.figure(figsize=(8, 4))  # Set figure size in inches (width, height)
+        # 2) ansatz(x, t=…)
+        if approx_values is None:
+            try:
+                # If config has a time grid, prefer true time; otherwise use index
+                t_k = float(getattr(config, "t", [k])[k]) if hasattr(config, "t") else float(k)
+                approx_values = ansatz(x_vals, t=t_k)
+            except Exception:
+                pass
 
-        # Plot approximate solution curve
-        plt.plot(
-            x_vals,
-            approx_values,
-            label=rf"Approximate: $\tilde{{{solution_type}}}_{{{time_layer},{config.N}}}(x)$",
-            color=COLOR_APPROX,
-            linestyle='-',
-            linewidth=LINE_WIDTH
-        )
+        # 3) Some solvers accept keywords (k=…, x_vals=…)
+        if approx_values is None and hasattr(approx_solver, "callable_compute_ansatz"):
+            try:
+                approx_values = approx_solver.callable_compute_ansatz(
+                    solution_type=solution_type, k=k, x_vals=x_vals
+                )
+            except Exception:
+                pass
 
-        # Configure axes and labels
-        plt.xlabel(rf"Spatial coordinate $x \in [0, {config.ell:g}]$")
+        if approx_values is None:
+            raise TypeError(
+                "Unable to evaluate ansatz. Expected a callable from "
+                "`callable_compute_ansatz(solution_type)` accepting (x, k) "
+                "or (x, t=...). Please check the solver API."
+            )
+
+        # Ensure 1D shape matches x_vals
+        y = np.asarray(approx_values)
+        if y.ndim > 1:
+            y = y.reshape(-1)               # flatten (NUM_POINTS, 1) -> (NUM_POINTS,)
+        if y.size == 1:
+            # Scalar returned: broadcast across x for a flat line (or raise)
+            # Broadcasting keeps plotting robust; if this is unintended, replace with a ValueError.
+            y = np.full_like(x_vals, float(y))
+        if y.shape[0] != x_vals.shape[0]:
+            raise ValueError(
+                f"x and y must align: x has shape {x_vals.shape}, "
+                f"but y has shape {y.shape}. Check ansatz output."
+            )
+
+        # Safely fetch time value `t_k` for labeling (use index if missing)
+        try:
+            t_k = float(config.t[k])
+        except Exception:
+            t_k = float(k)
+
+        # ------------------------------- Plot -----------------------------------
+        plt.figure(figsize=(8, 4))
+        # Keep label simple if not using LaTeX, richer if LaTeX is on
+        if use_tex:
+            label = rf"Approximate: $\tilde{{{solution_type}}}_{{{k},{config.N}}}(x)$"
+            title = rf"Approximate Solution: ${solution_type}(x, {t_k:g})$"
+            xlab = rf"Spatial coordinate $x \in [0, {float(config.ell):g}]$"
+        else:
+            label = f"Approximate: {solution_type}~ (k={k}, N={config.N})"
+            title = f"Approximate Solution: {solution_type}(x, t={t_k:g})"
+            xlab = f"Spatial coordinate x ∈ [0, {float(config.ell):g}]"
+
+        plt.plot(x_vals, y, label=label, color=COLOR_APPROX, linestyle='-', linewidth=LINE_WIDTH)
+        plt.xlabel(xlab)
         plt.ylabel("Solution value")
-        plt.title(rf"Approximate Solution: ${solution_type}(x, {t_k:g})$")
+        plt.title(title)
         plt.grid(True)
         plt.legend()
-        plt.tight_layout()  # Ensures no label overlap
+        plt.tight_layout()
 
-        # ---------------------------------------------------------------------
-        # Generate Timestamped Filename and Save Plot
-        # ---------------------------------------------------------------------
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g., 20250808_141500
-        filename = output_path / (
-            f"{config_name}_solution_{solution_type}_t{time_layer}_N{config.N}_{timestamp}.pdf"
-        )
-        plt.savefig(filename)   # Save figure as high-quality PDF
-        plt.close()             # Free memory after saving
+        # ------------------------- Save figure (robust) --------------------------
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename_pdf = output_path / f"{config_name}_solution_{solution_type}_t{k}_N{config.N}_{timestamp}.pdf"
+        try:
+            plt.savefig(filename_pdf)
+            out_path = filename_pdf
+        except Exception:
+            # If usetex or PDF backend fails, fall back to PNG without TeX.
+            rcParams["text.usetex"] = False
+            filename_png = output_path / f"{config_name}_solution_{solution_type}_t{k}_N{config.N}_{timestamp}.png"
+            plt.savefig(filename_png, dpi=200)
+            out_path = filename_png
+        finally:
+            plt.close()
 
-        saved_files.append(str(filename))  # Track saved file path
+        saved_files.append(str(out_path))
 
-    # =========================================================================
-    # RETURN ALL GENERATED FILE PATHS
-    # =========================================================================
     return saved_files

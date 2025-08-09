@@ -34,8 +34,8 @@ a2    = 1.0   # Coupling coefficient from ∂u/∂x in v-equation — displaceme
 # Parameters for constructing analytical or benchmark solutions — typically used
 # to verify convergence and numerical correctness via oscillatory Gaussian functions.
 
-lam_u = 1  # Number of spatial oscillations in initial displacement u(x, 0)
-lam_v = 1  # Number of spatial oscillations in initial rotation v(x, 0)
+lam_u = 5  # Number of spatial oscillations in initial displacement u(x, 0)
+lam_v = 5  # Number of spatial oscillations in initial rotation v(x, 0)
 
 A_u = 1.0  # Amplitude of the Gaussian profile for u(x, 0)
 A_v = 1.0  # Amplitude of the Gaussian profile for v(x, 0)
