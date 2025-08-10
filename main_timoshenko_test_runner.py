@@ -26,7 +26,7 @@ from testcase_registry.registry import get_testcase  # Dispatcher: returns (cfg_
 
 # Set the name of the test case to run.
 # Options: 'test0', 'test1', ..., 'test9' depending on availability.
-test_name = "test10"  # <- change this to switch benchmarks
+test_name = "test9"  # <- change this to switch benchmarks
 
 # Retrieve both the configuration module (cfg) and symbolic benchmark instance (test)
 # - cfg: holds physical and numerical simulation parameters
@@ -244,7 +244,7 @@ else:
 
     # Hard caps to keep runtime bounded
     n_limit = 256              # Max allowed time steps
-    N_limit = 25               # Max allowed spatial modes
+    N_limit = 35               # Max allowed spatial modes
 
     converged = False          # Global flag toggled on success
 

@@ -9,23 +9,24 @@ from tests.timoshenko_data import TimoshenkoTesterParent  # Parent class for tes
 
 
 # ======================================================
-# CLASS: Testcase10 – Unknown Benchmark Solution for Timoshenko System
+# CLASS: Testcase11 – Unknown Benchmark Solution for Timoshenko System
 # ======================================================
 
-class Testcase10(TimoshenkoTesterParent):
+class Testcase11(TimoshenkoTesterParent):
     """
     Unknown benchmark test case for the nonlinear Timoshenko beam model.
 
-    Purpose:
-        Validates numerical solvers via the Method of Manufactured Solutions (MMS).
-        This test case uses synthetic initial data but does not provide known closed-form
-        solutions for the full PDE — useful for convergence or robustness testing.
+    Purpose
+    -------
+    Validates numerical solvers via the Method of Manufactured Solutions (MMS).
+    This test case uses synthetic initial data but does not provide known closed-form
+    solutions for the full PDE — useful for convergence or robustness testing.
 
-    Notes:
-        - All functions accept either scalars or array-like x; np.asarray is used to
-          enable vectorized evaluation in downstream solvers or test grids.
-        - The Gaussian envelopes are centered at mid-domain (x = ell/2) via (2x - ell).
-        - Trigonometric factors provide modal structure with spatial frequencies d_u, d_v.
+    Notes
+    -----
+    - All functions accept either scalars or array-like x; np.asarray is used to
+      enable vectorized evaluation in downstream solvers or test grids.
+    - Trigonometric factors provide modal structure with spatial frequencies d_u, d_v.
     """
 
     # ------------------------------------------------------
@@ -42,10 +43,10 @@ class Testcase10(TimoshenkoTesterParent):
             - Physical coefficients: alpha, beta, gamma, delta, a1, a2
             - Domain and time step: ell, tau
             - Oscillation frequencies: lam_u, lam_v
-            - Gaussian shape parameters: A_*, c_*
+            - Amplitude parameters: A_*
         """
         self.cfg = cfg
-        self.name = "test10"
+        self.name = "test11"
         self.known_solutions = False  # No exact time-evolving solution is provided
 
         # Oscillation parameters
@@ -53,12 +54,9 @@ class Testcase10(TimoshenkoTesterParent):
         self.lam_v = cfg.lam_v
         # NOTE: lam_* are dimensionless mode counts (used inside sine/cosine arguments).
 
-        # Gaussian shape parameters
-        self.A_u = cfg.A_u  # Amplitude of Gaussian for u
-        self.A_v = cfg.A_v  # Amplitude of Gaussian for v
-        self.c_u = cfg.c_u  # Width of Gaussian for u
-        self.c_v = cfg.c_v  # Width of Gaussian for v
-        # Tip: c_* controls localization (smaller → narrower peak). Kept general for MMS variety.
+        # Amplitude parameters
+        self.A_u = cfg.A_u  # Amplitude for u
+        self.A_v = cfg.A_v  # Amplitude for v
         
         # Argument scalling in trigonometric functions  [sic: "scalling" → spelling note only]
         self.d_u = self.lam_u * np.pi / self.cfg.ell  # precompute spatial frequency for u
@@ -68,26 +66,6 @@ class Testcase10(TimoshenkoTesterParent):
         super().__init__(cfg)        # Initialize symbolic setup from parent class
         self._prepare_data()         # Precompute symbolic forcing and boundary data
         # IMPORTANT: _prepare_data() is assumed to set up test fixtures (forcing, BCs) for the framework.
-
-    # ------------------------------------------------------
-    # GAUSSIAN PROFILES FOR INITIAL CONDITIONS
-    # ------------------------------------------------------
-
-    # ---------- METHOD: gauss_u ----------
-    def gauss_u(self, x):
-        """Gaussian envelope for u(x) centered at mid-domain."""
-        x = np.asarray(x)  # ensure vectorized operations for scalar or array inputs
-        # exp(-(2x - ell)^2 / c_u^2) scaled by amplitude A_u
-        # (2x - ell) recenters the Gaussian at x=ell/2, symmetric about mid-span.
-        return self.A_u * np.exp(-((2 * x - self.cfg.ell)**2) / self.c_u**2)
-
-    # ---------- METHOD: gauss_v ----------
-    def gauss_v(self, x):
-        """Gaussian envelope for v(x) centered at mid-domain."""
-        x = np.asarray(x)  # ensure vectorized operations for scalar or array inputs
-        # exp(-(2x - ell)^2 / c_v^2) scaled by amplitude A_v
-        # Using independent c_v and A_v allows different localization/scale for rotation field.
-        return self.A_v * np.exp(-((2 * x - self.cfg.ell)**2) / self.c_v**2)
 
     # ------------------------------------------------------
     # TRIGONOMETRIC MULTIPLIERS FOR MODAL STRUCTURE
@@ -131,19 +109,17 @@ class Testcase10(TimoshenkoTesterParent):
 
     # ---------- METHOD: varphi0 ----------
     def varphi0(self, x):
-        """Initial displacement u(x, 0) = Gaussian * sine."""
+        """Initial displacement u(x, 0) = amplitude * sine."""
         x = np.asarray(x)  # ensure input is array-like for broadcasting
-        # u(x,0) := A_u * exp(-(2x-ell)^2 / c_u^2) * sin(d_u * x)
-        # Smooth, localized initial condition suitable for MMS with nontrivial derivatives.
-        return self.gauss_u(x) * self.sin_u(x)
+        # u(x,0) = A_u * sin(d_u * x)
+        return self.A_u * self.sin_u(x)
 
     # ---------- METHOD: psi0 ----------
     def psi0(self, x):
-        """Initial rotation v(x, 0) = Gaussian * sine."""
+        """Initial rotation v(x, 0) = amplitude * sine."""
         x = np.asarray(x)  # ensure input is array-like for broadcasting
-        # v(x,0) := A_v * exp(-(2x-ell)^2 / c_v^2) * sin(d_v * x)
-        # Similar structure for v with its own width/scale.
-        return self.gauss_v(x) * self.sin_v(x)
+        # v(x,0) = A_v * sin(d_v * x)
+        return self.A_v * self.sin_v(x)
 
     # ------------------------------------------------------
     # FIRST SPATIAL DERIVATIVES AT t = 0
@@ -151,31 +127,17 @@ class Testcase10(TimoshenkoTesterParent):
 
     # ---------- METHOD: d1varphi0 ----------
     def d1varphi0(self, x):
-        """∂u/∂x at t = 0 (product rule applied to Gaussian * sine)."""
+        """∂u/∂x at t = 0."""
         x = np.asarray(x)  # ensure input is array-like for broadcasting
-        # derivative of Gaussian factor: d/dx exp(-((2x-ell)^2)/c_u^2) = exp(...) * ( -4(2x-ell)/c_u^2 )
-        coeff_u = - (4.0 * (2 * x - self.cfg.ell)) / self.c_u**2  # Gaussian gradient prefactor
-        # product rule: (Gauss' * sin) + (Gauss * (d_u * cos))
-        # NOTE: The returned expression is already multiplied by the Gaussian (gauss_u(x)).
-        return (
-            self.gauss_u(x) * (
-                coeff_u * self.sin_u(x) + self.d_u * self.cos_u(x)
-                )
-            )
+        # (A_u * sin(d_u x))' = A_u * d_u * cos(d_u x)
+        return self.A_u * self.d_u * self.cos_u(x)
 
     # ---------- METHOD: d1psi0 ----------
     def d1psi0(self, x):
-        """∂v/∂x at t = 0 (product rule applied to Gaussian * sine)."""
+        """∂v/∂x at t = 0."""
         x = np.asarray(x)  # ensure input is array-like for broadcasting
-        # derivative of Gaussian factor for v-profile
-        coeff_v = - (4.0 * (2 * x - self.cfg.ell)) / self.c_v**2  # Gaussian gradient prefactor
-        # product rule: (Gauss' * sin) + (Gauss * (d_v * cos))
-        # NOTE: Keeps u/v symmetry while allowing distinct c_v and d_v.
-        return (
-            self.gauss_v(x) * (
-                coeff_v * self.sin_v(x) + self.d_v * self.cos_v(x)
-                )
-            )
+        # (A_v * sin(d_v x))' = A_v * d_v * cos(d_v x)
+        return self.A_v * self.d_v * self.cos_v(x)
 
     # ------------------------------------------------------
     # SECOND SPATIAL DERIVATIVES AT t = 0
@@ -185,38 +147,15 @@ class Testcase10(TimoshenkoTesterParent):
     def d2varphi0(self, x):
         """∂²u/∂x² at t = 0."""
         x = np.asarray(x)  # ensure input is array-like for broadcasting
-        # Coefficients from differentiating Gaussian*trig twice and regrouping terms:
-        #   coeff1 multiplies sin, coeff2 multiplies cos
-        #   (These arise from Gaussian'' and trig derivatives merged via product rule.)
-        coeff1_u = (
-            (16.0 * (2 * x - self.cfg.ell)**2) / self.c_u**4
-            - 8.0 / self.c_u**2
-            - self.d_u**2
-            )
-        coeff2_u = - (8.0 * self.d_u * (2 * x - self.cfg.ell)) / self.c_u**2
-        # structure: Gauss * (coeff1 * sin + coeff2 * cos)
-        return (
-            self.gauss_u(x) * (
-                coeff1_u * self.sin_u(x) + coeff2_u * self.cos_u(x)
-                )
-            )
+        # (A_u * sin(d_u x))'' = -A_u * d_u^2 * sin(d_u x)
+        return (- self.A_u * self.d_u**2 * self.sin_u(x))
 
     # ---------- METHOD: d2psi0 ----------
     def d2psi0(self, x):
         """∂²v/∂x² at t = 0."""
         x = np.asarray(x)  # ensure input is array-like for broadcasting
-        # Same pattern as u, with v-parameters
-        coeff1_v = (
-            (16.0 * (2 * x - self.cfg.ell)**2) / self.c_v**4
-            - 8.0 / self.c_v**2
-            - self.d_v**2
-            )
-        coeff2_v = - (8.0 * self.d_v * (2 * x - self.cfg.ell)) / self.c_v**2
-        return (
-            self.gauss_v(x) * (
-                coeff1_v * self.sin_v(x) + coeff2_v * self.cos_v(x)
-                )
-            )
+        # (A_v * sin(d_v x))'' = -A_v * d_v^2 * sin(d_v x)
+        return (- self.A_v * self.d_v**2 * self.sin_v(x))
 
     # ------------------------------------------------------
     # THIRD SPATIAL DERIVATIVES AT t = 0
@@ -226,57 +165,15 @@ class Testcase10(TimoshenkoTesterParent):
     def d3varphi0(self, x):
         """∂³u/∂x³ at t = 0."""
         x = np.asarray(x)  # ensure input is array-like for broadcasting
-        # Coefficient multiplying sin(d_u x)
-        #   Structure comes from product rule on [Gauss * sin] thrice; terms regrouped.
-        coeff1_u = (
-            (4.0 * (2 * x - self.cfg.ell)) / self.c_u**2 * (
-                - (16.0 * (2 * x - self.cfg.ell)**2) / self.c_u**4
-                + 24.0 / self.c_u**2
-                + 3.0 * self.d_u**2
-                )
-            )
-        # Coefficient multiplying cos(d_u x)
-        #   Contains mixed Gaussian–trigonometric third-derivative contributions.
-        coeff2_u = (
-            self.d_u * (
-                (48.0 * (2 * x - self.cfg.ell)**2) / self.c_u**4
-                - 24.0 / self.c_u**2
-                - self.d_u**2
-                )
-            )
-        # structure: Gauss * (coeff1 * sin + coeff2 * cos)
-        return (
-            self.gauss_u(x) * (
-                coeff1_u * self.sin_u(x) + coeff2_u * self.cos_u(x)
-                )
-            )
+        # (A_u * sin(d_u x))''' = -A_u * d_u^3 * cos(d_u x)
+        return (- self.A_u * self.d_u**3 * self.cos_u(x))
 
     # ---------- METHOD: d3psi0 ----------
     def d3psi0(self, x):
         """∂³v/∂x³ at t = 0."""
         x = np.asarray(x)  # ensure input is array-like for broadcasting
-        # Coefficient multiplying sin(d_v x)
-        coeff1_v = (
-            (4.0 * (2 * x - self.cfg.ell)) / self.c_v**2 * (
-                - (16.0 * (2 * x - self.cfg.ell)**2) / self.c_v**4
-                + 24.0 / self.c_v**2
-                + 3.0 * self.d_v**2
-                )
-            )
-        # Coefficient multiplying cos(d_v x)
-        coeff2_v = (
-            self.d_v * (
-                (48.0 * (2 * x - self.cfg.ell)**2) / self.c_v**4
-                - 24.0 / self.c_v**2
-                - self.d_v**2
-                )
-            )
-        # structure: Gauss * (coeff1 * sin + coeff2 * cos)
-        return (
-            self.gauss_v(x) * (
-                coeff1_v * self.sin_v(x) + coeff2_v * self.cos_v(x)
-                )
-            )
+        # (A_v * sin(d_v x))''' = -A_v * d_v^3 * cos(d_v x)
+        return (- self.A_v * self.d_v**3 * self.cos_v(x))
 
     # ------------------------------------------------------
     # TIME DERIVATIVES (STATIC CASE)
