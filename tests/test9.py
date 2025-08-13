@@ -136,7 +136,6 @@ class Testcase9(TimoshenkoTesterParent):
         d/dx[(π/2) sin(c_v x)] = (π/2) * c_v * cos(c_v x)
                               = (lam_v * π^2) / (2 * ell) * cos(c_v x).
         """
-        # BUGFIX (kept): must use lam_v here since c_v = lam_v * π / ell
         return (self.lam_v * np.pi**2) / (2.0 * self.cfg.ell) * np.cos(self.c_v * x)
 
     # ------------------------------------------------------

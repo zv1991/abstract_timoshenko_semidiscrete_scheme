@@ -24,8 +24,8 @@ alpha = 1.0   # Material stiffness coefficient for displacement u(x,t) — gover
 beta  = 1.0   # Nonlinear damping coefficient in u-equation — introduces gradient-based dissipation
 gamma = 1.0   # Rotational stiffness in v-equation — determines restoring torque behavior
 delta = 1.0   # Linear damping coefficient in v-equation — introduces energy loss
-a1    = 1.0   # Coupling coefficient from ∂v/∂x in u-equation — rotational influence on displacement
-a2    = 1.0   # Coupling coefficient from ∂u/∂x in v-equation — displacement influence on rotation
+a1    = 0.0   # Coupling coefficient from ∂v/∂x in u-equation — rotational influence on displacement
+a2    = 0.0   # Coupling coefficient from ∂u/∂x in v-equation — displacement influence on rotation
 
 
 # ======================================================
@@ -34,14 +34,14 @@ a2    = 1.0   # Coupling coefficient from ∂u/∂x in v-equation — displaceme
 # Parameters for constructing analytical or benchmark solutions — typically used
 # to verify convergence and numerical correctness via oscillatory Gaussian functions.
 
-lam_u = 5  # Number of spatial oscillations in initial displacement u(x, 0)
-lam_v = 5  # Number of spatial oscillations in initial rotation v(x, 0)
+lam_u = 35  # Number of spatial oscillations in initial displacement u(x, 0)
+lam_v = 35  # Number of spatial oscillations in initial rotation v(x, 0)
 
-A_u = 1.0  # Amplitude of the Gaussian profile for u(x, 0)
-A_v = 1.0  # Amplitude of the Gaussian profile for v(x, 0)
+A_u = 5.0  # Amplitude of the Gaussian profile for u(x, 0)
+A_v = 10.0  # Amplitude of the Gaussian profile for v(x, 0)
 
-c_u = 1.0  # Gaussian width parameter for u(x, 0); lower values = narrower peak
-c_v = 1.0  # Gaussian width parameter for v(x, 0); lower values = narrower peak
+c_u = 0.5  # Gaussian width parameter for u(x, 0); lower values = narrower peak
+c_v = 0.5  # Gaussian width parameter for v(x, 0); lower values = narrower peak
 
 
 # ======================================================
@@ -49,7 +49,7 @@ c_v = 1.0  # Gaussian width parameter for v(x, 0); lower values = narrower peak
 # ======================================================
 # Define time discretization for time-stepping algorithms like Runge-Kutta or backward Euler.
 
-n = 128                       # Number of time steps (uniformly spaced) over [0, T]
+n = 256                       # Number of time steps (uniformly spaced) over [0, T]
 t = np.linspace(0, T, n + 1)  # Discretized time array from t₀ = 0 to tₙ = T; (n+1) points total
 tau = T / n                  # Time step size (τ), derived from total time and step count
 
@@ -59,7 +59,7 @@ tau = T / n                  # Time step size (τ), derived from total time and 
 # ======================================================
 # Defines the size of the approximation space used in Galerkin spectral projection.
 
-N = 2  # Number of Legendre polynomial basis functions (modal resolution in space)
+N = 35  # Number of Legendre polynomial basis functions (modal resolution in space)
 
 
 # ======================================================

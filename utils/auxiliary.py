@@ -3254,7 +3254,7 @@ def plot_approx_solution_at_time_k(
     # PLOT AND SAMPLE CONFIGURATION
     # =========================================================================
     LINE_WIDTH = 3.0
-    NUM_POINTS = 201
+    NUM_POINTS = 1001
 
     # Spatial grid over [0, ℓ] (float64 for numerical stability)
     x_vals = np.linspace(0.0, float(config.ell), NUM_POINTS, dtype=float)
