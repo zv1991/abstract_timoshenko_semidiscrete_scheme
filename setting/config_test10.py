@@ -37,7 +37,7 @@ a2    = 0.0   # Coupling coefficient from ∂u/∂x in v-equation — displaceme
 lam_u = 35  # Number of spatial oscillations in initial displacement u(x, 0)
 lam_v = 35  # Number of spatial oscillations in initial rotation v(x, 0)
 
-A_u = 5.0  # Amplitude of the Gaussian profile for u(x, 0)
+A_u = 10.0  # Amplitude of the Gaussian profile for u(x, 0)
 A_v = 10.0  # Amplitude of the Gaussian profile for v(x, 0)
 
 c_u = 0.5  # Gaussian width parameter for u(x, 0); lower values = narrower peak
@@ -59,7 +59,7 @@ tau = T / n                  # Time step size (τ), derived from total time and 
 # ======================================================
 # Defines the size of the approximation space used in Galerkin spectral projection.
 
-N = 35  # Number of Legendre polynomial basis functions (modal resolution in space)
+N = 45  # Number of Legendre polynomial basis functions (modal resolution in space)
 
 
 # ======================================================

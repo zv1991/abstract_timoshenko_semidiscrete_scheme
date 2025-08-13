@@ -3260,12 +3260,11 @@ def plot_approx_solution_at_time_k(
     x_vals = np.linspace(0.0, float(config.ell), NUM_POINTS, dtype=float)
 
     # Compute time indices near [0, n]; make them safe even if n < 4
-    # step = max(1, n//4); then clamp each layer to n to avoid IndexError
     n = int(getattr(config, "n", 0))
     step = max(1, n // 4) if n > 0 else 1
     raw_layers = [0, step, 2 * step, 3 * step, 4 * step]
-    time_layers = [min(k, n) for k in raw_layers]          # clamp to final layer
-    time_layers = sorted(set(time_layers))                  # unique & sorted (handles small n)
+    time_layers = [min(k, n) for k in raw_layers]
+    time_layers = sorted(set(time_layers))
 
     # =========================================================================
     # COLOR SETTINGS (Colorblind-safe: Okabe–Ito palette)
@@ -3275,7 +3274,6 @@ def plot_approx_solution_at_time_k(
     # =========================================================================
     # ENABLE LATEX-STYLED RENDERING (with safe fallback)
     # =========================================================================
-    # Try to use LaTeX if available; otherwise fall back to mathtext.
     use_tex = True
     try:
         rcParams["text.usetex"] = True
@@ -3293,7 +3291,6 @@ def plot_approx_solution_at_time_k(
         \usepackage{xcolor}
         """
     except Exception:
-        # Fallback: disable LaTeX; labels still support TeX-like syntax via mathtext.
         use_tex = False
         rcParams["text.usetex"] = False
 
@@ -3307,13 +3304,8 @@ def plot_approx_solution_at_time_k(
     # =========================================================================
     # OBTAIN THE ANSATZ CALLABLE (robustly)
     # =========================================================================
-    # preferred API: callable = approx_solver.callable_compute_ansatz(solution_type)
-    # which we then evaluate with (x, k). If the solver also supports direct
-    # evaluation via kwargs, we keep a fallback path below.
-    ansatz = None
     if hasattr(approx_solver, "callable_compute_ansatz"):
         ansatz = approx_solver.callable_compute_ansatz(solution_type)
-        # ansatz should now be a function we can call with (x, k) or (x, t=…)
     else:
         raise AttributeError(
             "approx_solver must define `callable_compute_ansatz(solution_type)`."
@@ -3328,7 +3320,6 @@ def plot_approx_solution_at_time_k(
         # ---------------- Evaluate Galerkin approximation safely ----------------
         approx_values = None
 
-        # Try common signatures in order of likelihood:
         # 1) ansatz(x, k)
         try:
             approx_values = ansatz(x_vals, k)
@@ -3338,13 +3329,12 @@ def plot_approx_solution_at_time_k(
         # 2) ansatz(x, t=…)
         if approx_values is None:
             try:
-                # If config has a time grid, prefer true time; otherwise use index
                 t_k = float(getattr(config, "t", [k])[k]) if hasattr(config, "t") else float(k)
                 approx_values = ansatz(x_vals, t=t_k)
             except Exception:
                 pass
 
-        # 3) Some solvers accept keywords (k=…, x_vals=…)
+        # 3) fallback API
         if approx_values is None and hasattr(approx_solver, "callable_compute_ansatz"):
             try:
                 approx_values = approx_solver.callable_compute_ansatz(
@@ -3363,10 +3353,8 @@ def plot_approx_solution_at_time_k(
         # Ensure 1D shape matches x_vals
         y = np.asarray(approx_values)
         if y.ndim > 1:
-            y = y.reshape(-1)               # flatten (NUM_POINTS, 1) -> (NUM_POINTS,)
+            y = y.reshape(-1)
         if y.size == 1:
-            # Scalar returned: broadcast across x for a flat line (or raise)
-            # Broadcasting keeps plotting robust; if this is unintended, replace with a ValueError.
             y = np.full_like(x_vals, float(y))
         if y.shape[0] != x_vals.shape[0]:
             raise ValueError(
@@ -3382,22 +3370,20 @@ def plot_approx_solution_at_time_k(
 
         # ------------------------------- Plot -----------------------------------
         plt.figure(figsize=(8, 4))
-        # Keep label simple if not using LaTeX, richer if LaTeX is on
+
+        # Build curve label (legends are removed below; label kept for completeness)
         if use_tex:
-            label = rf"Approximate: $\tilde{{{solution_type}}}_{{{k},{config.N}}}(x)$"
             title = rf"Approximate Solution: ${solution_type}(x, {t_k:g})$"
             xlab = rf"Spatial coordinate $x \in [0, {float(config.ell):g}]$"
         else:
-            label = f"Approximate: {solution_type}~ (k={k}, N={config.N})"
             title = f"Approximate Solution: {solution_type}(x, t={t_k:g})"
             xlab = f"Spatial coordinate x ∈ [0, {float(config.ell):g}]"
 
-        plt.plot(x_vals, y, label=label, color=COLOR_APPROX, linestyle='-', linewidth=LINE_WIDTH)
+        plt.plot(x_vals, y, color=COLOR_APPROX, linestyle='-', linewidth=LINE_WIDTH)
         plt.xlabel(xlab)
         plt.ylabel("Solution value")
         plt.title(title)
         plt.grid(True)
-        plt.legend()
         plt.tight_layout()
 
         # ------------------------- Save figure (robust) --------------------------
@@ -3407,10 +3393,9 @@ def plot_approx_solution_at_time_k(
             plt.savefig(filename_pdf)
             out_path = filename_pdf
         except Exception:
-            # If usetex or PDF backend fails, fall back to PNG without TeX.
             rcParams["text.usetex"] = False
             filename_png = output_path / f"{config_name}_solution_{solution_type}_t{k}_N{config.N}_{timestamp}.png"
-            plt.savefig(filename_png, dpi=200)
+            plt.savefig(filename_png, dpi=600)
             out_path = filename_png
         finally:
             plt.close()

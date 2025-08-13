@@ -76,7 +76,7 @@ tau = T / n                    # Time step size: τ = (T - 0) / n
 # Settings for the Galerkin spectral method using Legendre polynomials as basis functions.
 # Increasing N typically improves accuracy but raises computational cost (e.g., matrix sizes).
 
-N = 45  # Number of Legendre polynomial modes (basis functions) in spatial projection
+N = 25  # Number of Legendre polynomial modes (basis functions) in spatial projection
 
 
 # ======================================================
