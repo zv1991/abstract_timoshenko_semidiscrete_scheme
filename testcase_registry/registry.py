@@ -1,23 +1,30 @@
 # ======================================================
 # MODULE: registry.py
 # PURPOSE: Centralized mapping of test names to configuration modules and symbolic testcases.
-# Provides dynamic retrieval of configuration and benchmark classes based on a string identifier.
+#          Provides dynamic retrieval of configuration and benchmark classes based on a string identifier.
 # ======================================================
 
-# (Optional reading) This module exposes a single public function:
-#   get_testcase(name: str) -> (cfg_module, testcase_instance)
-# which returns the configuration module and an instantiated testcase for the
-# requested benchmark. The mapping itself is stored in a module-level constant
-# to avoid re-allocating the dictionary on every call.
+# ======================================================
+# MODULE OVERVIEW
+# ======================================================
+# This module exposes a single public function:
+#     get_testcase(name: str) -> (cfg_module, testcase_instance)
+#
+# The internal registry maps string identifiers (e.g., "test1") to a tuple of:
+#     - Configuration module with physical and numerical parameters
+#     - Instantiated test class with symbolic data (fields, derivatives, etc.)
+#
+# To avoid redundant allocations, a module-level dictionary is preconstructed using lambdas
+# for lazy instantiation of each test pair.
 
 # ======================================================
 # CONFIGURATION MODULE IMPORTS — Physical & Numerical Settings
 # ======================================================
-# Each config module defines:
-#   - Physical coefficients (alpha, beta, gamma, delta, a1, a2)
-#   - Domain settings (ell, T)
-#   - Numerical parameters (N, n, tau)
-#   - Oscillatory/Gaussian benchmark parameters
+# Each module (config_testX) defines:
+#     - Physical coefficients: alpha, beta, gamma, delta, a1, a2
+#     - Domain/time info: ell, T
+#     - Discretization: N (spatial), n, tau (time)
+#     - Oscillatory parameters (lam, lam1, A)
 
 import setting.config_test0 as cfg0    # Testcase0: Constant/linear fields — simple baseline
 import setting.config_test1 as cfg1    # Testcase1: Linear time scaling + Legendre modes
@@ -29,43 +36,46 @@ import setting.config_test6 as cfg6    # Testcase6: Exponential-in-time sinusoid
 import setting.config_test7 as cfg7    # Testcase7: Oscillating Gaussian-modulated sine fields
 import setting.config_test8 as cfg8    # Testcase8: Oscillating Gaussian-modulated sine initial condition
 import setting.config_test9 as cfg9    # Testcase9: Unknown solution: sinusoidal spatial/temporal fields
-import setting.config_test10 as cfg10  # Testcase10: Unknown solution: oscillating Gaussian-modulated sine initial condition
-import setting.config_test11 as cfg11  # Testcase11: Unknown solution: sinusoidal (oscillating) spatial initial condition
+import setting.config_test10 as cfg10  # Testcase10: Unknown solution: Gaussian-initial sine wave
+import setting.config_test11 as cfg11  # Testcase11: Unknown solution: sinusoidal spatial-only fields
+import setting.config_test12 as cfg12  # Testcase12: Sinusoidal space + time-dependent amplitude
 
 # ======================================================
 # TESTCASE CLASS IMPORTS — Symbolic Solution Definitions
 # ======================================================
-# Each class defines:
-#   - Exact fields u(x,t), v(x,t)
-#   - Derivatives and source terms
-#   - Initial and boundary conditions
+# Each class provides:
+#     - Symbolic fields: u(x,t), v(x,t)
+#     - Derivatives: ∂u/∂x, ∂²v/∂x², etc.
+#     - Forcing/source terms
+#     - Initial/boundary condition logic
 
-from tests.test0 import Testcase0    # Basic test with constant/linear symbolic fields
-from tests.test1 import Testcase1    # Trig functions with time scaling
-from tests.test2 import Testcase2    # Sinusoidal benchmark with nonlinear terms
-from tests.test3 import Testcase3    # Sinusoids in space and time
-from tests.test4 import Testcase4    # Frequency-tunable extension of test3
-from tests.test5 import Testcase5    # Polynomial-time Legendre-spatial solution
-from tests.test6 import Testcase6    # Time-exponential sinusoidal behavior
-from tests.test7 import Testcase7    # Gaussian spatial envelope × time-oscillatory wave
-from tests.test8 import Testcase8    # Oscillating Gaussian-modulated sine initial condition; a "wave packet" test.
-from tests.test9 import Testcase9    # Sinusoids in space
-from tests.test10 import Testcase10  # Oscillating Gaussian-modulated sine initial condition; a "wave packet" test.
-from tests.test11 import Testcase11  # Sinusoids in space
+from tests.test0 import Testcase0
+from tests.test1 import Testcase1
+from tests.test2 import Testcase2
+from tests.test3 import Testcase3
+from tests.test4 import Testcase4
+from tests.test5 import Testcase5
+from tests.test6 import Testcase6
+from tests.test7 import Testcase7
+from tests.test8 import Testcase8
+from tests.test9 import Testcase9
+from tests.test10 import Testcase10
+from tests.test11 import Testcase11
+from tests.test12 import Testcase12
 
 # ======================================================
-# PUBLIC EXPORTS
+# PUBLIC EXPORTS — Explicit control of exposed API
 # ======================================================
-# Keep the module's public API explicit to avoid leaking internals via `from registry import *`.
+
 __all__ = ["get_testcase"]
 
 # ======================================================
-# REGISTRY (module-level) — maps string keys to lazy constructors
+# INTERNAL REGISTRY — Maps string keys to lazy constructors
 # ======================================================
-# Using lambdas defers testcase construction until requested and avoids
-# building the dictionary on every get_testcase() call.
+# Each lambda defers construction until called — minimizes load time and memory usage.
+
 _TEST_REGISTRY = {
-    "test0":  lambda: (cfg0,  Testcase0(cfg0)),  # Pair: (config module, testcase instance)
+    "test0":  lambda: (cfg0,  Testcase0(cfg0)),
     "test1":  lambda: (cfg1,  Testcase1(cfg1)),
     "test2":  lambda: (cfg2,  Testcase2(cfg2)),
     "test3":  lambda: (cfg3,  Testcase3(cfg3)),
@@ -77,52 +87,49 @@ _TEST_REGISTRY = {
     "test9":  lambda: (cfg9,  Testcase9(cfg9)),
     "test10": lambda: (cfg10, Testcase10(cfg10)),
     "test11": lambda: (cfg11, Testcase11(cfg11)),
-    # Template for future additions:
+    "test12": lambda: (cfg12, Testcase12(cfg12)),
+    # Template for future extensions:
     # "testX": lambda: (cfgX, TestcaseX(cfgX)),
 }
 
 # ======================================================
 # FUNCTION: get_testcase
-# PURPOSE : Dispatcher for returning (cfg, testcase) by name
+# PURPOSE : Retrieve config + testcase instance by string identifier
 # ======================================================
 
-# === Method Title: get_testcase — registry dispatcher returning (cfg_module, testcase_instance)
+# === Method Title: get_testcase — Registry dispatcher for (config, testcase) pairs ===
 def get_testcase(name: str):
     """
-    Dispatcher to fetch the configuration module and symbolic testcase instance
-    for a given benchmark identifier string (e.g., "test0", "test1", ...).
+    Retrieve the configuration module and symbolic test class for a given test name.
 
     Parameters
     ----------
     name : str
-        String identifier corresponding to the test case.
+        String identifier of the test case (e.g., "test3", "test7", etc.)
 
     Returns
     -------
     tuple
-        (cfg, testcase)
-        - cfg      : Configuration module containing physical and numerical settings
-        - testcase : Instantiated class with symbolic solutions and source terms
+        (cfg_module, testcase_instance)
+        - cfg_module         : Imported module defining coefficients, domain, and time config
+        - testcase_instance  : Instantiated class defining symbolic fields, derivatives, and sources
 
     Raises
     ------
     ValueError
-        If the name is not found in the registered test dictionary.
+        If the provided test name is not registered.
     """
-    # --------------------------------------------------
-    # VALIDATION: Check if requested test name is valid
-    # --------------------------------------------------
-    # Use dict.get to avoid KeyError and to allow a single lookup.
+    # --------------------------------------
+    # Validate the requested name
+    # --------------------------------------
     factory = _TEST_REGISTRY.get(name)
     if factory is None:
-        # Sort for a deterministic, friendly error message across Python versions.
-        available = ", ".join(sorted(_TEST_REGISTRY.keys()))  # e.g., "test0, test1, ..., test11"
+        available = ", ".join(sorted(_TEST_REGISTRY.keys()))
         raise ValueError(
-            f"Unknown test name: '{name}'. Available options are: {available}"
+            f"Unknown test name: '{name}'. Available options: {available}"
         )
 
-    # --------------------------------------------------
-    # DISPATCH: Construct and return the (cfg, testcase) pair
-    # --------------------------------------------------
-    # Calling the lambda performs lazy instantiation at request time.
-    return factory()
+    # --------------------------------------
+    # Return the (cfg, testcase) pair
+    # --------------------------------------
+    return factory()  # Lazy instantiation from lambda
