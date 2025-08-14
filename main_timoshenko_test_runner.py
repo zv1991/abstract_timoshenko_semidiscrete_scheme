@@ -26,7 +26,7 @@ from testcase_registry.registry import get_testcase  # Dispatcher: returns (cfg_
 
 # Set the name of the test case to run.
 # Options: 'test0', 'test1', ..., 'test9' depending on availability.
-test_name = "test12"  # <- change this to switch benchmarks
+test_name = "test13"  # <- change this to switch benchmarks
 
 # Retrieve both the configuration module (cfg) and symbolic benchmark instance (test)
 # - cfg: holds physical and numerical simulation parameters

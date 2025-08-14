@@ -39,6 +39,7 @@ import setting.config_test9 as cfg9    # Testcase9: Unknown solution: sinusoidal
 import setting.config_test10 as cfg10  # Testcase10: Unknown solution: Gaussian-initial sine wave
 import setting.config_test11 as cfg11  # Testcase11: Unknown solution: sinusoidal spatial-only fields
 import setting.config_test12 as cfg12  # Testcase12: Sinusoidal space + time-dependent amplitude
+import setting.config_test13 as cfg13
 
 # ======================================================
 # TESTCASE CLASS IMPORTS — Symbolic Solution Definitions
@@ -62,6 +63,7 @@ from tests.test9 import Testcase9
 from tests.test10 import Testcase10
 from tests.test11 import Testcase11
 from tests.test12 import Testcase12
+from tests.test13 import Testcase13
 
 # ======================================================
 # PUBLIC EXPORTS — Explicit control of exposed API
@@ -88,6 +90,7 @@ _TEST_REGISTRY = {
     "test10": lambda: (cfg10, Testcase10(cfg10)),
     "test11": lambda: (cfg11, Testcase11(cfg11)),
     "test12": lambda: (cfg12, Testcase12(cfg12)),
+    "test13": lambda: (cfg13, Testcase13(cfg13)),
     # Template for future extensions:
     # "testX": lambda: (cfgX, TestcaseX(cfgX)),
 }
