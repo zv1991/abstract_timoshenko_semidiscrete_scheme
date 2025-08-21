@@ -24,8 +24,8 @@ alpha = 1.0   # Material stiffness coefficient for displacement u(x,t) — gover
 beta  = 1.0   # Nonlinear damping coefficient in u-equation — introduces gradient-based dissipation
 gamma = 1.0   # Rotational stiffness in v-equation — determines restoring torque behavior
 delta = 1.0   # Linear damping coefficient in v-equation — introduces energy loss
-a1    = 0.5   # Coupling coefficient from ∂v/∂x in u-equation — rotational influence on displacement
-a2    = 0.5   # Coupling coefficient from ∂u/∂x in v-equation — displacement influence on rotation
+a1    = 0.0   # Coupling coefficient from ∂v/∂x in u-equation — rotational influence on displacement
+a2    = 0.0   # Coupling coefficient from ∂u/∂x in v-equation — displacement influence on rotation
 
 
 # ======================================================

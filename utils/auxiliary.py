@@ -3213,15 +3213,19 @@ def plot_exact_vs_approx_solution_at_time_k(
 #     solution_type (str): Solution field to evaluate: 'u' (displacement) or 'v' (rotation).
 #     config (object): Configuration object with fields like `ell`, `n`, `N`, `t`, and optional `name`.
 #     output_dir (str): Directory to save the plots (default is "plots").
+#     LINE_WIDTH (float, optional): Line width for plotted curves (default: 3.0).
+#     NUM_POINTS (int, optional): Number of spatial grid points (default: 1001).
 #
 # Returns:
 #     list[str]: List of absolute paths to the saved PDF plots.
 # =============================================================================
 def plot_approx_solution_at_time_k(
-    approx_solver: object,
-    solution_type: str,
-    config,
-    output_dir: str = "plots"
+    approx_solver: object,                     # Solver providing the Galerkin ansatz
+    solution_type: str,                        # Field selector: 'u' or 'v'
+    config,                                    # Configuration namespace/object with geometry + time grid
+    output_dir: str = "plots",                 # Base directory for outputs
+    LINE_WIDTH: float = 3.0,                   # User-configurable linewidth
+    NUM_POINTS: int = 1001                     # User-configurable spatial resolution
 ) -> list[str]:
     """
     Title: Plot Galerkin Approximate Solution at Discrete Time Layers
@@ -3236,6 +3240,8 @@ def plot_approx_solution_at_time_k(
         solution_type (str): 'u' (displacement) or 'v' (rotation).
         config (object): Simulation configuration/solver with .ell, .n, .N, .t (optional), .name (optional).
         output_dir (str): Directory to save the plots (default: "plots").
+        LINE_WIDTH (float, optional): Line width for plotted curves (default: 3.0).
+        NUM_POINTS (int, optional): Number of spatial grid points (default: 1001).
 
     Returns:
         list[str]: List of paths to the saved files.
@@ -3244,40 +3250,37 @@ def plot_approx_solution_at_time_k(
     # =========================================================================
     # MODULE IMPORTS (Scoped locally to minimize global side effects)
     # =========================================================================
-    from pathlib import Path
-    from datetime import datetime
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib import rcParams
-
-    # =========================================================================
-    # PLOT AND SAMPLE CONFIGURATION
-    # =========================================================================
-    LINE_WIDTH = 3.0
-    NUM_POINTS = 1001
+    from pathlib import Path                   # Robust cross-platform path ops
+    from datetime import datetime              # For timestamping output filenames
+    import numpy as np                         # Numerical arrays and linspace
+    import matplotlib.pyplot as plt            # Plotting backend
+    from matplotlib import rcParams            # Runtime plotting config
 
     # Spatial grid over [0, ℓ] (float64 for numerical stability)
-    x_vals = np.linspace(0.0, float(config.ell), NUM_POINTS, dtype=float)
+    x_vals = np.linspace(                      # Build uniform grid in space
+        0.0, float(config.ell), NUM_POINTS,    # [0, ell] with user-specified points
+        dtype=float
+    )
 
     # Compute time indices near [0, n]; make them safe even if n < 4
-    n = int(getattr(config, "n", 0))
-    step = max(1, n // 4) if n > 0 else 1
-    raw_layers = [0, step, 2 * step, 3 * step, 4 * step]
-    time_layers = [min(k, n) for k in raw_layers]
-    time_layers = sorted(set(time_layers))
+    n = int(getattr(config, "n", 0))           # Number of time steps (default 0 if missing)
+    step = max(1, n // 4) if n > 0 else 1      # Quarter-step stride; at least 1 to avoid 0 step
+    raw_layers = [0, step, 2 * step, 3 * step, 4 * step]  # Nominal 5 layers
+    time_layers = [min(k, n) for k in raw_layers]         # Clamp to final index n
+    time_layers = sorted(set(time_layers))     # Deduplicate (handles small n) and sort
 
     # =========================================================================
     # COLOR SETTINGS (Colorblind-safe: Okabe–Ito palette)
     # =========================================================================
-    COLOR_APPROX = "#D55E00"  # Orange for approximation curve
+    COLOR_APPROX = "#D55E00"                   # Orange for approximation curve
 
     # =========================================================================
     # ENABLE LATEX-STYLED RENDERING (with safe fallback)
     # =========================================================================
-    use_tex = True
+    use_tex = True                              # Assume LaTeX available; fall back if not
     try:
-        rcParams["text.usetex"] = True
-        rcParams["font.family"] = "lmodern"
+        rcParams["text.usetex"] = True          # Enable LaTeX text rendering
+        rcParams["font.family"] = "lmodern"     # Match LaTeX default font
         rcParams["text.latex.preamble"] = r"""
         \usepackage[utf8]{inputenc}
         \usepackage[T1]{fontenc}
@@ -3291,21 +3294,21 @@ def plot_approx_solution_at_time_k(
         \usepackage{xcolor}
         """
     except Exception:
-        use_tex = False
+        use_tex = False                         # If LaTeX fails, turn it off gracefully
         rcParams["text.usetex"] = False
 
     # =========================================================================
     # PREPARE OUTPUT DIRECTORY
     # =========================================================================
-    config_name = getattr(config, "name", "config")
-    output_path = Path(output_dir) / config_name
-    output_path.mkdir(parents=True, exist_ok=True)
+    config_name = getattr(config, "name", "config")  # Folder name for run grouping
+    output_path = Path(output_dir) / config_name     # e.g., plots/<config_name>
+    output_path.mkdir(parents=True, exist_ok=True)   # Ensure directory exists
 
     # =========================================================================
     # OBTAIN THE ANSATZ CALLABLE (robustly)
     # =========================================================================
-    if hasattr(approx_solver, "callable_compute_ansatz"):
-        ansatz = approx_solver.callable_compute_ansatz(solution_type)
+    if hasattr(approx_solver, "callable_compute_ansatz"):   # Verify required API
+        ansatz = approx_solver.callable_compute_ansatz(solution_type)  # Get field-specific callable
     else:
         raise AttributeError(
             "approx_solver must define `callable_compute_ansatz(solution_type)`."
@@ -3314,29 +3317,31 @@ def plot_approx_solution_at_time_k(
     # =========================================================================
     # LOOP OVER TIME LAYERS AND GENERATE PLOTS
     # =========================================================================
-    saved_files: list[str] = []
+    saved_files: list[str] = []                 # Collect absolute paths of saved figures
 
-    for k in time_layers:
+    for k in time_layers:                       # Iterate over selected time indices
         # ---------------- Evaluate Galerkin approximation safely ----------------
-        approx_values = None
+        approx_values = None                    # Placeholder for evaluated field
 
         # 1) ansatz(x, k)
         try:
-            approx_values = ansatz(x_vals, k)
+            approx_values = ansatz(x_vals, k)   # Preferred: integer time index API
         except TypeError:
-            pass
+            pass                                # If signature mismatch, try next variant
 
         # 2) ansatz(x, t=…)
         if approx_values is None:
             try:
+                # Use config.t[k] if available (physical time), else fallback to index
                 t_k = float(getattr(config, "t", [k])[k]) if hasattr(config, "t") else float(k)
-                approx_values = ansatz(x_vals, t=t_k)
+                approx_values = ansatz(x_vals, t=t_k)  # Alternative API with keyword time
             except Exception:
-                pass
+                pass                            # Keep trying other fallbacks
 
         # 3) fallback API
         if approx_values is None and hasattr(approx_solver, "callable_compute_ansatz"):
             try:
+                # Some solvers might implement an overload that accepts named args
                 approx_values = approx_solver.callable_compute_ansatz(
                     solution_type=solution_type, k=k, x_vals=x_vals
                 )
@@ -3344,6 +3349,7 @@ def plot_approx_solution_at_time_k(
                 pass
 
         if approx_values is None:
+            # Exhausted all calling conventions: inform the user of expected interfaces
             raise TypeError(
                 "Unable to evaluate ansatz. Expected a callable from "
                 "`callable_compute_ansatz(solution_type)` accepting (x, k) "
@@ -3351,12 +3357,13 @@ def plot_approx_solution_at_time_k(
             )
 
         # Ensure 1D shape matches x_vals
-        y = np.asarray(approx_values)
+        y = np.asarray(approx_values)           # Convert to ndarray
         if y.ndim > 1:
-            y = y.reshape(-1)
+            y = y.reshape(-1)                   # Flatten higher-dimensional outputs
         if y.size == 1:
-            y = np.full_like(x_vals, float(y))
+            y = np.full_like(x_vals, float(y))  # Broadcast scalar to spatial grid
         if y.shape[0] != x_vals.shape[0]:
+            # Protect against mismatched discretizations
             raise ValueError(
                 f"x and y must align: x has shape {x_vals.shape}, "
                 f"but y has shape {y.shape}. Check ansatz output."
@@ -3364,42 +3371,67 @@ def plot_approx_solution_at_time_k(
 
         # Safely fetch time value `t_k` for labeling (use index if missing)
         try:
-            t_k = float(config.t[k])
+            t_k = float(config.t[k])            # Prefer physical time for labels
         except Exception:
-            t_k = float(k)
+            t_k = float(k)                      # Fallback to integer time index
 
         # ------------------------------- Plot -----------------------------------
-        plt.figure(figsize=(8, 4))
-
+        plt.figure(figsize=(8, 4))              # Reasonable aspect for line plots
+        
         # Build curve label (legends are removed below; label kept for completeness)
         if use_tex:
-            title = rf"Approximate Solution: ${solution_type}(x, {t_k:g})$"
-            xlab = rf"Spatial coordinate $x \in [0, {float(config.ell):g}]$"
+            if k == 0:
+                # At initial layer: show field-specific IC symbol (φ₀/ψ₀) in LaTeX
+                if solution_type == "u":
+                    title = rf"Initial Condition Function: ${solution_type}(x, {t_k:g}) = \varphi_0(x)$"
+                elif solution_type == "v":
+                    title = rf"Initial Condition Function: ${solution_type}(x, {t_k:g}) = \psi_0(x)$"
+                else:
+                    title = rf"Initial Condition Function: ${solution_type}(x, {t_k:g})$"
+            else:
+                # Subsequent layers: generic approximate solution title
+                title = rf"Approximate Solution: ${solution_type}(x, {t_k:g})$"
+            xlab = rf"Spatial coordinate $x \in [0, {float(config.ell):g}]$"  # LaTeX axis label
         else:
-            title = f"Approximate Solution: {solution_type}(x, t={t_k:g})"
-            xlab = f"Spatial coordinate x ∈ [0, {float(config.ell):g}]"
-
-        plt.plot(x_vals, y, color=COLOR_APPROX, linestyle='-', linewidth=LINE_WIDTH)
-        plt.xlabel(xlab)
-        plt.ylabel("Solution value")
-        plt.title(title)
-        plt.grid(True)
-        plt.tight_layout()
+            if k == 0:
+                # Unicode fallback when LaTeX is unavailable
+                if solution_type == "u":
+                    title = f"Initial Condition Function: {solution_type}(x, t={t_k:g}) = φ₀(x)"
+                elif solution_type == "v":
+                    title = f"Initial Condition Function: {solution_type}(x, t={t_k:g}) = ψ₀(x)"
+                else:
+                    title = f"Initial Condition Function: {solution_type}(x, t={t_k:g})"
+            else:
+                title = f"Approximate Solution: {solution_type}(x, t={t_k:g})"
+            xlab = f"Spatial coordinate x ∈ [0, {float(config.ell):g}]"       # Plain-text axis label
+        
+        plt.plot(                                 # Draw the approximation curve
+            x_vals, y, color=COLOR_APPROX, linestyle='-', linewidth=LINE_WIDTH
+        )
+        plt.xlabel(xlab)                          # X-axis label
+        plt.ylabel("Solution value")              # Y-axis label
+        plt.title(title)                          # Title assembled above
+        plt.grid(True)                            # Light grid for readability
+        plt.tight_layout()                        # Avoid label clipping
 
         # ------------------------- Save figure (robust) --------------------------
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename_pdf = output_path / f"{config_name}_solution_{solution_type}_t{k}_N{config.N}_{timestamp}.pdf"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # Unique per save
+        filename_pdf = output_path / (                        # Prefer vector PDF
+            f"{config_name}_solution_{solution_type}_t{k}_N{config.N}_{timestamp}.pdf"
+        )
         try:
-            plt.savefig(filename_pdf)
-            out_path = filename_pdf
+            plt.savefig(filename_pdf)             # Try PDF (best for publications)
+            out_path = filename_pdf               # Record output path
         except Exception:
-            rcParams["text.usetex"] = False
-            filename_png = output_path / f"{config_name}_solution_{solution_type}_t{k}_N{config.N}_{timestamp}.png"
-            plt.savefig(filename_png, dpi=600)
+            rcParams["text.usetex"] = False       # Disable LaTeX if saving choked on it
+            filename_png = output_path / (        # Fallback to high-DPI PNG
+                f"{config_name}_solution_{solution_type}_t{k}_N{config.N}_{timestamp}.png"
+            )
+            plt.savefig(filename_png, dpi=600)    # Raster save with fine resolution
             out_path = filename_png
         finally:
-            plt.close()
+            plt.close()                           # Always free figure memory
 
-        saved_files.append(str(out_path))
+        saved_files.append(str(out_path))         # Accumulate saved file path
 
-    return saved_files
+    return saved_files                            # Return list of generated files
