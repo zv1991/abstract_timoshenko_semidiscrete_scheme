@@ -26,7 +26,7 @@ from testcase_registry.registry import get_testcase  # Dispatcher: returns (cfg_
 
 # Set the name of the test case to run.
 # Options: 'test0', 'test1', ..., 'test9' depending on availability.
-test_name = "test13"  # <- change this to switch benchmarks
+test_name = "test10"  # <- change this to switch benchmarks
 
 # Retrieve both the configuration module (cfg) and symbolic benchmark instance (test)
 # - cfg: holds physical and numerical simulation parameters
@@ -234,17 +234,17 @@ else:
     # ---------------------------------------------------------------
     # TITLE: Tunable thresholds and refinement limits
     # ---------------------------------------------------------------
-    tol = 1e-4                # L2-difference threshold for declaring convergence
+    tol = 1e-7                # L2-difference threshold for declaring convergence
     max_increment_n = 8        # Max time-refinement doublings: n -> 2^k * n_base
-    max_galerkin_mode = 35     # Try up to 48 extra spatial modes (N_base+1 ... N_base+48)
+    max_galerkin_mode = 50     # Try up to 50 extra spatial modes (N_base+1 ... N_base+48)
 
     # Base resolutions drawn from selected configuration
     n_base = cfg.n             # Time steps at baseline resolution
     N_base = cfg.N             # Spatial modes at baseline resolution
 
     # Hard caps to keep runtime bounded
-    n_limit = 1024              # Max allowed time steps
-    N_limit = 25               # Max allowed spatial modes
+    n_limit = 4096             # Max allowed time steps
+    N_limit = 45               # Max allowed spatial modes
 
     converged = False          # Global flag toggled on success
 

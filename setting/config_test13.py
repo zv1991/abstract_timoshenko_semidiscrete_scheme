@@ -54,9 +54,9 @@ A = 1.0  # Amplitude of sine functions for initial displacement/rotation
 # Title: Time Grid for Time-Stepping Algorithms
 # Description: Create a uniform time grid for solvers such as RK or backward Euler.
 
-n = 1024                       # Number of time steps (uniform)
+n = 2048                      # Number of time steps (uniform)
 t = np.linspace(0, T, n + 1)  # Discrete time array from 0 to T (inclusive)
-tau = T / n                  # Time step size (τ); ensures t spans [0, T] uniformly
+tau = T / n                   # Time step size (τ); ensures t spans [0, T] uniformly
 
 
 # ======================================================

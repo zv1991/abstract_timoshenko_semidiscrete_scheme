@@ -154,51 +154,75 @@ class Testcase12(TimoshenkoTesterParent):
     # FORCING TERMS (RHS FUNCTIONS)
     # ------------------------------------------------------
 
+    # # ---------- METHOD: f1 ----------
+    # def f1(self, x, t):
+    #     """Manufactured source term in u-equation."""
+    #     coeff1 = -self.d1**2
+    #     coeff2 = self.d**2 * (
+    #         self.cfg.alpha +
+    #         ((self.A * self.lam * np.pi)**2 / (2.0 * self.cfg.ell)) *
+    #         self.cfg.beta * np.cos(self.d1 * t)**2
+    #     )
+    #     coeff3 = self.d * self.cfg.a1
+
+    #     x = np.asarray(x)
+    #     return (
+    #         self.A * (coeff1 + coeff2) * np.cos(self.d1 * t) * np.sin(self.d * x) +
+    #         self.A * coeff3 * np.cos(self.d1 * t) * np.cos(self.d * x)
+    #     )
+
+    # # ---------- METHOD: f2 ----------
+    # def f2(self, x, t):
+    #     """Manufactured source term in v-equation."""
+    #     x = np.asarray(x)
+    #     return -self.A * self.d * self.cfg.a2 * np.cos(self.d1 * t) * np.cos(self.d * x)
+
+    # # ---------- METHOD: d1f1 ----------
+    # def d1f1(self, x, t):
+    #     """∂/∂x of u-forcing term."""
+    #     coeff1 = -self.d1**2
+    #     coeff2 = self.d**2 * (
+    #         self.cfg.alpha +
+    #         ((self.A * self.lam * np.pi)**2 / (2.0 * self.cfg.ell)) *
+    #         self.cfg.beta * np.cos(self.d1 * t)**2
+    #     )
+    #     coeff3 = self.d * self.cfg.a1
+
+    #     x = np.asarray(x)
+    #     return (
+    #         self.A * self.d * (coeff1 + coeff2) * np.cos(self.d1 * t) * np.cos(self.d * x)
+    #         - self.A * coeff3 * self.d * np.cos(self.d1 * t) * np.sin(self.d * x)
+    #     )
+
+    # # ---------- METHOD: d1f2 ----------
+    # def d1f2(self, x, t):
+    #     """∂/∂x of v-forcing term."""
+    #     x = np.asarray(x)
+    #     return self.A * self.d**2 * self.cfg.a2 * np.cos(self.d1 * t) * np.sin(self.d * x)
+    
     # ---------- METHOD: f1 ----------
     def f1(self, x, t):
         """Manufactured source term in u-equation."""
-        coeff1 = -self.d1**2
-        coeff2 = self.d**2 * (
-            self.cfg.alpha +
-            ((self.A * self.lam * np.pi)**2 / (2.0 * self.cfg.ell)) *
-            self.cfg.beta * np.cos(self.lam1 * t)**2
-        )
-        coeff3 = self.d * self.cfg.a1
-
         x = np.asarray(x)
-        return (
-            self.A * (coeff1 + coeff2) * np.cos(self.d1 * t) * np.sin(self.d * x) +
-            self.A * coeff3 * np.cos(self.d1 * t) * np.cos(self.d * x)
-        )
+        return np.float64(0.0)
 
     # ---------- METHOD: f2 ----------
     def f2(self, x, t):
         """Manufactured source term in v-equation."""
         x = np.asarray(x)
-        return -self.A * self.d * self.cfg.a2 * np.cos(self.d1 * t) * np.cos(self.d * x)
+        return np.float64(0.0)
 
     # ---------- METHOD: d1f1 ----------
     def d1f1(self, x, t):
         """∂/∂x of u-forcing term."""
-        coeff1 = -self.d1**2
-        coeff2 = self.d**2 * (
-            self.cfg.alpha +
-            ((self.A * self.lam * np.pi)**2 / (2.0 * self.cfg.ell)) *
-            self.cfg.beta * np.cos(self.lam1 * t)**2
-        )
-        coeff3 = self.d * self.cfg.a1
-
         x = np.asarray(x)
-        return (
-            self.A * self.d * (coeff1 + coeff2) * np.cos(self.d1 * t) * np.cos(self.d * x) -
-            self.A * coeff3 * self.d * np.cos(self.d1 * t) * np.sin(self.d * x)
-        )
+        return np.float64(0.0)
 
     # ---------- METHOD: d1f2 ----------
     def d1f2(self, x, t):
         """∂/∂x of v-forcing term."""
         x = np.asarray(x)
-        return self.A * self.d**2 * self.cfg.a2 * np.cos(self.d1 * t) * np.sin(self.d * x)
+        return np.float64(0.0)
 
     # ------------------------------------------------------
     # DATACLASS POST-CONSTRUCTION HOOK (OPTIONAL)
