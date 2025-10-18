@@ -11,7 +11,7 @@ import numpy as np  # NumPy: numerical computing library for array manipulation,
 # ======================================================
 # Defines the spatial and temporal extent of the domain for solving the PDEs.
 
-T = 2.0     # Final simulation time → time domain is [0, T]
+T = 4.0     # Final simulation time → time domain is [0, T]
 ell = 2.0   # Physical length of the beam → spatial domain is [0, ell]
 
 
@@ -35,8 +35,8 @@ a2    = 1.0   # Coupling from ∂u/∂x to v-equation (shear deformation feedbac
 # Parameters used to construct symbolic benchmark solutions for verification.
 # These are separable functions of space and time, designed to satisfy the PDE system exactly.
 
-lam_u = 14  # Number of sine wave oscillations in spatial profile of u(x, t)
-lam_v = 14  # Number of sine wave oscillations in spatial profile of v(x, t)
+lam_u = 5  # Number of sine wave oscillations in spatial profile of u(x, t)
+lam_v = 5  # Number of sine wave oscillations in spatial profile of v(x, t)
 
 pow_coeff_u = 1 / 4.0  # Exponent for time-dependent growth/decay in u(x, t)
 pow_coeff_v = 1 / 4.0  # Exponent for time-dependent growth/decay in v(x, t)
@@ -61,7 +61,7 @@ tau = T / n                     # Time step size τ (used in solvers for advanci
 # Sets spatial resolution for the Galerkin spectral method.
 # The solution is projected onto a basis of Legendre polynomials of degree < N.
 
-N = 35  # Number of Legendre polynomial basis functions for spatial approximation
+N = 15  # Number of Legendre polynomial basis functions for spatial approximation
 
 
 # ======================================================
