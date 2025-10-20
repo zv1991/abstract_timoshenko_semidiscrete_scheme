@@ -24,8 +24,8 @@ alpha = 1.0   # Material stiffness coefficient for displacement u(x,t) — gover
 beta  = 1.0   # Nonlinear damping coefficient in u-equation — introduces gradient-based dissipation
 gamma = 1.0   # Rotational stiffness in v-equation — determines restoring torque behavior
 delta = 1.0   # Linear damping coefficient in v-equation — introduces energy loss
-a1    = 0.0   # Coupling coefficient from ∂v/∂x in u-equation — rotational influence on displacement
-a2    = 0.0   # Coupling coefficient from ∂u/∂x in v-equation — displacement influence on rotation
+a1    = 0.5   # Coupling coefficient from ∂v/∂x in u-equation — rotational influence on displacement
+a2    = 0.5   # Coupling coefficient from ∂u/∂x in v-equation — displacement influence on rotation
 
 
 # ======================================================
@@ -49,7 +49,7 @@ c_v = 0.5  # Gaussian width parameter for v(x, 0); lower values = narrower peak
 # ======================================================
 # Define time discretization for time-stepping algorithms like Runge-Kutta or backward Euler.
 
-n = 4096                      # Number of time steps (uniformly spaced) over [0, T]
+n = 2048                      # Number of time steps (uniformly spaced) over [0, T]
 t = np.linspace(0, T, n + 1)  # Discretized time array from t₀ = 0 to tₙ = T; (n+1) points total
 tau = T / n                   # Time step size (τ), derived from total time and step count
 
@@ -59,7 +59,7 @@ tau = T / n                   # Time step size (τ), derived from total time and
 # ======================================================
 # Defines the size of the approximation space used in Galerkin spectral projection.
 
-N = 44  # Number of Legendre polynomial basis functions (modal resolution in space)
+N = 41  # Number of Legendre polynomial basis functions (modal resolution in space)
 
 
 # ======================================================
