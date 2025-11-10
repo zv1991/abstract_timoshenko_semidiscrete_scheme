@@ -682,54 +682,40 @@ def gauss_legendre_integral(f, a: float, b: float, n_gauss: int) -> np.float64:
     # -----------------------------------------------------------------------
     return np.float64(integral)
 
-# =============================================================================
+# =========================================================================== #
 # Function: adaptive_gauss_legendre_integrator
-# Title   : Adaptive GL Integrator (Refine intervals first, then increase nodes)
-# Purpose : Compute ∫₀^ell f(x) dx using a two-stage adaptive approach:
-#           1) Hold Gauss–Legendre node count fixed at n₀ and recursively
-#              subdivide [0, ell] into smaller intervals until convergence
-#              (|Iₖ - Iₖ₋₁| < tol) or dx < min_dx.
-#           2) If convergence is not achieved, increase node count and repeat.
-#
-# Notes   : This routine depends on a previously defined method:
-#           >>> gauss_legendre_integral(f, a, b, n_gauss)
-#           which computes the Gauss–Legendre quadrature of f over [a, b].
-#
-# Modules : Relies on `numpy as np` already imported by caller.
-#           - numpy (np): used for float64 casting and absolute value ops.
-#
-# Returns : (integral_value, estimated_error, num_refinements, max_nodes_used)
-# =============================================================================
+# Purpose : Adaptive numerical integration over [0, ell] using:
+#           1. Increasing Gauss–Legendre node count for accuracy,
+#           2. Recursive subinterval refinement if convergence fails.
+# Dependencies: Requires gauss_legendre_integral(f, a, b, n_gauss) to be defined.
+# =========================================================================== #
 
 def adaptive_gauss_legendre_integrator(
-    f,                        # Integrand: must accept a float and return a float
-    ell: float,               # Upper limit of the integration interval [0, ell]
-    tol: float = 1e-6,        # Absolute error tolerance for convergence
-    min_dx: float = 1 / 128.0,# Minimum width of a subinterval before halting refinement
-    n_gauss: int = 5,         # Initial number of Gauss–Legendre nodes
-    max_gauss: int = 50       # Maximum allowed number of nodes per subinterval
+    f,                       # Integrand: any function accepting float input
+    ell: float,              # Upper limit of integration interval [0, ell]
+    tol: float = 1e-6,       # Tolerance for convergence
+    min_dx: float = 1/128.0, # Minimum width of subinterval before halting refinement
+    n_gauss: int = 5,        # Initial number of Gauss–Legendre nodes
+    max_gauss: int = 50      # Maximum number of Gauss–Legendre nodes per interval
 ) -> tuple[np.float64, np.float64, int, int]:
     """
-    Adaptively approximate ∫₀^ell f(x) dx using Gauss–Legendre quadrature
-    with the following procedure:
-      1) Hold nodes fixed at n₀ and recursively refine subintervals
-         until convergence or min_dx is reached.
-      2) If convergence fails, increase node count and repeat step (1).
+    Adaptively approximate the definite integral of `f` over [0, ell]
+    using Gauss–Legendre quadrature and subinterval refinement.
 
     Parameters
     ----------
     f : function
-        The integrand, accepting a single float input.
+        Function to integrate; must accept float inputs and return float outputs.
     ell : float
-        Upper bound of the integration interval [0, ell]; must be non-negative.
+        Upper bound of the integration domain [0, ell]; must be ≥ 0.
     tol : float, optional
-        Desired absolute error tolerance for convergence. Default = 1e-6.
+        Absolute error tolerance for convergence. Default is 1e-6.
     min_dx : float, optional
-        Minimum allowable subinterval width before refinement stops. Default = 1/128.
+        Minimum subinterval width. Prevents infinite subdivision. Default is 1/128.
     n_gauss : int, optional
-        Starting number of Gauss–Legendre nodes. Default = 5.
+        Starting number of Gauss nodes per interval. Default is 5.
     max_gauss : int, optional
-        Maximum number of nodes allowed per subinterval. Default = 50.
+        Maximum allowable Gauss nodes in any interval. Default is 50.
 
     Returns
     -------
@@ -737,147 +723,116 @@ def adaptive_gauss_legendre_integrator(
         - Estimated integral value
         - Estimated absolute error
         - Number of interval refinements performed
-        - Maximum number of nodes used in any subinterval
+        - Maximum number of Gauss nodes used in any interval
     """
 
-    # -------------------------------------------------------------------------
-    # Input Validation
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # STEP 1: Handle trivial case where ell = 0
+    # ---------------------------------------------------------------------------
     if ell < 0:
-        raise ValueError("Parameter 'ell' must be non-negative.")  # Negative domains invalid
+        raise ValueError("Parameter 'ell' must be non-negative.")
     if ell == 0:
-        # Zero-length interval ⇒ integral = 0, error = 0, no refinement
-        return np.float64(0.0), np.float64(0.0), 0, 0
-    if tol <= 0:
-        raise ValueError("'tol' must be a positive number.")       # must be strictly positive
-    if min_dx <= 0:
-        raise ValueError("'min_dx' must be positive.")             # avoid infinite loop / invalid split
-    if not isinstance(n_gauss, int) or not isinstance(max_gauss, int):
-        raise TypeError("'n_gauss' and 'max_gauss' must be integers.")  # enforce integer nodes
-    if n_gauss <= 0:
-        raise ValueError("'n_gauss' must be positive.")            # at least one node
-    if max_gauss < n_gauss:
-        raise ValueError("'max_gauss' must be ≥ 'n_gauss'.")       # sensible upper bound
+        return np.float64(0.0), np.float64(0.0), 0, 0  # Zero-length interval
 
-    # Store initial configuration
-    initial_n = n_gauss               # Initial Gauss–Legendre node count (n₀ to verify)
-    max_nodes_used = initial_n        # Track maximum node count used in any pass
+    # ---------------------------------------------------------------------------
+    # STEP 2: Try full interval integration with increasing Gauss node count
+    # ---------------------------------------------------------------------------
+    initial_n_gauss = n_gauss          # Save starting node count
+    max_nodes_used = n_gauss           # Track highest node count used
+    converged = False                  # Convergence flag
 
-    # Micro-optimization: bind global name to local to reduce attribute lookups in loops
-    glq = gauss_legendre_integral     # local alias for Gauss–Legendre routine
+    # First approximation using initial node count
+    integral_prev = gauss_legendre_integral(f, 0.0, ell, n_gauss)
 
-    # =========================================================================
-    # Helper Function: try_refine_with_fixed_n
-    # Title   : Fixed-node interval refinement (seeded with global baseline)
-    # Purpose : For a given fixed node count n_nodes, recursively subdivide the
-    #           interval [0, ell] into 2^k subintervals and apply Gauss–Legendre
-    #           quadrature on each. The global *baseline* I₀ (full interval at
-    #           n_nodes) is used as I_{k-1} for the first refinement level (k=1),
-    #           so the first convergence check tests whether n₀ was sufficient
-    #           on the global interval. If not, refinement proceeds.
-    #
-    # Returns : (converged, value, error_est, refinements_done)
-    #           - converged       : bool; True if |I_k - I_{k-1}| < tol at some k
-    #           - value           : np.float64; integral estimate at that k (or best-so-far)
-    #           - error_est       : np.float64; |I_k - I_{k-1}| for last step (proxy)
-    #           - refinements_done: int; number of refinements performed (k)
-    # =========================================================================
-    def try_refine_with_fixed_n(n_nodes: int):
-        """Refine [0, ell] with fixed Gauss–Legendre node count (n_nodes).
-        Returns (converged, integral_value, error_est, num_refinements)."""
+    while n_gauss + 5 <= max_gauss:
+        n_gauss += 5
+        integral_curr = gauss_legendre_integral(f, 0.0, ell, n_gauss)
 
-        # ---- Minimal-node verification on the global interval (I₀) ------------
-        # Compute a single full-interval integral at the current node count.
-        # This acts as the baseline I_{k-1} for the first refinement (k=1).
-        prev_total = glq(f, 0.0, ell, n_nodes)   # I₀ with n_nodes on [0, ell]
-        counter = 0                              # refinement level; next will be k=1
-        last_total = None                        # most recent I_k (tracked for fallback)
-        last_err = np.float64(np.inf)            # last |I_k - I_{k-1}| (error proxy)
+        max_nodes_used = min(max(max_nodes_used, n_gauss), max_gauss)
 
-        # Iteratively refine until convergence or until dx < min_dx
-        while True:
-            counter += 1
-            n_intervals = 2 ** counter           # Split [0, ell] into 2^k subintervals
-            dx = ell / n_intervals               # Width of each subinterval
+        if np.abs(integral_curr - integral_prev) < tol:
+            # Converged within tolerance; return result
+            estimated_error = np.abs(integral_curr - integral_prev)
+            return (
+                np.float64(integral_curr),
+                np.float64(estimated_error),
+                0,  # No interval splitting occurred
+                max_nodes_used
+            )
+        integral_prev = integral_curr  # Continue refining
 
-            # If subintervals would become too small, stop and return best-so-far
-            if dx < min_dx:
-                # If we never got a better estimate than I₀, return I₀ with inf error proxy
-                if last_total is None:
-                    return False, np.float64(prev_total), np.float64(np.inf), counter - 1
-                # Otherwise, return the latest computed result and its last observed error proxy
-                return False, np.float64(last_total), np.float64(last_err), counter - 1
+    # ---------------------------------------------------------------------------
+    # STEP 3: Begin adaptive refinement by subinterval splitting
+    # ---------------------------------------------------------------------------
+    counter = 0                # Count of subdivision steps
+    prev_total = None          # Store previous total for convergence check
 
-            # ---------------------------------------------------------------
-            # Compute the global integral by summing subinterval integrals
-            #   I_k = Σ_i GLQ(f, [a_i, b_i], n_nodes), for i = 0..(2^k-1)
-            # ---------------------------------------------------------------
-            total_integral = 0.0
-            for i in range(n_intervals):
-                a = i * dx                       # left bound of subinterval i
-                b = (i + 1) * dx                 # right bound of subinterval i
-                total_integral += glq(f, a, b, n_nodes)
+    while not converged:
+        counter += 1
+        n_intervals = 2 ** counter      # Number of subintervals
+        dx = ell / n_intervals          # Width of each subinterval
 
-            # ---------------------------------------------------------------
-            # Convergence Check: Compare I_k (refined) with I_{k-1} (coarser)
-            #   For k=1, this specifically checks whether n₀ was sufficient
-            #   on the global interval by comparing I₁ vs I₀.
-            # ---------------------------------------------------------------
-            err = np.abs(total_integral - prev_total)  # Simple a posteriori error proxy
-            last_total = total_integral                 # Keep latest I_k for fallback/return
-            last_err = err                              # Keep latest error estimate
-            if err < tol:
-                # Convergence achieved at refinement level `counter`
-                return True, np.float64(total_integral), np.float64(err), counter
+        if dx < min_dx:
+            break  # Stop if intervals become too small
 
-            # Prepare for next refinement level: set I_{k-1} ← I_k and continue
-            prev_total = total_integral
+        total_integral = 0.0
+        converged = True  # Will set False if any subinterval fails
 
-            # Loop continues with finer partition (k ← k+1)
+        for i in range(n_intervals):
+            a = i * dx
+            b = (i + 1) * dx
 
-    # -------------------------------------------------------------------------
-    # STEP 1: Attempt convergence with initial node count (n₀ verified via I₀)
-    #         If n₀ is insufficient on the global interval, refinement proceeds.
-    # -------------------------------------------------------------------------
-    converged, value, err, refinements = try_refine_with_fixed_n(initial_n)
-    if converged:
-        # Successful convergence using the initial node count
-        return value, err, refinements, max_nodes_used
+            n_gauss_local = initial_n_gauss
+            integral_prev = gauss_legendre_integral(f, a, b, n_gauss_local)
+            local_converged = False
 
-    # -------------------------------------------------------------------------
-    # STEP 2: If not converged, increase the node count and retry
-    #         (increase by 5 per pass to balance speed and accuracy)
-    # -------------------------------------------------------------------------
-    best_value = value             # Best integral estimate seen so far (across passes)
-    best_err = err                 # Corresponding error proxy
-    best_refinements = refinements # Refinements for the best estimate
+            while n_gauss_local + 5 <= max_gauss:
+                n_gauss_local += 5
+                integral_curr = gauss_legendre_integral(f, a, b, n_gauss_local)
 
-    n_curr = initial_n
-    while n_curr + 5 <= max_gauss:
-        n_curr += 5                                       # Increment Gauss–Legendre node count
-        max_nodes_used = min(max(max_nodes_used, n_curr), max_gauss)  # Track max nodes used
+                if np.abs(integral_curr - integral_prev) < tol:
+                    # This subinterval converged
+                    total_integral += integral_curr
+                    local_converged = True
+                    break
 
-        # Retry the fixed-node refinement with the higher accuracy per subinterval
-        converged, value, err, refinements = try_refine_with_fixed_n(n_curr)
+                integral_prev = integral_curr
 
+            if not local_converged:
+                # Accept best estimate, but mark global failure
+                total_integral += integral_curr
+                converged = False
+
+            max_nodes_used = min(max(max_nodes_used, n_gauss_local), max_gauss)
+
+        # -----------------------------------------------------------------------
+        # STEP 4: Check for global convergence over full domain
+        # -----------------------------------------------------------------------
         if converged:
-            # Convergence achieved at this node level: return immediately
-            return value, err, refinements, max_nodes_used
+            if prev_total is not None:
+                if np.abs(total_integral - prev_total) < tol:
+                    estimated_error = np.abs(total_integral - prev_total)
+                    return (
+                        np.float64(total_integral),
+                        np.float64(estimated_error),
+                        counter,
+                        max_nodes_used
+                    )
 
-        # Otherwise, retain the best result by smallest observed error proxy
-        if err < best_err:
-            best_value = value
-            best_err = err
-            best_refinements = refinements
+            prev_total = total_integral  # Store for next check
 
-    # -------------------------------------------------------------------------
-    # STEP 3: Fallback – Return the best estimate even if not converged
-    #         (best according to the smallest |I_k - I_{k-1}| observed)
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # STEP 5: Fallback – Return best estimate even if not converged
+    # ---------------------------------------------------------------------------
+    estimated_error = (
+        np.abs(total_integral - prev_total)
+        if prev_total is not None else np.float64(np.inf)
+    )
+
     return (
-        np.float64(best_value),
-        np.float64(best_err),
-        best_refinements,
+        np.float64(total_integral),
+        np.float64(estimated_error),
+        counter,
         max_nodes_used
     )
 
