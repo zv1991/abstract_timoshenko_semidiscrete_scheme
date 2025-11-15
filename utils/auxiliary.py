@@ -3129,7 +3129,7 @@ def plot_L2_errors_over_time(
     # =========================================================================
     # STYLING CONSTANTS FOR PLOTTING
     # =========================================================================
-    LINE_WIDTH = 2.0
+    LINE_WIDTH = 1.0       # Base line thickness used for all plotted curves; controls visual weight without overpowering markers or grid
     color_u = "#0072B2"  # Blue: displacement u (Okabe–Ito palette)
     color_v = "#E69F00"  # Orange: rotation v (Okabe–Ito palette)
 
@@ -3160,10 +3160,15 @@ def plot_L2_errors_over_time(
     # =========================================================================
     plt.figure(figsize=(8, 4))
     plt.plot(
-        time_array, error_u,
-        marker='o', linestyle='-', linewidth=LINE_WIDTH,
-        color=color_u,
+        time_array,           # x-axis: array of time points
+        error_u,              # y-axis: L2 error values for displacement u
+        marker='o',           # use circular markers for each data point
+        markersize=2.5,       # decrease marker size (default ~6); smaller = less visual clutter
+        linestyle='-',        # solid line connecting data points
+        linewidth=LINE_WIDTH, # thickness of the connecting line
+        color=color_u,        # blue color for u, defined earlier using Okabe–Ito palette
         label=r"$E_{1,k} = \left\| u\left( \cdot, t_k \right) - \tilde{u}_{k,N}\left( \cdot \right) \right\|$"
+                              # LaTeX-rendered label for the legend
     )
     plt.xlabel(rf"Time $t \in \left[ {t_min:g}, {t_max:g} \right]$")
     plt.ylabel(r"$E_{1, k}$")
@@ -3182,10 +3187,15 @@ def plot_L2_errors_over_time(
     # =========================================================================
     plt.figure(figsize=(8, 4))
     plt.plot(
-        time_array, error_v,
-        marker='s', linestyle='--', linewidth=LINE_WIDTH,
-        color=color_v,
+        time_array,           # x-axis: array of time points
+        error_v,              # y-axis: L2 error values for rotation v
+        marker='s',           # use square markers for each data point
+        markersize=2.5,       # decrease marker size for cleaner appearance
+        linestyle='-',        # solid line connecting data points (consistent with u-plot if desired)
+        linewidth=LINE_WIDTH, # thickness of the connecting line
+        color=color_v,        # orange color for v, consistent with Okabe–Ito palette
         label=r"$E_{2,k} = \left\| v\left( \cdot, t_k \right) - \tilde{v}_{k,N}\left( \cdot \right) \right\|$"
+                              # LaTeX-rendered legend label
     )
     plt.xlabel(rf"Time $t \in \left[ {t_min:g}, {t_max:g} \right]$")
     plt.ylabel(r"$E_{2, k}$")
