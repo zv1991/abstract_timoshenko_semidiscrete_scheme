@@ -50,7 +50,7 @@ mult_coeff_v = 1 / 4.0  # Amplitude multiplier on time dependence for v(x, t)
 # ======================================================
 # Define the resolution of the time grid used for stepping forward in time.
 
-n = 1024                         # Number of uniform time steps
+n = 1024                        # Number of uniform time steps
 t = np.linspace(0, T, n + 1)    # Discrete time points: t₀ = 0, tₙ = T
 tau = T / n                     # Time step size τ (used in solvers for advancing state)
 

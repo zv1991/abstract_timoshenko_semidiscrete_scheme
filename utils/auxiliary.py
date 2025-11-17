@@ -3129,7 +3129,7 @@ def plot_L2_errors_over_time(
     # =========================================================================
     # STYLING CONSTANTS FOR PLOTTING
     # =========================================================================
-    LINE_WIDTH = 1.0       # Base line thickness used for all plotted curves; controls visual weight without overpowering markers or grid
+    LINE_WIDTH = 1.2       # Base line thickness used for all plotted curves; controls visual weight without overpowering markers or grid
     color_u = "#0072B2"  # Blue: displacement u (Okabe–Ito palette)
     color_v = "#E69F00"  # Orange: rotation v (Okabe–Ito palette)
 
@@ -3163,7 +3163,7 @@ def plot_L2_errors_over_time(
         time_array,           # x-axis: array of time points
         error_u,              # y-axis: L2 error values for displacement u
         marker='o',           # use circular markers for each data point
-        markersize=2.5,       # decrease marker size (default ~6); smaller = less visual clutter
+        markersize=3.0,       # decrease marker size (default ~6); smaller = less visual clutter
         linestyle='-',        # solid line connecting data points
         linewidth=LINE_WIDTH, # thickness of the connecting line
         color=color_u,        # blue color for u, defined earlier using Okabe–Ito palette
@@ -3190,7 +3190,7 @@ def plot_L2_errors_over_time(
         time_array,           # x-axis: array of time points
         error_v,              # y-axis: L2 error values for rotation v
         marker='s',           # use square markers for each data point
-        markersize=2.5,       # decrease marker size for cleaner appearance
+        markersize=3.0,       # decrease marker size for cleaner appearance
         linestyle='-',        # solid line connecting data points (consistent with u-plot if desired)
         linewidth=LINE_WIDTH, # thickness of the connecting line
         color=color_v,        # orange color for v, consistent with Okabe–Ito palette
