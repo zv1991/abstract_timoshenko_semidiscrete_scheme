@@ -66,7 +66,7 @@ tau = T / n                   # Time step size Δt (uniform steps)
 # ======================================================
 # Configuration for Galerkin spectral projection using Legendre polynomials.
 
-N = 45  # Number of basis functions (Legendre polynomials) used for spatial approximation
+N = 29  # Number of basis functions (Legendre polynomials) used for spatial approximation
 
 
 # ======================================================
