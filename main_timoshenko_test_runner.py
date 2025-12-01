@@ -377,8 +377,8 @@ else:
     N_base = cfg.N              # Baseline number of spatial modes (Galerkin modes) from configuration.
 
     # Hard caps to keep overall runtime and memory usage bounded.
-    n_limit = 2048              # Absolute upper limit on time steps (safety bound).
-    N_limit = 17                # Absolute upper limit on spatial modes (safety bound).
+    n_limit = 4096              # Absolute upper limit on time steps (safety bound).
+    N_limit = 45                # Absolute upper limit on spatial modes (safety bound).
 
     converged = False           # Global flag: True if both u and v converge for some (n, N).
 
