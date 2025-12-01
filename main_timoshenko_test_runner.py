@@ -230,124 +230,226 @@ else:
     # TITLE: Convergence Analysis (No Exact Solution Available)
     # ===============================================================
     # This branch is executed when no exact (analytical) solution is available
-    # for the current test case. We perform a numerical convergence study
-    # instead, refining time steps and spatial modes.
+    # for the current test case. We perform a numerical convergence study,
+    # refining both time steps and spatial modes until convergence is detected
+    # (or configured limits are reached).
     print("No exact solutions available; running convergence analysis...")
 
     # ---------------------------------------------------------------
     # IMPORTS (LOCAL TO THIS BRANCH)
     # ---------------------------------------------------------------
-    from pathlib import Path       # Path: cross-platform filesystem path helper (joins, mkdir, etc.)
-    from datetime import datetime  # datetime: provides current time for timestamped filenames
-    import csv                     # csv: standard library CSV reader/writer used to log convergence data
+    from pathlib import Path       # Path: cross-platform filesystem path helper (joining, creating dirs, etc.)
+    from datetime import datetime  # datetime: used to generate timestamp-based, unique filenames
+    import csv                     # csv: standard library CSV writer for logging convergence metrics
+
+    # ---------------------------------------------------------------
+    # HELPER FUNCTION: component-wise convergence check
+    # ---------------------------------------------------------------
+    def _check_component_convergence(
+        component: str,
+        solver_prev,
+        solver,
+        n_updt: int,
+        N_updt: int,
+        tol: float,
+        tol_str: str,
+        csv_rows: list[list[object]],
+        event_rows: list[list[object]],
+        aux_module,
+    ) -> tuple[bool, float]:
+        """
+        Check convergence for a single component ('u' or 'v') across time layers
+        for a given (n_updt, N_updt), log per-layer norms to csv_rows, and
+        record the first failure (if any) into event_rows.
+
+        Parameters
+        ----------
+        component : str
+            Either 'u' or 'v'; selects which coefficient set to compare.
+        solver_prev :
+            Baseline solver instance at (n_updt, N_base), used as reference.
+        solver :
+            Refined solver instance at (n_updt, N_updt) to compare against baseline.
+        n_updt : int
+            Number of time steps used in this refinement pass.
+        N_updt : int
+            Number of spatial modes used in this refinement pass.
+        tol : float
+            L2 tolerance; norms above this are considered non-convergent.
+        tol_str : str
+            Preformatted string version of `tol` for CSV logging.
+        csv_rows : list[list[object]]
+            Accumulator for main CSV: detailed norms and per-(component, n, N) maxima.
+        event_rows : list[list[object]]
+            Accumulator for failure-event CSV (only written if global convergence fails).
+        aux_module :
+            Module/namespace providing numerical helpers, e.g.
+            `compute_L2_difference_norms_from_coeffs`.
+
+        Returns
+        -------
+        converged : bool
+            True if the component converged at all checked time layers; False otherwise.
+        max_norm : float
+            Maximum L2 difference observed across the checked time layers.
+        """
+        # Select the appropriate coefficient arrays based on the component name.
+        if component == "u":
+            coeff_prev = solver_prev.tilde_u
+            coeff_next = solver.tilde_u
+        elif component == "v":
+            coeff_prev = solver_prev.tilde_v
+            coeff_next = solver.tilde_v
+        else:
+            # Defensive guard: only 'u' and 'v' are supported components.
+            raise ValueError(f"Unknown component: {component!r}. Expected 'u' or 'v'.")
+
+        converged = True   # Assume convergence until we observe a violation.
+        max_norm = 0.0     # Tracks maximum norm for this (component, n_updt, N_updt).
+
+        # Iterate over time layers; skip first two layers to avoid initialization transients.
+        for k in range(2, n_updt):
+            # Compute L2 norm of the difference between baseline and refined coefficients.
+            norm_val = aux_module.compute_L2_difference_norms_from_coeffs(
+                coeff_init=coeff_prev,   # Baseline coefficients.
+                coeff_next=coeff_next,   # Refined coefficients.
+                config=solver_prev,      # Grid/weights context taken from baseline solver.
+                time_layer=k             # Current time layer index.
+            )
+
+            # Track the maximum norm observed across layers for this component.
+            if norm_val > max_norm:
+                max_norm = norm_val
+
+            # Append detailed per-layer data to main CSV rows.
+            csv_rows.append([
+                component,               # 'u' or 'v'.
+                n_updt,                  # Time steps.
+                N_updt,                  # Spatial modes.
+                k,                       # Time layer index.
+                f"{norm_val:.6e}",       # L2 norm in scientific notation.
+                tol_str,                 # Tolerance as a string for consistency.
+                0                        # is_max = 0 → regular per-layer entry.
+            ])
+
+            # If this layer violates the tolerance, record a failure event and stop checking.
+            if norm_val > tol:
+                print(
+                    f"[{component}] n={n_updt}, N={N_updt}, layer={k}: "
+                    f"L2 diff norm = {norm_val:.6e} > tol = {tol:.6e}"
+                )
+                converged = False
+
+                # Record the first failure event for this (component, n_updt, N_updt).
+                event_rows.append([
+                    component,           # Component that failed ('u' or 'v').
+                    n_updt,              # Time steps.
+                    N_updt,              # Spatial modes.
+                    k,                   # First failing layer.
+                    f"{norm_val:.6e}",   # Failing norm value.
+                    "fail"               # Status flag (failure).
+                ])
+
+                break                   # Stop checking further layers for this component.
+
+        # After we finish (or break), append a "max" summary row for this component.
+        csv_rows.append([
+            component,
+            n_updt,
+            N_updt,
+            "max",                      # Special marker: per-(component, n, N) maximum.
+            f"{max_norm:.6e}",          # Largest L2 norm seen for this component.
+            tol_str,
+            1                           # is_max = 1 → summary row.
+        ])
+
+        return converged, max_norm
 
     # ---------------------------------------------------------------
     # TITLE: Tunable thresholds and refinement limits
     # ---------------------------------------------------------------
-    tol = 1e-4                  # L2-difference tolerance: convergence is accepted when all norms ≤ tol
-    max_increment_n = 8         # Max exponent for time refinement: n_updt = 2**n_incr * n_base
-    max_galerkin_mode = 50      # Max number of extra spatial modes beyond N_base to test (1..50)
+    tol = 1e-4                  # L2-difference tolerance: convergence is accepted if all norms ≤ tol.
+    max_increment_n = 8         # Max exponent for time refinement: n_updt = 2**n_incr * n_base.
+    max_galerkin_mode = 50      # Max number of additional spatial modes beyond N_base to test.
 
-    # Base resolutions drawn from the selected configuration object `cfg`
-    n_base = cfg.n              # Baseline number of time steps from configuration
-    N_base = cfg.N              # Baseline number of spatial modes (Galerkin modes) from configuration
+    # Base resolutions drawn from the selected configuration object `cfg`.
+    n_base = cfg.n              # Baseline number of time steps from configuration.
+    N_base = cfg.N              # Baseline number of spatial modes (Galerkin modes) from configuration.
 
-    # Hard caps to keep overall runtime and memory usage bounded
-    n_limit = 4096              # Absolute upper limit on time steps (safety bound)
-    N_limit = 45                # Absolute upper limit on spatial modes (safety bound)
+    # Hard caps to keep overall runtime and memory usage bounded.
+    n_limit = 2048              # Absolute upper limit on time steps (safety bound).
+    N_limit = 17                # Absolute upper limit on spatial modes (safety bound).
 
-    converged = False           # Global flag: set to True if both u and v converge for some (n, N)
+    converged = False           # Global flag: True if both u and v converge for some (n, N).
 
-    # Track the specific (n, N) pair where convergence is first detected
-    best_n = None               # Records converged number of time steps, if found
-    best_N = None               # Records converged number of spatial modes, if found
+    # Track the specific (n, N) pair where convergence is first detected.
+    best_n = None               # Records converged number of time steps, if found.
+    best_N = None               # Records converged number of spatial modes, if found.
 
     # ===============================================================
-    # CSV accumulation:
-    #   1) Detailed norms at each time layer (csv_rows)
-    #   2) Per-(n, N) *failure* events (event_rows)
-    #
-    # csv_rows columns (main CSV):
-    #   component ('u' or 'v')
-    #   n          (time steps)
-    #   N          (spatial modes)
-    #   layer      (time index, or "max" for per-case maximum)
-    #   norm       (as string, .6e)
-    #   tol        (as string, .6e)
-    #   is_max     (0 for regular rows, 1 for "max" summary rows)
-    #
-    # event_rows columns (SECOND CSV, written only if convergence fails overall):
-    #   component  ('u' or 'v')
-    #   n          (time steps)
-    #   N          (spatial modes)
-    #   layer      (time index where the convergence test first fails)
-    #   norm       (as string, .6e)
-    #   status     ('fail' — always failure in this file)
+    # CSV accumulation structures
+    #   1) csv_rows   → detailed norms at each time layer
+    #   2) event_rows → per-(n, N) component failure events
     # ===============================================================
-    csv_rows: list[list[object]] = []   # Detailed per-layer norms for main CSV
-    event_rows: list[list[object]] = [] # Per-(n, N) failure events for secondary CSV
+    csv_rows: list[list[object]] = []    # Detailed per-layer norms for main CSV.
+    event_rows: list[list[object]] = []  # Per-(n, N) failure events for secondary CSV.
 
-    # Pre-format tolerance once (used repeatedly in CSV rows)
-    tol_str = f"{tol:.6e}"      # String representation of tolerance, written into CSV for traceability
+    # Pre-format tolerance once (used repeatedly in CSV rows for consistency).
+    tol_str = f"{tol:.6e}"               # String representation of tolerance for CSV output.
 
     # ===============================================================
     # TITLE: Time refinement loop (progressively doubles n up to n_limit)
     # ===============================================================
-    # We start from n_base time steps and progressively refine the time grid
-    # by powers of 2: n_updt = 2**n_incr * n_base, until we hit n_limit or converge.
     for n_incr in range(max_increment_n + 1):
-        n_updt = (2 ** n_incr) * n_base   # Updated time resolution for this pass
+        n_updt = (2 ** n_incr) * n_base   # Updated time resolution for this pass.
 
-        if n_updt > n_limit:             # Stop refinement if we exceed the hard upper bound
-            break                        # Practical cap reached: stop refining time
+        # Stop refinement if we exceed the hard upper bound on time steps.
+        if n_updt > n_limit:
+            break
 
         # -----------------------------------------------------------
         # TITLE: Baseline solution at fixed spatial resolution (N_base)
-        # Purpose: compare refined-N solutions against this baseline
+        # Purpose: compare refined-N solutions against this baseline.
         # -----------------------------------------------------------
-        # aux.named(...): helper that wraps/labels the solver instance (e.g. for logging, caching).
-        # TimoshenkoModelSolver: core PDE solver for the Timoshenko beam model.
         solver_prev = aux.named(
-            test.name,                   # Name/label of the current test case
+            test.name,                   # Name/label of the current test case.
             TimoshenkoModelSolver(
-                ell=cfg.ell, T=cfg.T,    # Domain length and final time from config
+                ell=cfg.ell, T=cfg.T,    # Domain length and final time from config.
                 alpha=cfg.alpha, beta=cfg.beta,
                 gamma=cfg.gamma, delta=cfg.delta,
-                a1=cfg.a1, a2=cfg.a2,    # Physical/material parameters
-                n=n_updt, N=N_base,      # Time steps (refined) and baseline spatial modes
-                f1=f1, f2=f2,            # Forcing terms for u and v
-                u0=u0, u1=u1,            # Initial/boundary data for u
-                v0=v0, v1=v1,            # Initial/boundary data for v
-                du0=du0, du1=du1,        # Initial/boundary data for ∂u/∂t
-                dv0=dv0, dv1=dv1,        # Initial/boundary data for ∂v/∂t
-                known_solutions=test.known_solutions  # Optional exact solutions (for diagnostics)
+                a1=cfg.a1, a2=cfg.a2,    # Physical/material parameters.
+                n=n_updt, N=N_base,      # Time steps (refined) and baseline spatial modes.
+                f1=f1, f2=f2,            # Forcing terms for u and v.
+                u0=u0, u1=u1,            # Initial/boundary data for u.
+                v0=v0, v1=v1,            # Initial/boundary data for v.
+                du0=du0, du1=du1,        # Initial/boundary data for ∂u/∂t.
+                dv0=dv0, dv1=dv1,        # Initial/boundary data for ∂v/∂t.
+                known_solutions=test.known_solutions  # Optional exact solutions (diagnostics only).
             )
         )
 
         # ===========================================================
         # TITLE: Spatial refinement loop (increment N up to N_limit)
         # ===========================================================
-        # For each fixed time resolution n_updt, increase the number of
-        # spatial modes N one by one, starting from N_base + 1,
-        # checking convergence against the baseline solver_prev.
         for galerkin_mode in range(1, max_galerkin_mode + 1):
-            N_updt = N_base + galerkin_mode  # New number of spatial modes
+            N_updt = N_base + galerkin_mode  # New number of spatial modes being tested.
 
-            if N_updt > N_limit:             # Respect hard cap on spatial modes
-                break                        # Practical cap reached: stop refining space
+            # If we exceed the spatial mode cap, stop refining space for this n_updt.
+            if N_updt > N_limit:
+                break
 
-            # Progress feedback for potentially long runs
+            # Progress feedback for potentially long runs.
             print(f"Testing n = {n_updt}, N = {N_updt}.")
 
-            # Current solver at (n_updt, N_updt) to compare with baseline at (n_updt, N_base)
+            # Current solver at (n_updt, N_updt) to compare with baseline at (n_updt, N_base).
             solver = aux.named(
-                test.name,               # Same test name label for the refined solver
+                test.name,               # Same test name label for the refined solver.
                 TimoshenkoModelSolver(
                     ell=cfg.ell, T=cfg.T,
                     alpha=cfg.alpha, beta=cfg.beta,
                     gamma=cfg.gamma, delta=cfg.delta,
                     a1=cfg.a1, a2=cfg.a2,
-                    n=n_updt, N=N_updt,  # Same time steps as baseline, but more spatial modes
+                    n=n_updt, N=N_updt,  # Same time steps as baseline, but more spatial modes.
                     f1=f1, f2=f2,
                     u0=u0, u1=u1,
                     v0=v0, v1=v1,
@@ -358,177 +460,66 @@ else:
             )
 
             # -------------------------------------------------------
-            # TITLE: Check convergence for u-coefficients across time
-            #       (and log all norms + per-case max)
+            # TITLE: Convergence check for component u
             # -------------------------------------------------------
-            u_converged = True           # Will be flipped to False if any time layer violates tolerance
-            max_norm_u_case = 0.0        # Max L2 difference for u over time layers for this (n, N)
-            max_norm_u_layer = None      # Time layer index where max_norm_u_case occurs
-
-            # Iterate over time layers; skip first two layers to avoid initialization transients
-            for k in range(2, n_updt):
-                # aux.compute_L2_difference_norms_from_coeffs:
-                #   Computes L2 norm of difference between two coefficient sets at a given time layer.
-                norm_u = aux.compute_L2_difference_norms_from_coeffs(
-                    coeff_init=solver_prev.tilde_u,  # u-coefficients for baseline (N_base)
-                    coeff_next=solver.tilde_u,       # u-coefficients for refined (N_updt)
-                    config=solver_prev,              # Use baseline solver for grid/weights context
-                    time_layer=k                     # Time layer index to compare
-                )
-
-                # Update per-case maximum norm for u at this (n_updt, N_updt)
-                if norm_u > max_norm_u_case:
-                    max_norm_u_case = norm_u
-                    max_norm_u_layer = k           # Store layer where the maximum is seen
-
-                # Append detailed u data for this time layer to CSV rows
-                csv_rows.append([
-                    "u",                             # component identifier
-                    n_updt,                          # time steps used
-                    N_updt,                          # spatial modes used
-                    k,                               # time layer index
-                    f"{norm_u:.6e}",                 # L2 norm for u at this layer (scientific notation)
-                    tol_str,                         # tolerance value as string
-                    0                                # is_max = 0 (regular per-layer row)
-                ])
-
-                if norm_u > tol:
-                    # Console diagnostic: explains why u failed convergence at this (n, N, k)
-                    print(
-                        f"[u] n={n_updt}, N={N_updt}, layer={k}: "
-                        f"L2 diff norm = {norm_u:.6e} > tol = {tol:.6e}"
-                    )
-                    u_converged = False              # Mark u as non-converged for this (n, N) pair
-
-                    # Record failure event for this (n_updt, N_updt) in event_rows
-                    event_rows.append([
-                        "u",                         # component
-                        n_updt,                      # time steps
-                        N_updt,                      # spatial modes
-                        k,                           # layer where failure occurred
-                        f"{norm_u:.6e}",             # failing norm value
-                        "fail"                       # status: failure
-                    ])
-
-                    # Stop checking further time layers for u when first failure occurs
-                    break
-
-            # NOTE:
-            # If the loop above never ran (very small n_updt), max_norm_u_layer could remain None
-            # and max_norm_u_case would stay 0.0; we simply log that as-is.
-
-            # After finishing or breaking the u-loop, log the per-case maximum norm for u
-            csv_rows.append([
-                "u",
-                n_updt,
-                N_updt,
-                "max",                               # layer = "max" marks this as a summary row
-                f"{max_norm_u_case:.6e}",           # maximum L2 norm across checked layers
-                tol_str,
-                1                                    # is_max = 1 indicates a per-case maximum summary
-            ])
+            u_converged, max_norm_u = _check_component_convergence(
+                component="u",
+                solver_prev=solver_prev,
+                solver=solver,
+                n_updt=n_updt,
+                N_updt=N_updt,
+                tol=tol,
+                tol_str=tol_str,
+                csv_rows=csv_rows,
+                event_rows=event_rows,
+                aux_module=aux
+            )
 
             # -------------------------------------------------------
-            # TITLE: Check convergence for v-coefficients (if u passed)
-            #       (and log all norms + per-case max)
+            # TITLE: Convergence check for component v (only if u passed)
             # -------------------------------------------------------
             if u_converged:
-                # Only test v convergence if u has already converged for this (n, N)
-                v_converged = True                  # Will be flipped on first violation
-                max_norm_v_case = 0.0               # Maximum L2 difference for v over time layers
-                max_norm_v_layer = None             # Time layer where max_norm_v_case occurs
-
-                for k in range(2, n_updt):
-                    # Compute L2 norm of difference between v-coefficients (baseline vs refined)
-                    norm_v = aux.compute_L2_difference_norms_from_coeffs(
-                        coeff_init=solver_prev.tilde_v,  # v-coefficients for baseline (N_base)
-                        coeff_next=solver.tilde_v,       # v-coefficients for refined (N_updt)
-                        config=solver_prev,              # same grid/weights as baseline
-                        time_layer=k                     # time layer index being compared
-                    )
-
-                    # Update per-case maximum norm for v
-                    if norm_v > max_norm_v_case:
-                        max_norm_v_case = norm_v
-                        max_norm_v_layer = k           # Store layer where maximum is seen
-
-                    # Append detailed v data for this time layer to CSV rows
-                    csv_rows.append([
-                        "v",                             # component identifier
-                        n_updt,
-                        N_updt,
-                        k,
-                        f"{norm_v:.6e}",                 # L2 norm for v at this layer
-                        tol_str,
-                        0                                # is_max = 0 (regular row)
-                    ])
-
-                    if norm_v > tol:
-                        # Console diagnostic for v divergence at this (n, N, k)
-                        print(
-                            f"[v] n={n_updt}, N={N_updt}, layer={k}: "
-                            f"L2 diff norm = {norm_v:.6e} > tol = {tol:.6e}"
-                        )
-                        v_converged = False             # Mark v as non-converged
-
-                        # Record failure event for this (n_updt, N_updt) in event_rows
-                        event_rows.append([
-                            "v",                         # component
-                            n_updt,                      # time steps
-                            N_updt,                      # spatial modes
-                            k,                           # layer where failure occurred
-                            f"{norm_v:.6e}",             # failing norm value
-                            "fail"                       # status: failure
-                        ])
-
-                        # Stop checking further time layers for v when first failure occurs
-                        break
-
-                # After finishing or breaking the v-loop, log per-case maximum for v
-                csv_rows.append([
-                    "v",
-                    n_updt,
-                    N_updt,
-                    "max",
-                    f"{max_norm_v_case:.6e}",          # maximum L2 norm for v across layers
-                    tol_str,
-                    1                                   # is_max = 1 (summary row)
-                ])
+                v_converged, max_norm_v = _check_component_convergence(
+                    component="v",
+                    solver_prev=solver_prev,
+                    solver=solver,
+                    n_updt=n_updt,
+                    N_updt=N_updt,
+                    tol=tol,
+                    tol_str=tol_str,
+                    csv_rows=csv_rows,
+                    event_rows=event_rows,
+                    aux_module=aux
+                )
             else:
-                # If u did not converge, v is considered non-converged as well for this (n, N)
+                # If u did not converge, v is considered non-converged as well.
                 v_converged = False
+                max_norm_v = 0.0  # Defined for completeness; not used further.
 
             # -------------------------------------------------------
             # TITLE: Success path — both components converged
             # -------------------------------------------------------
             if u_converged and v_converged:
-                # We declare overall convergence when both u and v meet the tolerance
                 print(f"\n Converged at n = {n_updt}, N = {N_updt}")
-                converged = True                      # Set global convergence flag
-                best_n = n_updt                      # Record converged time resolution
-                best_N = N_updt                      # Record converged spatial resolution
+                converged = True          # Set global convergence flag.
+                best_n = n_updt          # Record converged time resolution.
+                best_N = N_updt          # Record converged spatial resolution.
 
-                # NOTE: By requirement, we DO NOT record success events in event_rows,
-                # and we WILL NOT create an additional failures CSV when convergence
-                # succeeds overall.
+                # Requirement: do NOT record success events in event_rows and
+                # only save the main CSV in the global success case (handled later).
 
-                # Snapshot plots of approximate solutions for diagnostics/visual confirmation
+                # Snapshot plots of approximate solutions for diagnostics / visual check.
                 print("Plotting approximate solution snapshots")
                 for sol_type in ("u", "v"):
-                    # aux.plot_approx_solution_at_time_k:
-                    #   Creates a plot of the approximate solution for component 'u' or 'v'
-                    #   at selected time layers using the solver's internal state.
                     aux.plot_approx_solution_at_time_k(
-                        approx_solver=solver,         # Use converged solver instance
-                        solution_type=sol_type,       # "u" or "v" component
-                        config=solver                 # Solver also acts as its own plotting config
+                        approx_solver=solver,   # Use converged solver instance.
+                        solution_type=sol_type, # "u" or "v" component.
+                        config=solver           # Solver also acts as its own plotting config.
                     )
 
-                break  # Exit spatial refinement loop early on success
+                break  # Exit spatial refinement loop early on success.
 
             # Promote current refined solver to be the new baseline for the next N increment.
-            # This lets us compare successive spatial refinements without recomputing
-            # from N_base each time, which can be cheaper.
             solver_prev = solver
 
         # If convergence has been achieved at this time resolution, stop refining time.
@@ -538,88 +529,73 @@ else:
     # ---------------------------------------------------------------
     # TITLE: Final reporting and CSV logging (success or failure)
     # ---------------------------------------------------------------
-    # At this point, either we have converged for some (n, N), or we hit limits
-    # without convergence. In all cases, we write out csv_rows for post-analysis.
-    # Additionally, we write event_rows as a second CSV ONLY IF convergence fails
-    # overall, as per the requirement.
-
-    # Human-readable status + console message
     if not converged:
-        # Convergence did not succeed within the configured bounds
+        # No (n, N) pair satisfied the convergence criterion within limits.
         print(
             f"\n Convergence was not reached within the given limits: "
             f"n ≤ {n_limit} and N ≤ {N_limit}."
         )
-        status_tag = "failure"   # Used as a label in the output filenames
-        # For failure, we record the limits in the filename as representative values
-        n_rep = n_limit
-        N_rep = N_limit
+        status_tag = "failure"   # Label used in filenames for the failure case.
+        n_rep = n_limit          # Representative n for the failure log filename.
+        N_rep = N_limit          # Representative N for the failure log filename.
     else:
-        # Convergence was achieved; report success
+        # At least one (n, N) pair satisfied the convergence criterion.
         print("\n Convergence achieved within the specified limits.")
-        status_tag = "success"   # Label for success scenario
-        # Use the actual converged (n, N) pair if recorded, otherwise fall back to limits
+        status_tag = "success"   # Label used in filenames for the success case.
         n_rep = best_n if best_n is not None else n_limit
         N_rep = best_N if best_N is not None else N_limit
 
-    # Base path for storing convergence log CSV files
-    run_name = getattr(test, "name", "run")            # Use test.name if present, else default to "run"
-    base_dir = Path("plots") / run_name / "convergence_logs"  # Directory for convergence logs
-    base_dir.mkdir(parents=True, exist_ok=True)        # Ensure directory hierarchy exists
+    # Base path for storing convergence log CSV files.
+    run_name = getattr(test, "name", "run")              # Use test.name if present; else default to "run".
+    base_dir = Path("plots") / run_name / "convergence_logs"  # Directory for convergence logs.
+    base_dir.mkdir(parents=True, exist_ok=True)          # Ensure directory hierarchy exists.
 
-    # Generate a timestamp string to make filenames unique and sortable
+    # Timestamp used to make filenames unique and sortable.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ---------------------------------------------------------------
     # TITLE: Main CSV file with all per-layer norms (csv_rows)
     # ---------------------------------------------------------------
-    # Filename includes convergence status, representative (n, N), and timestamp
-    csv_path = base_dir / f"convergence_{status_tag}_n{n_rep}_N{N_rep}_{timestamp}.csv"
-
-    # Only write the main CSV file if there are rows collected
-    if csv_rows:
-        # Open the CSV file in write mode with UTF-8 encoding
-        with csv_path.open(mode="w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)  # Create a CSV writer object
-            # Write header row describing the columns
-            writer.writerow(["component", "n", "N", "layer", "norm", "tol", "is_max"])
-            # Write all accumulated data rows
-            writer.writerows(csv_rows)
-        print(f"\nSaved convergence data (including per-case maxima) to: {csv_path}")
+    # Requirement:
+    #   - Save this file ONLY if convergence succeeds (global `converged` is True).
+    #   - If convergence fails, DO NOT create this main CSV.
+    if converged:
+        if csv_rows:
+            csv_path = base_dir / f"convergence_{status_tag}_n{n_rep}_N{N_rep}_{timestamp}.csv"
+            with csv_path.open(mode="w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["component", "n", "N", "layer", "norm", "tol", "is_max"])
+                writer.writerows(csv_rows)
+            print(f"\nConvergence succeeded. Saved convergence data to: {csv_path}")
+        else:
+            # Convergence succeeded but no norms were recorded — unusual but handled gracefully.
+            print("\nConvergence succeeded, but no convergence data was produced.")
     else:
-        # If no rows were recorded, inform the user; nothing is written to disk
-        print("\nNo convergence data to log (no rows written).")
+        # Failure case: main CSV is intentionally NOT written.
+        print("\nConvergence failed — main convergence CSV NOT written (success-only).")
 
     # ---------------------------------------------------------------
     # TITLE: Additional CSV with per-(n, N) failure events (event_rows)
     # ---------------------------------------------------------------
-    # Requirement:
-    #   - If the convergence test FAILS overall (converged == False),
-    #     create an additional CSV containing, for each (n_updt, N_updt)
-    #     where a failure occurred, the time layer k, the norm value, and
-    #     the component ('u' or 'v').
-    #   - If convergence SUCCEEDS overall (converged == True), DO NOT
-    #     create this additional CSV.
+    # Only write this file when global convergence FAILED, and only if
+    # there is at least one recorded failure event.
     if not converged:
         if event_rows:
-            # Only in failure case, with at least one recorded failure, do we write the events CSV.
+            # NOTE: This filename is kept exactly as requested.
             events_csv_path = base_dir / (
                 f"convergence_failures_n{n_rep}_N{N_rep}_{timestamp}.csv"
             )
-
             with events_csv_path.open(mode="w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                # Header for the failures-events CSV
                 writer.writerow(["component", "n", "N", "layer", "norm", "status"])
                 writer.writerows(event_rows)
             print(f"Saved per-(n, N) convergence failures to: {events_csv_path}")
         else:
-            # This would be unusual (no failure events but converged == False),
-            # but we handle it gracefully.
+            # Global failure without any recorded per-(n, N) failure events.
             print(
-                "Convergence failed but no individual failure events were recorded; "
+                "Convergence failed, but no individual failure events were recorded; "
                 "no additional failures CSV written."
             )
     else:
-        # Convergence succeeded overall; by design, no additional failures CSV is created.
+        # Convergence succeeded globally → no failure CSV is created by design.
         print("Convergence succeeded; no additional failures CSV file was created.")
