@@ -3592,11 +3592,11 @@ def plot_approx_solution_at_time_k(
             if k == 0:
                 # At initial layer: show field-specific IC symbol (φ₀/ψ₀) in LaTeX
                 if solution_type == "u":
-                    title = rf"Initial Condition Function: ${solution_type}(x, {t_k:g}) = \varphi_0(x)$"
+                    title = rf"Initial Condition: ${solution_type}(x, {t_k:g}) = \varphi_0(x)$"
                 elif solution_type == "v":
-                    title = rf"Initial Condition Function: ${solution_type}(x, {t_k:g}) = \psi_0(x)$"
+                    title = rf"Initial Condition: ${solution_type}(x, {t_k:g}) = \psi_0(x)$"
                 else:
-                    title = rf"Initial Condition Function: ${solution_type}(x, {t_k:g})$"
+                    title = rf"Initial Condition: ${solution_type}(x, {t_k:g})$"
             else:
                 # Subsequent layers: generic approximate solution title
                 title = rf"Approximate Solution: ${solution_type}(x, {t_k:g})$"
@@ -3605,11 +3605,11 @@ def plot_approx_solution_at_time_k(
             if k == 0:
                 # Unicode fallback when LaTeX is unavailable
                 if solution_type == "u":
-                    title = f"Initial Condition Function: {solution_type}(x, t={t_k:g}) = φ₀(x)"
+                    title = f"Initial Condition: {solution_type}(x, t={t_k:g}) = φ₀(x)"
                 elif solution_type == "v":
-                    title = f"Initial Condition Function: {solution_type}(x, t={t_k:g}) = ψ₀(x)"
+                    title = f"Initial Condition: {solution_type}(x, t={t_k:g}) = ψ₀(x)"
                 else:
-                    title = f"Initial Condition Function: {solution_type}(x, t={t_k:g})"
+                    title = f"Initial Condition: {solution_type}(x, t={t_k:g})"
             else:
                 title = f"Approximate Solution: {solution_type}(x, t={t_k:g})"
             xlab = f"Spatial coordinate x ∈ [0, {float(config.ell):g}]"       # Plain-text axis label
