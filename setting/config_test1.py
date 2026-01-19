@@ -47,7 +47,7 @@ degree_max = max(m_u, m_v)  # Ensures enough basis functions to resolve both fie
 # ======================================================
 # Discretize the time domain [0, T] using uniform intervals.
 
-n = 64                         # Number of time steps; affects time resolution
+n = 2                          # Number of time steps; affects time resolution
 t = np.linspace(0, T, n + 1)   # Time grid points array: t₀, t₁, ..., tₙ
 tau = T / n                    # Uniform time step size τ
 
