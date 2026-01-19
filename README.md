@@ -77,9 +77,7 @@ All workflows are directed by the central test runner.
 
 ## Acknowledgements
 
-<div align="justify">
 The authors of this article wish to extend their gratitude to Dr. [Giorgi Rukhaia](https://github.com/GR1992) for his fruitful remarks during the development of the programming code for the proposed algorithm.
-</div>
 
 ---
 
