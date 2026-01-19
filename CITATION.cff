@@ -1,0 +1,14 @@
+cff-version: 1.1.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Rogava"
+  given-names: "Jemal"
+  orcid: "https://orcid.org/0000-0001-9460-4283"
+- family-names: "Vashakidze"
+  given-names: "Zurab"
+  orcid: "https://orcid.org/0000-0001-8736-6213"
+title: "A Programming Code for the Numerical Treatment of an Abstract Nonlinear System of Coupled Hyperbolic Equations Associated with the Timoshenko Model"
+version: v2.1.0
+doi: 10.5281/zenodo.18300129
+date-released: 2026-01-19
+url: "https://github.com/zv1991/abstract_timoshenko_semidiscrete_scheme"
